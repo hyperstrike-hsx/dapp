@@ -1,0 +1,27 @@
+{
+  "name": "skincast",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Counter-Strike skin prediction markets, public price oracle, and Discord trading suite — settled on Base.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "forge:build": "pnpm -F contracts forge:build",
+    "forge:test": "pnpm -F contracts forge:test",
+    "forge:fmt": "pnpm -F contracts forge:fmt",
+    "forge:deploy:sepolia": "pnpm -F contracts forge:deploy:sepolia",
+    "forge:deploy:mainnet": "pnpm -F contracts forge:deploy:mainnet",
+    "forge:seed:sepolia": "pnpm -F contracts forge:seed:sepolia",
+    "oracle:test": "cd oracle && uv run pytest",
+    "oracle:lint": "cd oracle && uv run ruff check && uv run mypy .",
+    "bot:dev": "pnpm -F bot dev",
+    "bot:test": "pnpm -F bot test",
+    "web:dev": "pnpm -F web dev",
+    "web:build": "pnpm -F web build",
+    "test:all": "pnpm forge:test && pnpm oracle:test && pnpm bot:test"
+  }
+}

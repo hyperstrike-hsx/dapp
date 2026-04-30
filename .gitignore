@@ -1,0 +1,58 @@
+# ─── Solidity / Foundry ──────────────────────────────────────────────────────
+contracts/cache/
+contracts/out/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
+contracts/lib/
+contracts/deployments/local.json
+
+# ─── Node / TypeScript ───────────────────────────────────────────────────────
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+*.tsbuildinfo
+.pnpm-store/
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+oracle/.venv/
+oracle/dist/
+oracle/build/
+oracle/*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Local data ──────────────────────────────────────────────────────────────
+oracle/.skincast-oracle/
+*.sqlite
+*.db
+settlement_log.jsonl
+news_log.db
+
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.keystore
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── IDE ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+
+# ─── Claude Code local state ─────────────────────────────────────────────────
+.claude/settings.local.json
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+pnpm-debug.log*
