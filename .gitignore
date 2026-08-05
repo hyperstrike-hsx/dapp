@@ -16,10 +16,10 @@ build/
 .pnpm-store/
 
 # ─── Python ──────────────────────────────────────────────────────────────────
-oracle/.venv/
-oracle/dist/
-oracle/build/
-oracle/*.egg-info/
+services/oracle/.venv/
+services/oracle/dist/
+services/oracle/build/
+services/oracle/*.egg-info/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -27,11 +27,13 @@ __pycache__/
 .ruff_cache/
 
 # ─── Local data ──────────────────────────────────────────────────────────────
-oracle/.skincast-oracle/
+services/oracle/.data/
+output/
+tmp/
 *.sqlite
 *.db
 settlement_log.jsonl
-news_log.db
+oracle_reports.jsonl
 
 # ─── Secrets ─────────────────────────────────────────────────────────────────
 .env

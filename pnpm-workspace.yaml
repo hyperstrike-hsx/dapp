@@ -1,4 +1,4 @@
 packages:
-  - 'contracts'
-  - 'bot'
-  - 'web'
+  - 'apps/*'
+  - 'packages/*'
+  - 'services/*'

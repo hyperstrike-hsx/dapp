@@ -1,6 +1,8 @@
-# SkinCast — Master Build Specification
+# SkinCast — Archived Build Specification
 
-> **For Claude Code.** Implement this in phases, bottom-up. Commit at the end of each phase. Run tests continuously. Ask me only when a decision has real downstream consequences — otherwise pick the obvious default and note it in commit messages.
+> **Archived:** This document is historical source material and is no longer authoritative. Do not implement it as written. The current product direction and corrected market/oracle design live in [`HYPERSTRIKE_SPEC.md`](./HYPERSTRIKE_SPEC.md).
+
+> **Historical instruction only.** The implementation prompts below are preserved to explain the earlier concept; they are superseded by the current specification.
 
 ---
 
