@@ -2,25 +2,41 @@
   "name": "hyperstrike",
   "private": true,
   "version": "0.1.0",
-  "description": "Browser-native first-person HIP-4 markets for Counter-Strike 2 skin prices.",
+  "description": "Canonical CS2 indexes and native prediction markets on HyperEVM.",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.13.0",
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @hyperstrike/web dev",
+    "dev": "pnpm --parallel --filter @hyperstrike/web --filter @hyperstrike/api dev",
+    "dev:web": "pnpm --filter @hyperstrike/web dev",
+    "dev:api": "pnpm --filter @hyperstrike/api dev",
+    "replay-index": "tsx services/api/src/replay.ts",
+    "oracle:sign": "tsx services/api/src/signer.ts",
+    "oracle:publish": "tsx services/api/src/publisher.ts",
+    "chain:index": "tsx services/api/src/chain-indexer.ts",
+    "native:deploy": "node contracts/script/deploy-native.mjs",
     "build": "pnpm -r --if-present build",
     "test": "pnpm test:js && pnpm contracts:test",
     "test:js": "pnpm -r --if-present test",
     "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "pnpm -r --if-present typecheck && tsc -p tsconfig.protocol.json",
     "hip4:test": "pnpm --filter @hyperstrike/web test -- src/hip4.test.ts",
     "production:check": "node scripts/check-production.mjs",
     "contracts:test": "cd contracts && forge test",
     "contracts:build": "cd contracts && forge build",
     "burn-gate:deploy": "pnpm contracts:build && node contracts/script/burn-gate-admin.mjs deploy",
     "burn-gate:bind-worldcup:legacy": "node contracts/script/burn-gate-admin.mjs bind-worldcup"
+  },
+  "devDependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@types/node": "24.3.1",
+    "ethers": "6.17.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
   }
 }

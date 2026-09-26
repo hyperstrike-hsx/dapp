@@ -2,9 +2,9 @@
 
 ## 1. Product idea
 
-HyperStrike is the world’s first prediction market for CS2 skin prices. It turns a market opinion into a physical action: enter a range, aim at a skin outcome, and fire one round for one directional vote and one contract. The interface must feel like a credible competitive FPS and a credible trading terminal at the same time.
+HyperStrike is an index-native prediction market for the CS2 economy. Enter a range, aim at an index outcome, and fire one round to stage one directional contract. No shot submits an order or changes the oracle. The interface must feel like a credible competitive FPS and a credible trading terminal at the same time.
 
-Limited-time event worlds may translate the same explicit staging model into another physical verb. The retired World Cup demo uses an anime penalty cut-in: left goal target stages YES, right goal target stages NO, and an oscillating 1–100 power gauge determines how many demo contracts the completed kick stages. Event worlds must remain visually and transactionally distinct from the canonical skin range; retired events must be labelled as demos and must not request wallet signatures, burns, or live HIP-4 orders.
+The retired World Cup is not a first-class V1 product. Its legacy art/code remains archived, and historical records remain readable without wallet requests or migration into live positions. The current app has exactly two financial products: indexes and index markets.
 
 The product is not about esports matches. Every surface, metric, target, and line of copy must point back to skin price discovery.
 
@@ -39,7 +39,7 @@ Crosshair, targets, ammunition, interaction prompts, and market prices must be r
 
 ### Honest financial states
 
-Paper mode, wallet state, burn requirements, and HIP-4 status must always be explicit. Never imply that a local vote is an on-chain position.
+Paper mode, wallet state, STRIKE mint/creation burns, and native deployment/oracle status must always be explicit. Never imply that a local vote is an onchain position. No placeholder index history may resemble real performance. HIP-4 is a future optional rail, not V1 status copy.
 
 ## 4. Brand palette
 
@@ -159,7 +159,7 @@ Avoid procedural low-poly hands unless a production-quality rig and animation se
 - One bullet hitting a YES or NO plate: one local ballistic vote and one staged contract on that side.
 - Misses: no vote.
 - `R`: tactical reload; reserve ammunition remains infinite.
-- `E`: open the targeted skin market.
+- `E`: review the targeted index market.
 - `Esc`: release pointer lock.
 
 Every interaction prompt should use these exact verbs.
@@ -205,4 +205,12 @@ A HyperStrike screen is successful when a new user can answer all four questions
 1. What is this? A prediction market for CS2 skin prices.
 2. What do I do? Aim at YES or NO and fire.
 3. What does a bullet mean? One hit equals one vote and one contract; order value is contract count multiplied by side price.
-4. What is real? The interface clearly distinguishes paper voting, retired-event demos, manual `$HSX` burns, and any future live HIP-4 position layer.
+4. What is real? The interface clearly distinguishes paper order staging, historical records, native positions, HSX-to-STRIKE minting and STRIKE market-creation burns. Shooting never burns tokens.
+
+## 14. Index-native rendering and interface update
+
+Use a compact editorial trading interface: oversized condensed headings, italic wave-like wordmark, mint/cream data surfaces, fine orange rules, no generic rounded-card dashboard. The five canonical tickers are the navigation spine. Missing observations show UNAVAILABLE rather than fabricated percentages. Every sandbox card carries PAPER provenance.
+
+The 3D room is an industrial index exchange, not a skin showroom. LCD panels show index curves/thresholds and explicit YES/NO targets. Materials use local 2K base color, OpenGL normal, roughness and AO maps. Cached architectural shadows and half-resolution contact occlusion add depth; bloom is limited to practical fixtures and muzzle flash. No artificial two-stage resolution downgrade. Keep financial text sharp and screen-space HUD readable.
+
+First-person framing uses a shoulder offset and near-neutral roll, with the bore converging toward the crosshair. The weapon renders in its own depth-cleared pass before bloom/tone mapping. Lens effects remain subtle; they do not justify black unreadable corners or distorted market panels. “AAA” is an art-quality target, not an engine feature flag; the existing stylized AK needs a licensed realistic model/arms rig for the next fidelity step.

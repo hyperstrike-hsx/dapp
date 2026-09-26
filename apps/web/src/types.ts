@@ -1,4 +1,8 @@
-export type SkinMarket = {
+import type { MarketDefinition } from "@hyperstrike/market-types";
+export type IndexMarket = {
+  definition: MarketDefinition;
+  provenance: "DEMO" | "CANONICAL";
+  address?: `0x${string}`;
   id: string;
   name: string;
   condition: string;
@@ -9,8 +13,6 @@ export type SkinMarket = {
   yes: number;
   volume: string;
   accent: number;
-  image: string;
-  marketUrl: string;
   position: [number, number, number];
 };
 

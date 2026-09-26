@@ -1,0 +1,11 @@
+{
+  "name": "@hyperstrike/market-types",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "ethers": "6.17.0",
+    "@hyperstrike/oracle-types": "workspace:*"
+  }
+}

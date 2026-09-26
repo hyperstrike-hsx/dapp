@@ -468,3 +468,6 @@ These choices require prototypes or external review rather than assumptions:
 - Which oracle/reporting design HIP-4 will authorize for the launch skin-price policy.
 
 Until decided, implementations expose configuration and use conservative testnet defaults; they do not invent production claims.
+# Historical specification — superseded
+
+This file describes the earlier HIP-4 / individual-skin product. It is retained for history, not current implementation or deployment guidance. The active index-native requirements and clarifications are in [docs/INDEX_NATIVE_SPEC.md](docs/INDEX_NATIVE_SPEC.md), with honest coverage in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).

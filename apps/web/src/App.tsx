@@ -1,732 +1,1013 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchHip4Status, outcomeCoin, type Hip4Outcome, type Hip4Status } from "./hip4";
-import { burnHsx, fetchHsxStatus, formatSupply, HSX_ADDRESS, type HsxStatus } from "./hsx";
-import { paperMarkets } from "./markets";
-import { SoccerWorld } from "./SoccerWorld";
-import type { DemoWorldCupPrediction, PortfolioDisplayEntry, SkinMarket, VoteCount, VoteSide } from "./types";
-import { World } from "./World";
-
-const PAPER_PORTFOLIO_KEY = "hyperstrike.paperPredictions.v1";
-const DEMO_PORTFOLIO_KEY = "hyperstrike.demoWorldCupPredictions.v1";
-const LEGACY_LIVE_PORTFOLIO_KEY = "hyperstrike.liveWorldCupPredictions.v1";
-
-const demoWorldCupMarkets: Hip4Outcome[] = [
-  {
-    outcome: 90001,
-    name: "France",
-    description: "Demo replay: France lifts the trophy. This is a retired World Cup showcase market and does not submit a live HIP-4 order.",
-    sideSpecs: [{ name: "Yes" }, { name: "No" }],
-    quoteToken: "USDC",
-  },
-  {
-    outcome: 90002,
-    name: "Argentina",
-    description: "Demo replay: Argentina repeats. This is a retired World Cup showcase market and does not submit a live HIP-4 order.",
-    sideSpecs: [{ name: "Yes" }, { name: "No" }],
-    quoteToken: "USDC",
-  },
-  {
-    outcome: 90003,
-    name: "Brazil",
-    description: "Demo replay: Brazil wins the final. This is a retired World Cup showcase market and does not submit a live HIP-4 order.",
-    sideSpecs: [{ name: "Yes" }, { name: "No" }],
-    quoteToken: "USDC",
-  },
-  {
-    outcome: 90004,
-    name: "England",
-    description: "Demo replay: England finally brings it home. This is a retired World Cup showcase market and does not submit a live HIP-4 order.",
-    sideSpecs: [{ name: "Yes" }, { name: "No" }],
-    quoteToken: "USDC",
-  },
-];
-
-const demoWorldCupPrices: Record<number, Record<VoteSide, number>> = {
-  90001: { YES: 0.52, NO: 0.48 },
-  90002: { YES: 0.38, NO: 0.62 },
-  90003: { YES: 0.34, NO: 0.66 },
-  90004: { YES: 0.27, NO: 0.73 },
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { INDEXES, demoMarkets } from "./markets";
+import { quoteBuy, quoteSell } from "@hyperstrike/sdk";
+import type {
+  IndexMarket,
+  PortfolioDisplayEntry,
+  VoteCount,
+  VoteSide,
+} from "./types";
+import { signer } from "./nativeClient";
+import { RangeOverlay } from "./RangeOverlay";
+import { HsxChartPanel } from "./HsxChartPanel";
+import {
+  NativeTicket,
+  decodeNativeRecord,
+  type NativeRecord,
+} from "./NativeTicket";
+import { NativePortfolio } from "./NativePortfolio";
+import { PaperPortfolio } from "./PaperPortfolio";
+import { LegacyArchive } from "./LegacyArchive";
+import { SportsDemoRecords } from "./SportsDemoRecords";
+import { RangePerformance } from "./RangePerformance";
+import {
+  CreatorForm,
+  IndexDetail,
+  StrikePanel,
+  IndexBadge,
+  IndexArtwork,
+  type Canonical,
+} from "./IndexViews";
+import {
+  TradeTicket,
+  type Position,
+  type Tape,
+  money,
+  human,
+} from "./TradeTicket";
+import "./native.css";
+import "./terminal.css";
+import {
+  useIndicativeIndexes,
+  PreviewSummary,
+  previewValue,
+} from "./IndicativeIndex";
+const World = lazy(() => import("./World").then((m) => ({ default: m.World })));
+const SportsDemo = lazy(() => import("./SportsExperience"));
+type View =
+  | "Markets"
+  | "Indexes"
+  | "Create"
+  | "Portfolio"
+  | "Creators"
+  | "Sports demo"
+  | "HSX / STRIKE";
+type Ledger = {
+  positions: Position[];
+  reserves: Record<string, Tape>;
+  balance: string;
+  events: { at: number; label: string }[];
 };
-
-function createDraftNonce(): `0x${string}` {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+const KEY = "hyperstrike.indexSandbox.v3";
+const empty = (): Ledger => ({
+  positions: [],
+  reserves: {},
+  balance: "10000000000",
+  events: [],
+});
+function loadLedger(): Ledger {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    if (
+      v &&
+      Array.isArray(v.positions) &&
+      v.reserves &&
+      typeof v.balance === "string" &&
+      Array.isArray(v.events)
+    )
+      return v;
+  } catch {
+    /* Historical records remain untouched. */
+  }
+  return empty();
 }
-
-type PaperPrediction = {
-  id: string;
-  marketId: string;
-  marketName: string;
-  condition: string;
-  side: VoteSide;
-  amount: number;
-  contracts: number;
-  entryPrice: number;
-  resolves: string;
-  createdAt: number;
+const zero: VoteCount = { YES: 0, NO: 0 };
+const routes: Record<View, string> = {
+  Markets: "/",
+  Indexes: "/indexes",
+  Create: "/create",
+  Portfolio: "/portfolio",
+  Creators: "/creators",
+  "Sports demo": "/sports",
+  "HSX / STRIKE": "/tokens",
 };
-
-function MarketCard({ market, votes, onClick }: { market: SkinMarket; votes: VoteCount; onClick: () => void }) {
-  return (
-    <button className="market-card" onClick={onClick}>
-      <span className="market-card__top"><i style={{ background: `#${market.accent.toString(16)}` }} /> RANGE LIVE · PAPER · {market.condition}</span>
-      <img className="market-card__image" src={market.image} alt={market.name} />
-      <strong>{market.name}</strong>
-      <span>{market.question}</span>
-      <div className="probability-row">
-        <b>YES {market.yes}¢</b>
-        <em style={{ width: `${market.yes}%` }} />
-        <small>{market.volume} VOL</small>
-      </div>
-      <div className="card-votes"><span>YOUR FIRE</span><b>YES {votes.YES}</b><b>NO {votes.NO}</b></div>
-    </button>
+const routeView = () =>
+  (Object.entries(routes).find(
+    ([, path]) => path !== "/" && window.location.pathname.startsWith(path),
+  )?.[0] ?? "Markets") as View;
+const probability = (t?: Tape) =>
+  Math.round(
+    (Number(t?.no ?? 5e9) / (Number(t?.yes ?? 5e9) + Number(t?.no ?? 5e9))) *
+      100,
   );
-}
-
-function TradeDrawer({ market, votes, onClose, onSubmit, hsx }: { market: SkinMarket; votes: VoteCount; onClose: () => void; onSubmit: (prediction: PaperPrediction) => void; hsx: HsxStatus | null }) {
-  const [side, setSide] = useState<"YES" | "NO">("YES");
-  const [paperHsx, setPaperHsx] = useState(100);
-  const [unlocked, setUnlocked] = useState(false);
-  const [placed, setPlaced] = useState(false);
-  const price = side === "YES" ? market.yes : 100 - market.yes;
-  const contracts = votes[side];
-  const orderValue = Number((contracts * price / 100).toFixed(2));
-  const burnAmount = Number((orderValue * 0.01).toFixed(4));
-  const totalVotes = votes.YES + votes.NO;
-  const ballisticSide: VoteSide | null = votes.YES === votes.NO ? null : votes.YES > votes.NO ? "YES" : "NO";
-  const ballisticConfidence = totalVotes > 0 ? Math.round((Math.max(votes.YES, votes.NO) / totalVotes) * 100) : 0;
-
-  useEffect(() => {
-    setUnlocked(false);
-    setPlaced(false);
-    setSide("YES");
-  }, [market.id]);
-
-  useEffect(() => {
-    if (ballisticSide) setSide(ballisticSide);
-  }, [ballisticSide]);
-
-  const burn = () => {
-    if (contracts < 1 || paperHsx < burnAmount) return;
-    setPaperHsx((balance) => Number((balance - burnAmount).toFixed(4)));
-    setUnlocked(true);
-  };
-
-  const submitPrediction = () => {
-    if (placed) return;
-    onSubmit({
-      id: `${market.id}-${Date.now()}`,
-      marketId: market.id,
-      marketName: market.name,
-      condition: market.condition,
-      side,
-      amount: orderValue,
-      contracts,
-      entryPrice: price,
-      resolves: market.resolves,
-      createdAt: Date.now(),
-    });
-    setPlaced(true);
-  };
-
-  return (
-    <aside className="trade-drawer">
-      <button className="close" onClick={onClose} aria-label="Close">×</button>
-      <div className="eyebrow">SKIN PRICE OUTCOME · PAPER FIRE</div>
-      <h2>{market.name}</h2>
-      <p className="condition">{market.condition}</p>
-      <a className="trade-skin-image" href={market.marketUrl} target="_blank" rel="noreferrer" title="View the official Steam Community Market listing">
-        <img src={market.image} alt={market.name} />
-        <span>OFFICIAL STEAM MARKET ITEM ↗</span>
-      </a>
-      <h3>{market.question}</h3>
-
-      <div className="vote-ledger"><span>YOUR BALLISTIC VOTES</span><b className="yes">YES {votes.YES}</b><b className="no">NO {votes.NO}</b></div>
-      <div className={`ballistic-draft ${ballisticSide?.toLowerCase() ?? "empty"}`}>
-        <span>BALLISTIC PREDICTION DRAFT</span>
-        {ballisticSide ? (
-          <><strong>{ballisticSide} · {ballisticConfidence}% OF HITS</strong><p>Each hit on the selected side stages exactly one contract. The order value is contracts × side price; nothing is submitted until you confirm.</p></>
-        ) : (
-          <><strong>NO CONTRACTS STAGED</strong><p>Shoot a YES or NO target in the range. One target hit stages one contract on that side; misses stage nothing.</p></>
-        )}
-        <div><i>1 HIT</i><b>→</b><i>1 CONTRACT</i><b>→</b><i>1% $HSX BURN</i><b>→</b><i>ORDER</i></div>
-      </div>
-
-      <div className="skin-tape">
-        <div><span>REFERENCE</span><b>{market.currentPrice}</b></div>
-        <div><span>24H</span><b className={market.change >= 0 ? "up" : "down"}>{market.change >= 0 ? "+" : ""}{market.change}%</b></div>
-        <div><span>RESOLVES</span><b>{market.resolves}</b></div>
-      </div>
-
-      <div className="side-picker">
-        <button className={side === "YES" ? "active yes" : ""} onClick={() => setSide("YES")} disabled={unlocked}>YES <b>{market.yes}¢</b></button>
-        <button className={side === "NO" ? "active no" : ""} onClick={() => setSide("NO")} disabled={unlocked}>NO <b>{100 - market.yes}¢</b></button>
-      </div>
-
-      <div className="amount-field derived-value">
-        <span>ORDER VALUE · SET BY BALLISTIC CONTRACTS</span>
-        <div><i>$</i><strong>{orderValue.toFixed(2)}</strong><em>USDC</em></div>
-      </div>
-
-      <div className="order-summary">
-        <span>IOC limit</span><b>{price}¢ worst price</b>
-        <span>Ballistic contracts</span><b>{contracts} ({votes[side]} {side} hits)</b>
-        <span>Potential payout</span><b>${contracts.toLocaleString()}</b>
-        <span>$HSX burn · 1% of value</span><b>{burnAmount.toFixed(4)} $HSX</b>
-      </div>
-
-      {!unlocked ? (
-        <div className="burn-gate">
-          <div className="burn-icon">◇</div>
-          <div><strong>Burn 1% to arm this order</strong><span>Proportional participation burn · demo balance {paperHsx.toFixed(4)} $HSX</span></div>
-          <button onClick={burn} disabled={contracts < 1 || paperHsx < burnAmount}>{contracts < 1 ? "SHOOT A TARGET TO STAGE CONTRACTS" : `BURN ${burnAmount.toFixed(4)} $HSX · ARM ORDER`}</button>
-          <small>{hsx?.supportsBurnFrom ? "✓ Canonical HSX supports true supply burn via burnFrom." : "Checking canonical HSX burn support…"} Simulation only until the gate is deployed.</small>
-        </div>
-      ) : (
-        <button className="place-order" onClick={submitPrediction} disabled={placed || contracts < 1}>
-          {placed ? `PAPER HIP-4 PREDICTION SUBMITTED · ${side}` : `SUBMIT PAPER HIP-4 ${side} PREDICTION`}
-        </button>
-      )}
-      <p className="risk">Paper preview · no funds at risk · final settlement follows registered HIP-4 terms</p>
-    </aside>
-  );
-}
-
-function PortfolioPanel({
-  predictions,
-  demoPredictions,
-  onClose,
-  onRemove,
-  onRemoveDemo,
-}: {
-  predictions: PaperPrediction[];
-  demoPredictions: DemoWorldCupPrediction[];
-  onClose: () => void;
-  onRemove: (id: string) => void;
-  onRemoveDemo: (id: string) => void;
-}) {
-  const committed = predictions.reduce((sum, prediction) => sum + prediction.amount, 0);
-  const payout = predictions.reduce((sum, prediction) => sum + prediction.contracts, 0);
-  const demoCommitted = demoPredictions.reduce((sum, prediction) => sum + prediction.orderValue, 0);
-  const demoContracts = demoPredictions.reduce((sum, prediction) => sum + prediction.contracts, 0);
-  return (
-    <section className="portfolio-panel">
-      <button className="close" onClick={onClose} aria-label="Close portfolio">×</button>
-      <div className="eyebrow">POSITION LEDGER</div>
-      <h2>REGISTERED PREDICTIONS</h2>
-      <p className="portfolio-intro">CS2 skin positions are paper previews saved locally. World Cup entries are retired-event demo receipts: no wallet, no $HSX burn, and no live HIP-4 order.</p>
-      <div className="portfolio-summary">
-        <span><b>{predictions.length + demoPredictions.length}</b> RECEIPTS</span>
-        <span><b>${(committed + demoCommitted).toLocaleString()}</b> STAGED VALUE</span>
-        <span><b>{(payout + demoContracts).toLocaleString()}</b> CONTRACTS</span>
-      </div>
-      {demoPredictions.length > 0 && (
-        <div className="position-list live-position-list">
-          {demoPredictions.map((prediction) => (
-            <article key={prediction.id} className={prediction.side.toLowerCase()}>
-              <div><span>DEMO · WORLD CUP REPLAY · {prediction.status}</span><time>{new Date(prediction.createdAt).toLocaleString()}</time></div>
-              <h3>{prediction.marketName}</h3>
-              <p>{prediction.description}</p>
-              <dl>
-                <div><dt>SIDE</dt><dd>{prediction.side}</dd></div>
-                <div><dt>REFERENCE</dt><dd>{Math.round(prediction.limitPrice * 100)}¢</dd></div>
-                <div><dt>VALUE</dt><dd>${prediction.orderValue.toFixed(2)}</dd></div>
-                <div><dt>CONTRACTS</dt><dd>{prediction.contracts}</dd></div>
-                <div><dt>DEMO BURN</dt><dd>{prediction.burnAmount.toFixed(4)} $HSX</dd></div>
-                <div><dt>RECEIPT</dt><dd>{prediction.orderId.slice(0, 10)}…</dd></div>
-              </dl>
-              <button className="remove-position" onClick={() => onRemoveDemo(prediction.id)}>HIDE DEMO RECEIPT</button>
-            </article>
-          ))}
-        </div>
-      )}
-      {predictions.length === 0 && demoPredictions.length === 0 ? (
-        <div className="portfolio-empty"><strong>NO PREDICTIONS REGISTERED</strong><p>Open a skin market for a paper CS2 prediction, or use the World Cup demo to save a retired-event penalty ticket.</p></div>
-      ) : predictions.length > 0 && (
-        <div className="position-list">
-          {predictions.map((prediction) => (
-            <article key={prediction.id} className={prediction.side.toLowerCase()}>
-              <div><span>OPEN · PAPER</span><time>{new Date(prediction.createdAt).toLocaleString()}</time></div>
-              <h3>{prediction.marketName}</h3>
-              <p>{prediction.condition}</p>
-              <dl>
-                <div><dt>SIDE</dt><dd>{prediction.side}</dd></div>
-                <div><dt>ENTRY</dt><dd>{prediction.entryPrice}¢</dd></div>
-                <div><dt>VALUE</dt><dd>${prediction.amount}</dd></div>
-                <div><dt>CONTRACTS</dt><dd>{prediction.contracts}</dd></div>
-                <div><dt>RESOLVES</dt><dd>{prediction.resolves}</dd></div>
-              </dl>
-              <button className="remove-position" onClick={() => onRemove(prediction.id)}>REMOVE PAPER POSITION</button>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function BurnFurnace({ hsx, onClose }: { hsx: HsxStatus | null; onClose: () => void }) {
-  const [amount, setAmount] = useState("1000");
-  const [burning, setBurning] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [transactionHash, setTransactionHash] = useState<string | null>(null);
-  const submit = async () => {
-    setBurning(true);
-    setMessage(null);
-    setTransactionHash(null);
-    try {
-      const receipt = await burnHsx(amount);
-      setTransactionHash(receipt.transactionHash);
-      setMessage(`${receipt.amount} $HSX permanently removed from supply.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The burn transaction failed.");
-    } finally {
-      setBurning(false);
-    }
-  };
-  return (
-    <section className="furnace-panel">
-      <button className="close" onClick={onClose} aria-label="Close HSX furnace">×</button>
-      <div className="furnace-panel__glow" aria-hidden="true" />
-      <div className="eyebrow">HYPEREVM · CANONICAL SUPPLY CONTROL</div>
-      <h2>$HSX FURNACE</h2>
-      <p>Burn your own $HSX directly through the canonical token contract. This transaction is irreversible and permanently reduces total supply.</p>
-      <div className="furnace-address"><span>TOKEN</span><code>{HSX_ADDRESS}</code></div>
-      <label className="furnace-amount"><span>AMOUNT TO DESTROY</span><div><input value={amount} inputMode="decimal" onChange={(event) => setAmount(event.target.value)} /><b>$HSX</b></div></label>
-      <div className="furnace-stats"><span>NETWORK <b>HYPEREVM</b></span><span>SUPPLY <b>{hsx ? formatSupply(hsx) : "CHECKING"}</b></span><span>BURN ABI <b>{hsx?.supportsBurn ? "VERIFIED" : "CHECKING"}</b></span></div>
-      <button className="furnace-submit" disabled={burning || !hsx?.supportsBurn} onClick={() => void submit()}>{burning ? "WAITING FOR HYPEREVM…" : `BURN ${amount || "0"} $HSX FOREVER`}</button>
-      {message && <div className="furnace-message">{message}{transactionHash && <a href={`https://hyperevmscan.io/tx/${transactionHash}`} target="_blank" rel="noreferrer"> VIEW TRANSACTION ↗</a>}</div>}
-      <small>Manual burns are separate from the 1% participation burn required to arm a HyperStrike order.</small>
-    </section>
-  );
-}
-
-function HowItWorks({ onClose }: { onClose: () => void }) {
-  return (
-    <section className="how-panel">
-      <button className="close" onClick={onClose} aria-label="Close explanation">×</button>
-      <div className="eyebrow">THE MARKET IS THE TARGET</div>
-      <h2>FROM PRICE CALL TO POSITION</h2>
-      <p className="how-intro">HyperStrike turns conviction into something physical: aim at a skin, choose a side, and put rounds on your prediction. HIP-4 carries the market; HyperEVM makes $HSX access verifiable.</p>
-      <div className="flow-grid">
-        <article><b>01</b><span>AIM</span><h3>Pick a skin and side</h3><p>Every vault presents the official skin image beside two physical targets: YES and NO. Put the crosshair on the call you believe.</p></article>
-        <article><b>02</b><span>FIRE</span><h3>Stage one contract per hit</h3><p>Every target hit is one vote and one contract on that side. Five YES hits stage five YES contracts; misses count for nothing.</p></article>
-        <article><b>03</b><span>ARM</span><h3>Burn 1% of order value</h3><p>Order value equals contract count × side price. The HyperEVM gate burns an $HSX amount equal to 1% of that value before submission.</p></article>
-        <article><b>04</b><span>SUBMIT</span><h3>Confirm the HIP-4 order</h3><p>Gunfire only builds the draft. You still review the side, contracts, value and burn, then explicitly sign the order.</p></article>
-      </div>
-      <div className="architecture-strip"><span>3D WEB CLIENT</span><i>→</i><span>$HSX BURN · HYPEREVM</span><i>→</i><span>HIP-4 CLOB · HYPERCORE</span><i>→</i><span>SKIN ORACLE</span></div>
-      <div className="truth-note"><strong>Enforcement boundary</strong><p>Issuance burns are enforceable because HyperStrike controls market submission. Participation burns are enforced by HyperStrike, but a public HIP-4 order can still be submitted through another client unless HIP-4 adds a native token gate.</p></div>
-    </section>
-  );
-}
-
-function Hip4Explorer({ status, onClose }: { status: Hip4Status | null; onClose: () => void }) {
-  return (
-    <section className="hip4-panel">
-      <button className="close" onClick={onClose} aria-label="Close HIP-4 network outcomes">×</button>
-      <div className="eyebrow">LIVE HYPERLIQUID METADATA</div>
-      <h2>NETWORK OUTCOMES</h2>
-      <p className="hip4-intro">This is the validated outcome catalogue returned by <code>POST api.hyperliquid.xyz/info</code> with <code>{'{ "type": "outcomeMeta" }'}</code>. It is network-wide metadata—not a claim that HyperStrike has live skin markets.</p>
-      <div className="hip4-summary">
-        <span><b>{status?.outcomeCount ?? "—"}</b> RECORDS</span>
-        <span><b>{status?.binaryCount ?? "—"}</b> YES / NO</span>
-        <span><b>{status?.questionCount ?? "—"}</b> QUESTIONS</span>
-        <span><b>{status?.quoteTokens.join(" / ") || "—"}</b> QUOTE</span>
-        <span><b>{status ? new Date(status.checkedAt).toLocaleTimeString() : "—"}</b> CHECKED</span>
-      </div>
-      <div className="network-truth"><strong>HyperStrike skin markets</strong><span>The launch set is liquidity-screened but remains paper-only until its validator-approved template instances are deployed, discoverable here, and bound to the production gate.</span></div>
-      <div className="outcome-list">
-        {status?.outcomes.map((outcome) => (
-          <article key={outcome.outcome}>
-            <div><span>OUTCOME #{outcome.outcome}</span><b>{outcome.quoteToken}</b></div>
-            <h3>{outcome.name || "UNTITLED OUTCOME"}</h3>
-            <p>{outcome.description || "No resolution description supplied."}</p>
-            <div className="outcome-sides">{outcome.sideSpecs.map((side) => side.name).join(" / ")}</div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function WorldCupOrderPanel({ market, prices, kicks, onSubmitted }: {
-  market: Hip4Outcome | null;
-  prices: Record<VoteSide, number>;
-  kicks: VoteCount;
-  onSubmitted: (prediction: DemoWorldCupPrediction) => void;
-}) {
-  const [side, setSide] = useState<VoteSide>("YES");
-  const [reviewing, setReviewing] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
-  const [draftNonce, setDraftNonce] = useState(createDraftNonce);
-  const [reviewOrderId, setReviewOrderId] = useState<`0x${string}` | null>(null);
-  const contracts = kicks[side];
-  const midPrice = prices[side];
-  const limitPrice = Math.min(0.99, Number((midPrice + 0.02).toFixed(4)));
-  const orderValue = Number((contracts * limitPrice).toFixed(2));
-  const burnAmount = Number((orderValue * 0.01).toFixed(4));
-  const majority = kicks.YES === kicks.NO ? null : kicks.YES > kicks.NO ? "YES" : "NO";
-  const marketOutcome = market?.outcome ?? null;
-  const marketName = market?.name ?? "";
-
-  useEffect(() => {
-    if (majority) setSide(majority);
-  }, [majority]);
-
-  useEffect(() => {
-    setReviewing(false);
-    setMessage("");
-    setReviewOrderId(null);
-    setDraftNonce(createDraftNonce());
-  }, [marketOutcome, side, contracts]);
-
-  const deriveCurrentOrderId = () => {
-    if (!marketOutcome || contracts < 1) return null;
-    return draftNonce;
-  };
-
-  const openReview = () => {
-    const nextOrderId = deriveCurrentOrderId();
-    if (!nextOrderId) return;
-    setReviewOrderId(nextOrderId);
-    setReviewing(true);
-  };
-
-  const submit = () => {
-    if (!market || contracts < 1) return;
-    const orderId = reviewOrderId ?? deriveCurrentOrderId();
-    if (!orderId) return;
-    setPending(true);
-    onSubmitted({
-      id: `${market.outcome}-${orderId}`,
-      orderId,
-      outcomeId: market.outcome,
-      marketName: market.name,
-      description: market.description,
-      side,
-      contracts,
-      limitPrice,
-      orderValue,
-      burnAmount,
-      status: "SAVED",
-      createdAt: Date.now(),
-    });
-    setMessage(`DEMO RECEIPT SAVED · ${orderId.slice(0, 10)}…`);
-    setReviewOrderId(null);
-    setDraftNonce(createDraftNonce());
-    setReviewing(false);
-    setPending(false);
-  };
-
-  return (
-    <aside className="cup-order-panel">
-      <div className="eyebrow">RETIRED EVENT · DEMO PENALTY TICKET</div>
-      <h2>{market?.name ?? "SELECT A COUNTRY"}</h2>
-      <p>{market?.description ?? "Choose a World Cup demo outcome."}</p>
-      <div className="cup-live-meta"><span>DEMO REF <b>#{market?.outcome ?? "—"}</b></span><span>QUOTE <b>{market?.quoteToken ?? "—"}</b></span><span>COINS <b>{market ? `${outcomeCoin(market.outcome, 0)} / ${outcomeCoin(market.outcome, 1)}` : "—"}</b></span></div>
-      <div className="side-picker cup-side-picker">
-        <button className={side === "YES" ? "active yes" : ""} onClick={() => setSide("YES")} disabled={pending}>YES <b>{Math.round(prices.YES * 100)}¢</b><small>{kicks.YES} CONTRACTS</small></button>
-        <button className={side === "NO" ? "active no" : ""} onClick={() => setSide("NO")} disabled={pending}>NO <b>{Math.round(prices.NO * 100)}¢</b><small>{kicks.NO} CONTRACTS</small></button>
-      </div>
-      <div className="cup-order-math">
-        <span>Gauge-multiplied contracts</span><b>{contracts}</b>
-        <span>Demo reference mid</span><b>{Math.round(midPrice * 100)}¢</b>
-        <span>Simulated worst price</span><b>{Math.round(limitPrice * 100)}¢</b>
-        <span>Simulated order value</span><b>${orderValue.toFixed(2)} USDC</b>
-        <span>Demo $HSX burn math · 1%</span><b>{burnAmount.toFixed(4)} $HSX</b>
-        <span>Receipt hash</span><b>{reviewOrderId ? `${reviewOrderId.slice(0, 10)}…` : "GENERATED ON REVIEW"}</b>
-      </div>
-      {!reviewing ? (
-        <button className="cup-primary" disabled={!market || contracts < 1} onClick={openReview}>
-          {contracts < 1 ? "KICK YES OR NO TO STAGE DEMO CONTRACTS" : "REVIEW DEMO TICKET"}
-        </button>
-      ) : (
-        <div className="live-confirm">
-          <strong>DEMO ONLY · NO FUNDS MOVE</strong>
-          <p>This saves a local replay receipt for {contracts} {side} demo contracts. The 1% $HSX burn and HIP-4 order values are shown for product rehearsal only; nothing is signed, burned, or submitted.</p>
-          <button disabled={pending} onClick={submit}>{pending ? "SAVING…" : "SAVE DEMO RECEIPT"}</button>
-          <button disabled={pending} onClick={() => setReviewing(false)}>CANCEL</button>
-        </div>
-      )}
-      {message && <div className="cup-order-message">{message}</div>}
-      <small className="cup-risk">The captured 1–100 gauge value stages that many demo contracts. This retired-event mode never opens a wallet, burns $HSX, or submits a HIP-4 order.</small>
-    </aside>
-  );
-}
-
 export default function App() {
-  const [experience, setExperience] = useState<"skins" | "worldcup">("skins");
-  const [selected, setSelected] = useState<SkinMarket | null>(null);
-  const [nearby, setNearby] = useState<SkinMarket | null>(null);
-  const [entered, setEntered] = useState(false);
-  const [controlsLocked, setControlsLocked] = useState(false);
-  const [ammo, setAmmo] = useState({ magazine: 30, reserve: Number.POSITIVE_INFINITY, reloading: false });
-  const [votes, setVotes] = useState<Record<string, VoteCount>>(() => Object.fromEntries(paperMarkets.map((market) => [market.id, { YES: 0, NO: 0 }])));
-  const [lastVote, setLastVote] = useState<{ market: SkinMarket; side: VoteSide; at: number } | null>(null);
-  const [marketList, setMarketList] = useState(false);
-  const [howOpen, setHowOpen] = useState(false);
-  const [portfolioOpen, setPortfolioOpen] = useState(false);
-  const [manualBurnOpen, setManualBurnOpen] = useState(false);
-  const [furnaceNearby, setFurnaceNearby] = useState(false);
-  const [hip4Open, setHip4Open] = useState(false);
-  const [paperPredictions, setPaperPredictions] = useState<PaperPrediction[]>(() => {
-    try {
-      const stored = localStorage.getItem(PAPER_PORTFOLIO_KEY);
-      return stored ? JSON.parse(stored) as PaperPrediction[] : [];
-    } catch {
-      return [];
-    }
-  });
-  const [demoPredictions, setDemoPredictions] = useState<DemoWorldCupPrediction[]>(() => {
-    try {
-      const stored = localStorage.getItem(DEMO_PORTFOLIO_KEY) ?? localStorage.getItem(LEGACY_LIVE_PORTFOLIO_KEY);
-      return stored ? JSON.parse(stored) as DemoWorldCupPrediction[] : [];
-    } catch {
-      return [];
-    }
-  });
-  const [worldReady, setWorldReady] = useState(false);
-  const [status, setStatus] = useState<Hip4Status | null>(null);
-  const [hsx, setHsx] = useState<HsxStatus | null>(null);
-  const [wallet, setWallet] = useState<string | null>(null);
-  const [cupOutcomeId, setCupOutcomeId] = useState<number | null>(null);
-  const [cupKicks, setCupKicks] = useState<Record<number, VoteCount>>({});
-
+  const [portfolioTab, setPortfolioTab] = useState<
+    "Paper" | "Onchain" | "Sports demo" | "Archive"
+  >("Paper");
+  const [marketFilter, setMarketFilter] = useState("ALL");
+  const [managedSide, setManagedSide] = useState<VoteSide | undefined>();
+  const [rangePanel, setRangePanel] = useState<"foundry" | "chart" | null>(
+    null,
+  );
+  const [nearFurnace, setNearFurnace] = useState(false);
+  const [nearChart, setNearChart] = useState(false);
+  const [quality, setQuality] = useState<"HIGH" | "PERFORMANCE">("HIGH");
+  const [view, setView] = useState<View>(routeView),
+    [range, setRange] = useState(false),
+    [entered, setEntered] = useState(false),
+    [locked, setLocked] = useState(false),
+    [ready, setReady] = useState(false);
+  const [selected, setSelected] = useState<IndexMarket | null>(null),
+    [nearby, setNearby] = useState<IndexMarket | null>(null),
+    [votes, setVotes] = useState<Record<string, VoteCount>>({});
+  const [ammo, setAmmo] = useState({ magazine: 30, reloading: false }),
+    [ledger, setLedger] = useState<Ledger>(loadLedger),
+    [notice, setNotice] = useState(""),
+    [wallet, setWallet] = useState("");
+  const [indexDetail, setIndexDetail] = useState<string | null>(null),
+    [oracle, setOracle] = useState<{ status: string } | null>(null),
+    [canonical, setCanonical] = useState<Canonical>({});
+  const indicativeFeed = useIndicativeIndexes();
+  const indicative = Object.fromEntries(
+    (indicativeFeed?.indexes ?? []).map((i) => [i.indexId, i]),
+  );
+  const [nativeMarkets, setNativeMarkets] = useState<NativeRecord[]>([]);
+  const [nativeSelected, setNativeSelected] = useState<NativeRecord | null>(
+    null,
+  );
   useEffect(() => {
-    const controller = new AbortController();
-    const refreshMarkets = () => fetchHip4Status(controller.signal).then(setStatus).catch(() => {
-      if (!controller.signal.aborted) setStatus((current) => current ?? { online: false, outcomeCount: 0, questionCount: 0, binaryCount: 0, quoteTokens: [], outcomes: [], questions: [], mids: {}, checkedAt: Date.now() });
-    });
-    void refreshMarkets();
-    const marketRefresh = window.setInterval(() => void refreshMarkets(), 15_000);
-    fetchHsxStatus(controller.signal).then(setHsx).catch(() => setHsx(null));
+    const sync = () => {
+      setView(routeView());
+      setRange(false);
+      const ticker = decodeURIComponent(
+        window.location.pathname.split("/")[2] ?? "",
+      );
+      setIndexDetail(INDEXES.some((i) => i.ticker === ticker) ? ticker : null);
+    };
+    sync();
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    fetch("/v1/markets")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => {
+        if (alive && Array.isArray(rows))
+          setNativeMarkets(rows.map(decodeNativeRecord));
+      })
+      .catch(() => {});
     return () => {
-      window.clearInterval(marketRefresh);
-      controller.abort();
+      alive = false;
+    };
+  }, [view]);
+  useEffect(() => {
+    localStorage.setItem(KEY, JSON.stringify(ledger));
+  }, [ledger]);
+  useEffect(() => {
+    let live = true;
+    const refresh = async () => {
+      try {
+        const [o, i] = await Promise.all([
+          fetch("/v1/oracle/status").then((r) => {
+            if (!r.ok) throw Error();
+            return r.json();
+          }),
+          fetch("/v1/indexes").then((r) => r.json()),
+        ]);
+        if (live) {
+          setOracle(o);
+          setCanonical(
+            Object.fromEntries(
+              i
+                .filter((v: { latest: unknown }) => v.latest)
+                .map(
+                  (v: {
+                    indexId: string;
+                    latest: Canonical[string];
+                    status: string;
+                  }) => [v.indexId, { ...v.latest, status: v.status }],
+                ),
+            ),
+          );
+        }
+      } catch {
+        if (live) setOracle({ status: "UNAVAILABLE" });
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      live = false;
+      clearInterval(timer);
     };
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(PAPER_PORTFOLIO_KEY, JSON.stringify(paperPredictions));
-  }, [paperPredictions]);
-  useEffect(() => {
-    localStorage.setItem(DEMO_PORTFOLIO_KEY, JSON.stringify(demoPredictions));
-  }, [demoPredictions]);
-
-  const systemText = useMemo(() => {
-    if (!status) return "CONNECTING TO HYPERCORE";
-    return status.online ? `HIP-4 META · ${status.outcomeCount} NETWORK OUTCOMES · VIEW` : "HIP-4 META OFFLINE · PAPER MODE";
-  }, [status]);
-  const worldCupMarkets = demoWorldCupMarkets;
-  const cupMarket = worldCupMarkets.find((market) => market.outcome === cupOutcomeId) ?? worldCupMarkets[0] ?? null;
-  const cupPrices = useMemo(() => {
-    if (!cupMarket) return { YES: 0, NO: 0 };
-    const fallback = demoWorldCupPrices[cupMarket.outcome] ?? { YES: 0.5, NO: 0.5 };
-    return { YES: fallback.YES, NO: fallback.NO };
-  }, [cupMarket]);
-  const activeCupKicks = cupMarket ? cupKicks[cupMarket.outcome] ?? { YES: 0, NO: 0 } : { YES: 0, NO: 0 };
-  const portfolioDisplay = useMemo<PortfolioDisplayEntry[]>(() => ([
-    ...demoPredictions.map((prediction) => ({
-      marketName: `World Cup Demo · ${prediction.marketName}`,
-      side: prediction.side,
-      amount: prediction.orderValue,
-      contracts: prediction.contracts,
-      entryPrice: Math.round(prediction.limitPrice * 100),
-      resolves: `Demo ref #${prediction.outcomeId}`,
-    })),
-    ...paperPredictions,
-  ]), [demoPredictions, paperPredictions]);
-
-  const handleEntered = useCallback(() => setEntered(true), []);
-  const handleWorldReady = useCallback(() => setWorldReady(true), []);
-  const handlePaperPrediction = useCallback((prediction: PaperPrediction) => {
-    setPaperPredictions((current) => [prediction, ...current]);
+  const portfolio = useMemo<PortfolioDisplayEntry[]>(
+    () =>
+      ledger.positions.map((p) => ({
+        marketName: p.name,
+        side: p.side,
+        contracts: money(p.tokens),
+        amount: money(p.spent),
+        entryPrice: (100 * money(p.spent)) / money(p.tokens),
+        resolves: demoMarkets.find((m) => m.id === p.marketId)?.resolves ?? "",
+      })),
+    [ledger.positions],
+  );
+  const select = useCallback((market: IndexMarket) => {
+    document.exitPointerLock?.();
+    setManagedSide(undefined);
+    setSelected(market);
   }, []);
-  const handleDemoPrediction = useCallback((prediction: DemoWorldCupPrediction) => {
-    setDemoPredictions((current) => [prediction, ...current.filter((item) => item.id !== prediction.id)]);
-  }, []);
-  const removePaperPrediction = useCallback((id: string) => {
-    setPaperPredictions((current) => current.filter((prediction) => prediction.id !== id));
-  }, []);
-  const removeDemoPrediction = useCallback((id: string) => {
-    setDemoPredictions((current) => current.filter((prediction) => prediction.id !== id));
-  }, []);
-  const openPortfolio = useCallback(() => {
-    setSelected(null);
-    setMarketList(false);
-    setHowOpen(false);
-    setHip4Open(false);
-    setPortfolioOpen(true);
-  }, []);
-  const handleAmmoChange = useCallback((magazine: number, reserve: number, reloading: boolean) => {
-    setAmmo({ magazine, reserve, reloading });
-  }, []);
-  const handleVote = useCallback((market: SkinMarket, side: VoteSide) => {
-    setVotes((current) => ({
-      ...current,
-      [market.id]: { ...current[market.id], [side]: current[market.id][side] + 1 },
-    }));
-    setLastVote({ market, side, at: Date.now() });
-  }, []);
-  const captureControls = useCallback(() => {
-    setEntered(true);
-    const canvas = document.querySelector<HTMLCanvasElement>(".world-canvas canvas");
-    canvas?.requestPointerLock();
-  }, []);
-  const openExperience = useCallback((next: "skins" | "worldcup") => {
-    if (next === experience) {
-      // The mounted WebGL world only emits `onReady` once. Re-selecting the
-      // active experience must not put the app back into an unrecoverable
-      // loading state.
-      setWorldReady(true);
-    } else {
-      setWorldReady(false);
-      setExperience(next);
-    }
-    setSelected(null);
-    setMarketList(false);
-    setHowOpen(false);
-    setPortfolioOpen(false);
-    setManualBurnOpen(false);
-    setHip4Open(false);
-  }, [experience]);
-  const handleCupKick = useCallback((side: VoteSide, multiplier: number) => {
-    if (!cupMarket) return;
-    setCupKicks((current) => ({
-      ...current,
-      [cupMarket.outcome]: {
-        YES: (current[cupMarket.outcome]?.YES ?? 0) + (side === "YES" ? multiplier : 0),
-        NO: (current[cupMarket.outcome]?.NO ?? 0) + (side === "NO" ? multiplier : 0),
+  const onVote = useCallback((market: IndexMarket, side: VoteSide) => {
+    setVotes((v) => ({
+      ...v,
+      [market.id]: {
+        ...(v[market.id] ?? zero),
+        [side]: (v[market.id]?.[side] ?? 0) + 1,
       },
     }));
-  }, [cupMarket]);
-  const connectWallet = useCallback(async () => {
-    try {
-      const { connectHyperliquidWallet } = await import("./liveOrder");
-      setWallet(await connectHyperliquidWallet());
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Wallet connection failed.");
-    }
   }, []);
-
+  const onAmmo = useCallback(
+    (magazine: number, _reserve: number, reloading: boolean) =>
+      setAmmo({ magazine, reloading }),
+    [],
+  );
+  const onReady = useCallback(() => setReady(true), []),
+    onEntered = useCallback(() => setEntered(true), []);
+  const openTokens = useCallback(() => {
+    document.exitPointerLock?.();
+    setRangePanel("foundry");
+  }, []);
+  const openChart = useCallback(() => {
+    document.exitPointerLock?.();
+    setRangePanel("chart");
+  }, []);
+  const nav = (v: View) => {
+    setRangePanel(null);
+    window.history.pushState({}, "", routes[v]);
+    document.exitPointerLock?.();
+    setRange(false);
+    setSelected(null);
+    setView(v);
+    setIndexDetail(null);
+    window.scrollTo(0, 0);
+  };
+  const openIndex = (ticker: string | null) => {
+    window.scrollTo(0, 0);
+    setView("Indexes");
+    setRange(false);
+    setIndexDetail(ticker);
+    window.history.pushState(
+      {},
+      "",
+      ticker ? `/indexes/${ticker}` : "/indexes",
+    );
+  };
+  const capture = () => {
+    setEntered(true);
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      ".world-canvas canvas",
+    );
+    void canvas
+      ?.requestPointerLock()
+      ?.catch(() =>
+        setNotice(
+          "This browser could not capture the mouse. Open the range in a regular browser window to use first-person controls.",
+        ),
+      );
+  };
+  const connect = async () => {
+    try {
+      setWallet(await (await signer()).getAddress());
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Connection failed");
+    }
+  };
+  const transact = (
+    market: IndexMarket,
+    side: VoteSide,
+    action: "BUY" | "SELL",
+    amount: bigint,
+  ) => {
+    const tape = ledger.reserves[market.id] ?? {
+      yes: "5000000000",
+      no: "5000000000",
+    };
+    const id = `${market.id}:${side}`,
+      position = ledger.positions.find((p) => p.id === id);
+    let next: Ledger;
+    if (Date.now() / 1000 >= market.definition.tradeCloseTime)
+      throw new Error(
+        "This market has closed. Reload to see the next canonical expiry.",
+      );
+    if (action === "BUY") {
+      if (amount > BigInt(ledger.balance))
+        throw new Error("Insufficient paper balance");
+      const q = quoteBuy(BigInt(tape.yes), BigInt(tape.no), side, amount);
+      const updated: Position = {
+        id,
+        marketId: market.id,
+        name: market.name,
+        side,
+        tokens: (
+          (position ? BigInt(position.tokens) : 0n) + q.tokens
+        ).toString(),
+        spent: ((position ? BigInt(position.spent) : 0n) + amount).toString(),
+        createdAt: Date.now(),
+      };
+      next = {
+        ...ledger,
+        balance: (BigInt(ledger.balance) - amount).toString(),
+        reserves: {
+          ...ledger.reserves,
+          [market.id]: { yes: q.yes.toString(), no: q.no.toString() },
+        },
+        positions: [updated, ...ledger.positions.filter((p) => p.id !== id)],
+      };
+    } else {
+      if (!position || amount > BigInt(position.tokens))
+        throw new Error("Insufficient outcome tokens");
+      const q = quoteSell(BigInt(tape.yes), BigInt(tape.no), side, amount);
+      const remaining = BigInt(position.tokens) - amount;
+      next = {
+        ...ledger,
+        balance: (BigInt(ledger.balance) + q.collateral).toString(),
+        reserves: {
+          ...ledger.reserves,
+          [market.id]: { yes: q.yes.toString(), no: q.no.toString() },
+        },
+        positions: ledger.positions.flatMap((p) =>
+          p.id !== id
+            ? [p]
+            : remaining
+              ? [
+                  {
+                    ...p,
+                    tokens: remaining.toString(),
+                    spent: (
+                      (BigInt(p.spent) * remaining) /
+                      BigInt(p.tokens)
+                    ).toString(),
+                  },
+                ]
+              : [],
+        ),
+      };
+    }
+    setLedger({
+      ...next,
+      events: [
+        {
+          at: Date.now(),
+          label: `${action} ${side} · ${market.name} · ${human(money(amount))} ${action === "BUY" ? "paper USD" : "tokens"}`,
+        },
+        ...ledger.events,
+      ].slice(0, 100),
+    });
+    setVotes((v) => ({
+      ...v,
+      [market.id]: { ...(v[market.id] ?? zero), [side]: 0 },
+    }));
+    setNotice("Paper trade saved to your portfolio.");
+  };
   return (
-    <main className={`app-shell ${experience === "worldcup" ? "cup-mode" : "range-mode"} ${worldReady ? "world-ready" : "world-loading"}`}>
-      {experience === "skins" ? (
-        <World
-          markets={paperMarkets}
-          onSelect={setSelected}
-          onProximity={setNearby}
-          entered={entered}
-          onEntered={handleEntered}
-          onLockChange={setControlsLocked}
-          onAmmoChange={handleAmmoChange}
-          onVote={handleVote}
-          votes={votes}
-          portfolio={portfolioDisplay}
-          onFurnace={() => setManualBurnOpen(true)}
-          onFurnaceProximity={setFurnaceNearby}
-          onReady={handleWorldReady}
-        />
-      ) : (
-        <SoccerWorld market={cupMarket} prices={cupPrices} kicks={activeCupKicks} onKick={handleCupKick} onReady={handleWorldReady} />
-      )}
-      {!worldReady && (
-        <div className="world-loader" role="status" aria-live="polite">
+    <main className={`native-app ${range ? "in-range" : ""}`}>
+      <header className="native-header">
+        <button
+          className="native-brand"
+          onClick={() => nav("Markets")}
+          aria-label="HyperStrike home"
+        >
           <img src="/brand/hyperstrike-mark.png" alt="" />
-          <span>{experience === "skins" ? "PREPARING PRICE RANGE" : "OPENING WORLD CUP DEMO"}</span>
-          <b>{experience === "skins" ? "LIGHTING · MARKETS · VIEW MODEL" : "STADIUM · RETIRED EVENT · PENALTY SYSTEM"}</b>
-          <i />
-        </div>
-      )}
-      <div className="vignette" />
-      {experience === "skins" && entered && !selected && !howOpen && !portfolioOpen && !hip4Open && !manualBurnOpen && (
-        <div className="bodycam-overlay" aria-hidden="true">
-          <div className="bodycam-rec"><i /> REC</div>
-          <div className="bodycam-id">HSX / BODYCAM 01<br /><span>HYPERCORE RANGE</span></div>
-          <div className="bodycam-brackets"><i /><i /><i /><i /></div>
-        </div>
-      )}
-      {experience === "skins" && entered && !selected && !manualBurnOpen && <div className="crosshair" aria-hidden="true"><i /><i /><i /><i /></div>}
-      {experience === "skins" && entered && furnaceNearby && !manualBurnOpen && !selected && (
-        <div className="interact-prompt furnace-prompt"><kbd>E</kbd><span>HYPEREVM FURNACE</span><strong>MANUALLY BURN $HSX</strong></div>
-      )}
-
-      <header>
-        <button className="brand" onClick={() => { setSelected(null); setPortfolioOpen(false); setHowOpen(false); setHip4Open(false); setManualBurnOpen(false); }}><img src="/brand/hyperstrike-mark.png" alt="" /><span className="brand-word"><i>HYPER</i>STRIKE</span><sup>RANGE 01</sup></button>
-        <nav>
-          <button className={experience === "worldcup" ? "event-active" : ""} onClick={() => openExperience("worldcup")}>WORLD CUP <b>DEMO</b></button>
-          <button className={experience === "skins" ? "range-active" : ""} onClick={() => openExperience("skins")}>SKIN RANGE</button>
-          <button onClick={() => { setPortfolioOpen(false); setHowOpen(false); setHip4Open(false); setMarketList((open) => !open); }}>MARKETS <b>{paperMarkets.length}</b></button>
-          <button onClick={() => { setPortfolioOpen(false); setMarketList(false); setHip4Open(false); setHowOpen(true); }}>HOW IT WORKS</button>
-          <button onClick={openPortfolio}>PORTFOLIO <b>{paperPredictions.length + demoPredictions.length}</b></button>
+          <span>
+            HYPER<span>STRIKE</span>
+          </span>
+        </button>
+        <nav aria-label="Primary">
+          {(
+            [
+              "Markets",
+              "Indexes",
+              "Create",
+              "Portfolio",
+              "Creators",
+              "HSX / STRIKE",
+              "Sports demo",
+            ] as View[]
+          ).map((v) => (
+            <button
+              key={v}
+              className={!range && view === v ? "active" : ""}
+              onClick={() =>
+                range && v === "HSX / STRIKE" ? openTokens() : nav(v)
+              }
+            >
+              {v}
+            </button>
+          ))}
         </nav>
-        <button className="wallet" disabled={experience === "worldcup"} onClick={() => void connectWallet()}>{experience === "worldcup" ? "DEMO · NO WALLET" : wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : "CONNECT WALLET"}</button>
+        <button
+          className={`range-toggle ${range ? "active" : ""}`}
+          onClick={() => {
+            setRangePanel(null);
+            document.exitPointerLock?.();
+            setRange((v) => !v);
+            if (!range) setReady(false);
+          }}
+        >
+          ⌖ {range ? "EXIT RANGE" : "ENTER RANGE"}
+        </button>
+        <button className="native-wallet" onClick={() => void connect()}>
+          {wallet ? wallet.slice(0, 6) + "…" + wallet.slice(-4) : "CONNECT"}
+        </button>
       </header>
-
-      <div className="status-stack">
-        <button className="system-status" onClick={() => { setSelected(null); setPortfolioOpen(false); setHowOpen(false); setMarketList(false); setHip4Open(true); }}><i className={status?.online ? "online" : ""} />{systemText}</button>
-        <div className="token-status"><i className={hsx?.supportsBurnFrom ? "online" : ""} />$HSX · {hsx ? `${formatSupply(hsx)} SUPPLY · BURN VERIFIED` : "CHECKING HYPEREVM"}</div>
-      </div>
-
-      {experience === "skins" && !entered && (
-        <section className="hero-panel">
-          <img className="hero-mark" src="/brand/hyperstrike-mark.png" alt="" />
-          <div className="eyebrow">HYPERCORE RANGE / SKIN PRICE OPERATIONS</div>
-          <h1>CALL THE<br /><em>NEXT PRICE.</em></h1>
-          <p>The world’s first prediction market built exclusively for CS2 skins. Aim at YES or NO. Every target hit stages one directional vote and one contract.</p>
-          <div className="hero-metrics"><span><b>3</b> PAPER SKIN MARKETS</span><span><b>{status?.outcomeCount ?? "—"}</b> NETWORK OUTCOMES</span><span><b>{hsx ? formatSupply(hsx) : "—"}</b> HSX SUPPLY</span></div>
-          <div className="hero-actions">
-            <button className="enter" onClick={captureControls}>DEPLOY TO RANGE <span>→</span></button>
-            <button className="browse" onClick={() => setMarketList(true)}>BROWSE IN 2D</button>
-            <button className="browse" onClick={() => setHowOpen(true)}>HOW IT WORKS</button>
-          </div>
-          <small>HOLD LMB: FULL AUTO · TARGET HIT: +1 VOTE / +1 CONTRACT · R: RELOAD · E: MARKET</small>
-        </section>
-      )}
-
-      {experience === "worldcup" && worldReady && !howOpen && !portfolioOpen && !hip4Open && (
+      {!range && view !== "Sports demo" && (
         <>
-          <section className="cup-selector">
-            <div className="cup-selector__heading"><span>RETIRED SPECIAL EVENT</span><strong>WORLD CUP DEMO</strong><small>{worldCupMarkets.length} DEMO OUTCOMES · NO LIVE ORDERS</small></div>
-            <div className="cup-country-list">
-              {worldCupMarkets.map((outcome) => {
-                const yes = Math.round((demoWorldCupPrices[outcome.outcome]?.YES ?? 0.5) * 100);
-                return <button key={outcome.outcome} className={cupMarket?.outcome === outcome.outcome ? "active" : ""} onClick={() => setCupOutcomeId(outcome.outcome)}><span>{outcome.name}</span><b>{yes}¢ YES</b><small>DEMO REF #{outcome.outcome}</small></button>;
-              })}
+          <div className="protocol-ribbon">
+            <span>
+              <i /> HYPEREVM · INDEX NATIVE
+            </span>
+            <span>
+              INDEX ALPHA <b>/</b> PAPER MARKET SANDBOX
+            </span>
+            <button onClick={() => nav("Indexes")}>
+              ORACLE {oracle?.status ?? "CONNECTING"} ↗
+            </button>
+          </div>
+          {(view === "Markets" || view === "Indexes") && (
+            <div className="ticker-strip">
+              {INDEXES.map((i) => (
+                <button
+                  key={i.ticker}
+                  onClick={() => {
+                    openIndex(i.ticker);
+                  }}
+                >
+                  <strong>{i.ticker}</strong>
+                  <span>{previewValue(indicative[i.indexId])}</span>
+                  <small>
+                    INDICATIVE · {indicative[i.indexId]?.status ?? "CONNECTING"}
+                  </small>
+                </button>
+              ))}
             </div>
-          </section>
-          <WorldCupOrderPanel market={cupMarket} prices={cupPrices} kicks={activeCupKicks} onSubmitted={handleDemoPrediction} />
-          <div className="cup-live-ribbon"><i /> WORLD CUP RETIRED · DEMO REPLAY · NO WALLET · NO BURN · NO HIP-4 ORDER</div>
+          )}
         </>
       )}
-
-      {experience === "skins" && entered && !selected && controlsLocked && <div className="controls"><kbd>WASD</kbd> MOVE <kbd>SHIFT</kbd> SPRINT <kbd>HOLD LMB</kbd> AUTO VOTE <kbd>E</kbd> MARKET <kbd>R</kbd> RELOAD <kbd>ESC</kbd> RELEASE</div>}
-      {experience === "skins" && entered && !selected && !controlsLocked && (
-        <button className="lock-prompt" onClick={captureControls}><span>WEAPON SAFE · CONTROLS PAUSED</span><strong>CLICK TO ARM FIRST-PERSON MODE</strong><small>WASD to move · hold LMB to fire · hit YES or NO to vote</small></button>
+      {range ? (
+        <>
+          <Suspense
+            fallback={<div className="range-loading">Preparing the range…</div>}
+          >
+            <World
+              quality={quality}
+              markets={demoMarkets}
+              onSelect={select}
+              onProximity={setNearby}
+              entered={entered}
+              onEntered={onEntered}
+              onLockChange={setLocked}
+              onAmmoChange={onAmmo}
+              onVote={onVote}
+              votes={votes}
+              portfolio={portfolio}
+              onFurnace={openTokens}
+              onFurnaceProximity={setNearFurnace}
+              onChart={openChart}
+              onChartProximity={setNearChart}
+              onReady={onReady}
+            />
+          </Suspense>
+          {!ready && (
+            <div className="range-loading">
+              LOADING MATERIALS / LIGHTING / VIEWMODEL
+            </div>
+          )}
+          <div className="range-tag">
+            RANGE 01 <span>INDEX MARKET SANDBOX</span>
+          </div>
+          <RangePerformance
+            quality={quality}
+            onQuality={(q) => {
+              setReady(false);
+              setQuality(q);
+            }}
+          />
+          {ready && !locked && !selected && !rangePanel && (
+            <button className="range-enter" onClick={capture}>
+              <span>THE ECONOMY IS YOUR TARGET.</span>
+              <strong>
+                {entered ? "RESUME OPERATION" : "DEPLOY TO THE RANGE"} ↗
+              </strong>
+              <small>
+                WASD move · Mouse aim · Hold to fire · E review · R reload
+              </small>
+            </button>
+          )}
+          {ready && !locked && !rangePanel && !selected && (
+            <div className="range-utilities">
+              <button onClick={openTokens}>STRIKE FOUNDRY ↗</button>
+              <button onClick={openChart}>$HSX CANDLE CHART ↗</button>
+            </div>
+          )}
+          {rangePanel && (
+            <RangeOverlay
+              title={
+                rangePanel === "foundry" ? "STRIKE FOUNDRY" : "HSX MARKET TAPE"
+              }
+              onClose={() => setRangePanel(null)}
+              onResume={() => {
+                setRangePanel(null);
+                capture();
+              }}
+            >
+              {rangePanel === "foundry" ? <StrikePanel /> : <HsxChartPanel />}
+            </RangeOverlay>
+          )}
+          {locked && !selected && (
+            <>
+              <div className="native-crosshair">
+                <i />
+                <i />
+              </div>
+              <div className="range-interact">
+                {nearFurnace ? (
+                  <>
+                    <kbd>E</kbd> OPEN STRIKE FOUNDRY
+                  </>
+                ) : nearChart ? (
+                  <>
+                    <kbd>E</kbd> EXPAND HSX CHART
+                  </>
+                ) : nearby ? (
+                  <>
+                    <kbd>E</kbd> REVIEW {nearby.name}
+                  </>
+                ) : (
+                  "Aim at YES or NO. One hit stages one contract."
+                )}
+              </div>
+            </>
+          )}
+          <div className="range-bottom">
+            <span>NO ORDER IS SENT UNTIL YOU REVIEW AND CONFIRM</span>
+            <strong>
+              {ammo.reloading ? "RELOADING" : `${ammo.magazine} / ∞`}
+            </strong>
+          </div>
+        </>
+      ) : view === "Sports demo" ? (
+        <Suspense
+          fallback={<div className="native-content">Opening sports demo…</div>}
+        >
+          <SportsDemo
+            onBack={() => nav("Markets")}
+            onPortfolio={() => {
+              setPortfolioTab("Sports demo");
+              nav("Portfolio");
+            }}
+          />
+        </Suspense>
+      ) : (
+        <div className="native-content">
+          {view === "Markets" && (
+            <>
+              {nativeMarkets.length > 0 && (
+                <section className="native-live-markets">
+                  <div className="section-heading">
+                    <h2>Native markets</h2>
+                    <span className="sandbox-label">
+                      HYPEREVM · REAL COLLATERAL
+                    </span>
+                  </div>
+                  <div className="native-market-grid">
+                    {nativeMarkets.map((m) => (
+                      <button
+                        key={m.address}
+                        className="native-market"
+                        onClick={() => setNativeSelected(m)}
+                      >
+                        <span className="overline">
+                          CANONICAL INDEX / NATIVE
+                        </span>
+                        <h3>{m.question}</h3>
+                        <p>
+                          {new Date(
+                            m.definition.resolutionTime * 1000,
+                          ).toLocaleString()}{" "}
+                          · Review market ↗
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <section className="native-hero">
+                <div className="hero-copy">
+                  <div className="overline">
+                    THE BALLISTIC PREDICTION MARKET
+                  </div>
+                  <h1>
+                    YOUR AIM.
+                    <br />
+                    YOUR <em>EDGE.</em>
+                  </h1>
+                  <p>
+                    Call the next move in the CS2 economy. Take a position on
+                    skins, knives and cases—or put your conviction downrange.
+                  </p>
+                  <div className="hero-ctas">
+                    <button
+                      className="primary"
+                      onClick={() => {
+                        setRange(true);
+                        setReady(false);
+                      }}
+                    >
+                      ENTER THE RANGE <span>↗</span>
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => nav("Indexes")}
+                    >
+                      EXPLORE THE INDEXES →
+                    </button>
+                  </div>
+                  <div className="hero-facts">
+                    <span>
+                      <b>05</b> CANONICAL INDEXES
+                    </span>
+                    <span>
+                      <b>02</b> FIXED OUTCOMES
+                    </span>
+                    <span>
+                      <b>0</b> LEVERAGE
+                    </span>
+                  </div>
+                </div>
+                <div className="hero-art">
+                  <img
+                    src="/brand/hyperstrike-world.jpg"
+                    alt="HyperStrike skin-economy concept art"
+                  />
+                  <div className="art-grid" />
+                  <div className="art-label">
+                    <span>THE BENCHMARK COMES FIRST.</span>
+                    <b>
+                      01 / INDEX
+                      <br />
+                      02 / POSITION
+                      <br />
+                      03 / RESOLUTION
+                    </b>
+                  </div>
+                  <div className="art-corner">HS / 003</div>
+                </div>
+              </section>
+              <div className="section-heading">
+                <div>
+                  <span>YOUR NEXT POSITION</span>
+                  <h2>
+                    Pick your next move.<span> / 05</span>
+                  </h2>
+                </div>
+                <span className="sandbox-label">
+                  ILLUSTRATIVE MARKETS · PAPER USD
+                </span>
+              </div>
+              <div className="market-toolbar">
+                <div className="segment-control" aria-label="Filter markets">
+                  {["ALL", ...INDEXES.map((i) => i.ticker)].map((t) => (
+                    <button
+                      key={t}
+                      aria-pressed={marketFilter === t}
+                      onClick={() => setMarketFilter(t)}
+                    >
+                      {t === "ALL" ? "All markets" : t.replace("HS-", "")}
+                    </button>
+                  ))}
+                </div>
+                <span>WEEKLY EXPIRY · SIMULATED PRICES</span>
+              </div>
+              <div className="native-market-grid">
+                {demoMarkets
+                  .filter(
+                    (m) => marketFilter === "ALL" || m.name === marketFilter,
+                  )
+                  .map((m) => (
+                    <button
+                      key={m.id}
+                      className="native-market"
+                      onClick={() => {
+                        setManagedSide(undefined);
+                        setSelected(m);
+                      }}
+                    >
+                      <div className="market-heading">
+                        <IndexBadge ticker={m.name} />
+                        <span>LEVEL / WEEKLY</span>
+                        <b>↗</b>
+                      </div>
+                      <IndexArtwork ticker={m.name} />
+                      <h3>{m.question}</h3>
+                      <p>{m.condition.toLowerCase()}</p>
+                      <div
+                        className="market-conviction"
+                        aria-label={`Paper YES price ${probability(ledger.reserves[m.id])} cents`}
+                      >
+                        <i
+                          style={{
+                            width: `${probability(ledger.reserves[m.id])}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="market-price">
+                        <span>
+                          YES <b>{probability(ledger.reserves[m.id])}¢</b>
+                        </span>
+                        <span>
+                          NO <b>{100 - probability(ledger.reserves[m.id])}¢</b>
+                        </span>
+                      </div>
+                      <div className="market-meta">
+                        <span>{m.resolves}</span>
+                        <span>TAKE A POSITION ↗</span>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              <section className="methodology-banner">
+                <span>01 → 02 → 03 → 04</span>
+                <h3>
+                  Real observations.
+                  <br />A benchmark you can verify.
+                </h3>
+                <p>
+                  Venue quotes feed constituent reference prices. Reference
+                  prices build canonical indexes. Markets settle only against
+                  those indexes.
+                </p>
+                <button onClick={() => nav("Indexes")}>
+                  READ THE METHODOLOGY ↗
+                </button>
+              </section>
+              <div className="dashboard-bottom">
+                <section>
+                  <h3>Recent settlements</h3>
+                  <p>
+                    No canonical settlements yet. Signed observations and
+                    resolutions appear here after the native pilot launches.
+                  </p>
+                </section>
+                <section>
+                  <h3>Creator opportunities</h3>
+                  <p>
+                    Claim a canonical slot with STRIKE. Seed a market. Earn 30%
+                    of its trading fees through resolution.
+                  </p>
+                  <button className="text-link" onClick={() => nav("Create")}>
+                    EXPLORE CANONICAL SLOTS →
+                  </button>
+                </section>
+                <section>
+                  <h3>Oracle health</h3>
+                  <span className="status-unavailable">
+                    {oracle?.status ?? "CONNECTING"}
+                  </span>
+                  <p>
+                    Canonical prices remain unavailable until independently
+                    verified sources and the signer quorum publish.
+                  </p>
+                </section>
+              </div>
+            </>
+          )}
+          {view === "Indexes" && (
+            <>
+              <div className="page-intro">
+                <span className="overline">THE BENCHMARK BEFORE THE BET</span>
+                <h1>{indexDetail ?? "Know what moves."}</h1>
+                <p>
+                  Five views of the skin economy. Real Skinport listing prices,
+                  frozen preview baskets and a base of 1,000. Indicative only —
+                  never used for settlement. Market collateral remains USDC.
+                </p>
+              </div>
+              {indexDetail ? (
+                <IndexDetail
+                  ticker={indexDetail}
+                  onBack={() => openIndex(null)}
+                  canonical={canonical}
+                  indicative={
+                    indicative[
+                      INDEXES.find((i) => i.ticker === indexDetail)!.indexId
+                    ]
+                  }
+                />
+              ) : (
+                <div className="index-grid">
+                  {INDEXES.map((i) => (
+                    <button
+                      className="index-detail-card"
+                      data-index={i.ticker}
+                      key={i.ticker}
+                      onClick={() => openIndex(i.ticker)}
+                    >
+                      <div>
+                        <IndexBadge ticker={i.ticker} />
+                        <span>{i.count} CONSTITUENTS</span>
+                      </div>
+                      <h2>{i.name}</h2>
+                      <IndexArtwork ticker={i.ticker} />
+                      <p>
+                        {i.ticker === "HS-BLUE20"
+                          ? "Preview: twenty premium weapon skins. A proxy basket, not yet the approved collectible index."
+                          : i.ticker === "HS-CASE20"
+                            ? "Preview: twenty cases listed on Skinport for at least 90 days. Equal-weight USD asks."
+                            : i.ticker === "HS-KNIFE20"
+                              ? "Preview: twenty knife configurations selected by listed inventory. Equal-weight USD asks."
+                              : i.ticker === "HS-GLOVE10"
+                                ? "Preview: ten glove configurations selected by listed inventory. Equal-weight USD asks."
+                                : "Preview: fifty configurations across knives, gloves, weapon skins, cases and premium weapons."}
+                      </p>
+                      <PreviewSummary index={indicative[i.indexId]} />
+                      <small>
+                        EXPLORE BASKET & METHODOLOGY <b>↗</b>
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {view === "Create" && (
+            <CreatorForm canonical={canonical} onNotice={setNotice} />
+          )}
+          {view === "Portfolio" && (
+            <>
+              <div className="page-intro portfolio-intro">
+                <span className="overline">YOUR CONTROL CENTER</span>
+                <h1>
+                  Conviction, <em>on record.</em>
+                </h1>
+                <p>
+                  Know what you hold. See what it means. Plan your next move.
+                </p>
+              </div>
+              <div className="portfolio-tabs" aria-label="Portfolio ledgers">
+                {(["Paper", "Onchain", "Sports demo", "Archive"] as const).map(
+                  (t) => (
+                    <button
+                      key={t}
+                      aria-pressed={portfolioTab === t}
+                      onClick={() => setPortfolioTab(t)}
+                    >
+                      {t}
+                      {t === "Paper" && <span>{ledger.positions.length}</span>}
+                    </button>
+                  ),
+                )}
+                <span className="ledger-status">
+                  {portfolioTab === "Onchain"
+                    ? "WALLET-VERIFIED HOLDINGS"
+                    : "LOCAL RECORDS · NO REAL FUNDS"}
+                </span>
+              </div>
+              {portfolioTab === "Onchain" && (
+                <NativePortfolio
+                  records={nativeMarkets}
+                  onSelect={setNativeSelected}
+                  onNotice={setNotice}
+                />
+              )}
+              {portfolioTab === "Paper" && (
+                <PaperPortfolio
+                  {...ledger}
+                  onSelect={(m, side) => {
+                    setManagedSide(side);
+                    setSelected(m);
+                  }}
+                  onExplore={() => nav("Markets")}
+                />
+              )}
+              {portfolioTab === "Sports demo" && (
+                <SportsDemoRecords onPlay={() => nav("Sports demo")} />
+              )}
+              {portfolioTab === "Archive" && <LegacyArchive />}
+            </>
+          )}
+          {view === "Creators" && (
+            <>
+              <div className="page-intro">
+                <span className="overline">
+                  BUILD THE MARKET. EARN YOUR SHARE.
+                </span>
+                <h1>
+                  Conviction
+                  <br />
+                  creates liquidity.
+                </h1>
+                <p>
+                  Creators choose a canonical index slot, burn one STRIKE and
+                  seed liquidity. The oracle controls settlement. You earn 30%
+                  of trading fees.
+                </p>
+              </div>
+              <div className="creator-steps">
+                {[
+                  [
+                    "01",
+                    "Find the opening",
+                    "Choose an index, direction, canonical threshold and expiry.",
+                  ],
+                  [
+                    "02",
+                    "Commit capacity",
+                    "Mint STRIKE with HSX and HYPE. Claim a slot for one STRIKE.",
+                  ],
+                  [
+                    "03",
+                    "Let the market work",
+                    "Earn your share of the 20 bps trading fee. Claim accrued fees independently of trading pauses.",
+                  ],
+                ].map(([n, t, p]) => (
+                  <section key={n}>
+                    <b>{n}</b>
+                    <h2>{t}</h2>
+                    <p>{p}</p>
+                  </section>
+                ))}
+              </div>
+              <button className="primary" onClick={() => nav("Create")}>
+                EXPLORE YOUR FIRST MARKET ↗
+              </button>
+              <div className="empty-state">
+                <NativePortfolio
+                  creatorOnly
+                  records={nativeMarkets}
+                  onSelect={setNativeSelected}
+                  onNotice={setNotice}
+                />
+              </div>
+            </>
+          )}
+          {view === "HSX / STRIKE" && <StrikePanel />}
+          <div className="native-footer">
+            <span>
+              HYPERSTRIKE <b>© {new Date().getFullYear()}</b>
+            </span>
+            <span>HYPEREVM / NATIVE MARKETS / INDEX ALPHA</span>
+            <span>BUILT FOR THE CS2 ECONOMY.</span>
+          </div>
+        </div>
       )}
-      {experience === "skins" && nearby && entered && !selected && controlsLocked && !furnaceNearby && !manualBurnOpen && <div className="interact-prompt"><kbd>E</kbd><span>MARKET TARGETED · PRESS TO OPEN</span><strong>{nearby.name}</strong></div>}
-      {experience === "skins" && entered && !nearby && !selected && controlsLocked && !furnaceNearby && !manualBurnOpen && <div className="aim-hint">HIT YES OR NO · 1 ROUND = 1 VOTE = 1 CONTRACT</div>}
-      {experience === "skins" && lastVote && entered && !selected && <div key={lastVote.at} className={`shot-vote ${lastVote.side.toLowerCase()}`}><b>+1 {lastVote.side} VOTE · +1 CONTRACT</b><span>{lastVote.market.name} · ORDER DRAFT UPDATED</span></div>}
-      {experience === "skins" && entered && !selected && (
-        <div className={`ammo-hud ${ammo.reloading ? "reloading" : ""}`}><span>{ammo.reloading ? "TACTICAL RELOAD" : "AK-47 · FULL AUTO"}</span><b>{String(ammo.magazine).padStart(2, "0")}</b><i>/</i><em>{Number.isFinite(ammo.reserve) ? String(ammo.reserve).padStart(2, "0") : "∞"}</em><small>1 HIT = 1 VOTE = 1 CONTRACT</small></div>
+      {selected && (
+        <TradeTicket
+          key={selected.id}
+          market={selected}
+          initialSide={managedSide}
+          initialAction={managedSide ? "SELL" : "BUY"}
+          votes={votes[selected.id] ?? zero}
+          tape={
+            ledger.reserves[selected.id] ?? {
+              yes: "5000000000",
+              no: "5000000000",
+            }
+          }
+          positions={ledger.positions}
+          onClose={() => {
+            setSelected(null);
+            setManagedSide(undefined);
+          }}
+          onTrade={transact}
+        />
       )}
-
-      <section className={`market-list ${experience === "skins" && marketList ? "open" : ""}`}>
-        <div className="market-list__header"><div><span>ACTIVE PRICE CALLS</span><b>HIP-4 · PAPER FIRE</b></div><button onClick={() => setMarketList(false)}>CLOSE ×</button></div>
-        {paperMarkets.map((market) => <MarketCard key={market.id} market={market} votes={votes[market.id]} onClick={() => { setSelected(market); setMarketList(false); }} />)}
-      </section>
-
-      {experience === "skins" && selected && <TradeDrawer market={selected} votes={votes[selected.id]} onClose={() => setSelected(null)} onSubmit={handlePaperPrediction} hsx={hsx} />}
-      {howOpen && <HowItWorks onClose={() => setHowOpen(false)} />}
-      {portfolioOpen && <PortfolioPanel predictions={paperPredictions} demoPredictions={demoPredictions} onClose={() => setPortfolioOpen(false)} onRemove={removePaperPrediction} onRemoveDemo={removeDemoPrediction} />}
-      {manualBurnOpen && <BurnFurnace hsx={hsx} onClose={() => setManualBurnOpen(false)} />}
-      {hip4Open && <Hip4Explorer status={status} onClose={() => setHip4Open(false)} />}
-
-      <footer>
-        <span>HYPERLIQUID</span><b>HIP-4 OUTCOMES</b><span>$HSX {HSX_ADDRESS.slice(0, 8)}…{HSX_ADDRESS.slice(-6)}</span>
-        <em>{experience === "worldcup" ? "DEMO REPLAY · STRIKE THE ARCHIVE" : "ENTER THE RANGE · CALL THE NEXT PRICE"}</em>
-      </footer>
+      {nativeSelected && (
+        <NativeTicket
+          record={nativeSelected}
+          onClose={() => setNativeSelected(null)}
+          onNotice={setNotice}
+        />
+      )}
+      {notice && (
+        <div className="native-toast" role="status">
+          {notice}
+          <button
+            aria-label="Dismiss notification"
+            onClick={() => setNotice("")}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </main>
   );
 }

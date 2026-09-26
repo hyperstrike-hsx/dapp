@@ -1,49 +1,10 @@
-import type { SkinMarket } from "./types";
-
-export const paperMarkets: SkinMarket[] = [
-  {
-    id: "ak47-slate-ft-6",
-    name: "AK-47 · Slate",
-    condition: "FIELD-TESTED",
-    question: "Will AK-47 Slate FT resolve at or above $6.00 on September 1?",
-    resolves: "SEP 01 · 16:00 UTC",
-    currentPrice: "$5.88",
-    change: 0,
-    yes: 48,
-    volume: "614/D STEAM",
-    accent: 0x8ef5e3,
-    image: "/skins/ak47-slate-ft.png",
-    marketUrl: "https://steamcommunity.com/market/listings/730/AK-47%20%7C%20Slate%20%28Field-Tested%29",
-    position: [-6, 0, -7],
-  },
-  {
-    id: "ak47-redline-ft-42",
-    name: "AK-47 · Redline",
-    condition: "FIELD-TESTED",
-    question: "Will AK-47 Redline FT resolve at or above $42.00 on September 1?",
-    resolves: "SEP 01 · 16:00 UTC",
-    currentPrice: "$41.68",
-    change: 0,
-    yes: 51,
-    volume: "141/D STEAM",
-    accent: 0xe89a42,
-    image: "/skins/ak47-redline-ft.png",
-    marketUrl: "https://steamcommunity.com/market/listings/730/AK-47%20%7C%20Redline%20%28Field-Tested%29",
-    position: [0, 0, -9],
-  },
-  {
-    id: "glock-water-elemental-ft-30",
-    name: "Glock-18 · Water Elemental",
-    condition: "FIELD-TESTED",
-    question: "Will Water Elemental FT resolve at or above $30.00 on September 1?",
-    resolves: "SEP 01 · 16:00 UTC",
-    currentPrice: "$28.06",
-    change: 0,
-    yes: 39,
-    volume: "63/D STEAM",
-    accent: 0x4fc9df,
-    image: "/skins/glock-water-elemental-ft.png",
-    marketUrl: "https://steamcommunity.com/market/listings/730/Glock-18%20%7C%20Water%20Elemental%20%28Field-Tested%29",
-    position: [6, 0, -7],
-  },
-];
+import {INDEXES,expiryTime,levelThresholds,marketKey,question,SETTLEMENT_POLICY_ID,type MarketDefinition} from "@hyperstrike/market-types";
+import type {IndexMarket} from "./types";
+export {INDEXES};
+// Illustrative sandbox. Never published to the oracle or presented as live prices.
+const now=Math.floor(Date.now()/1000);
+export const demoMarkets:IndexMarket[]=INDEXES.map((index,i)=>{
+  const resolutionTime=expiryTime("WEEKLY",now);
+  const definition:MarketDefinition={indexId:index.indexId,template:"LEVEL",direction:"UP",thresholdE8:levelThresholds(1000_00000000n,"WEEKLY")[3],creationReferenceTime:0,creationReferenceValueE8:0n,tradeCloseTime:resolutionTime-300,resolutionTime,settlementPolicyId:SETTLEMENT_POLICY_ID};
+  return {id:marketKey(definition),definition,provenance:"DEMO",name:index.ticker,condition:index.name.toUpperCase(),question:question(definition),resolves:new Date(resolutionTime*1000).toLocaleString("en-GB",{timeZone:"UTC",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+" UTC",currentPrice:"1,000.00",change:0,yes:50,volume:"DEMO",accent:i%2?0xe89a42:0x8ef5e3,position:([[-5.5,0,-6],[0,0,-8],[5.5,0,-6],[-4,0,-18],[4,0,-18]] as [number,number,number][])[i]};
+});

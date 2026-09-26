@@ -7,21 +7,28 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import type { PortfolioDisplayEntry, SkinMarket, VoteCount, VoteSide } from "./types";
+import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { withOpaqueOccluders } from "./opaqueOcclusion";
+import { drawHsxChart, subscribeHsxChart } from "./hsxChart";
+import type { PortfolioDisplayEntry, IndexMarket, VoteCount, VoteSide } from "./types";
 
 type Props = {
-  markets: SkinMarket[];
-  onSelect: (market: SkinMarket) => void;
-  onProximity: (market: SkinMarket | null) => void;
+  quality?: "HIGH" | "PERFORMANCE";
+  markets: IndexMarket[];
+  onSelect: (market: IndexMarket) => void;
+  onProximity: (market: IndexMarket | null) => void;
   entered: boolean;
   onEntered: () => void;
   onLockChange: (locked: boolean) => void;
   onAmmoChange: (magazine: number, reserve: number, reloading: boolean) => void;
-  onVote: (market: SkinMarket, side: VoteSide) => void;
+  onVote: (market: IndexMarket, side: VoteSide) => void;
   votes: Record<string, VoteCount>;
   portfolio: PortfolioDisplayEntry[];
   onFurnace: () => void;
   onFurnaceProximity: (nearby: boolean) => void;
+  onChart: () => void;
+  onChartProximity: (nearby: boolean) => void;
   onReady: () => void;
 };
 
@@ -118,8 +125,8 @@ const BODYCAM_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     time: { value: 0 },
-    distortion: { value: 0.105 },
-    aberration: { value: 0.0018 },
+    distortion: { value: 0.025 },
+    aberration: { value: 0.00012 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -153,19 +160,24 @@ const BODYCAM_SHADER = {
       float blue = texture2D(tDiffuse, uv - split).b;
       vec3 color = vec3(red, green, blue);
       float grain = hash(vUv * vec2(1919.0, 1079.0)) - 0.5;
-      color += grain * 0.018;
-      color *= 1.0 - smoothstep(0.5, 1.48, r2) * 0.42;
+      float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      color = mix(vec3(luminance), color, 1.12);
+      color = (color - 0.5) * 1.08 + 0.5;
+      color += vec3(-0.012, 0.018, 0.022) * (1.0 - smoothstep(0.18, 0.72, luminance));
+      color += vec3(0.024, 0.009, -0.012) * smoothstep(0.56, 1.0, luminance);
+      color += grain * 0.005;
+      color *= 1.0 - smoothstep(0.55, 1.5, r2) * 0.34;
       gl_FragColor = vec4(color, 1.0);
     }
   `,
 };
 
-function marketLightColor(market: SkinMarket, count?: VoteCount) {
+function marketLightColor(market: IndexMarket, count?: VoteCount) {
   if (!count || count.YES === count.NO) return market.accent;
   return count.YES > count.NO ? YES_LIGHT : NO_LIGHT;
 }
 
-function labelTexture(market: SkinMarket) {
+function labelTexture(market: IndexMarket) {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 512;
@@ -180,35 +192,35 @@ function labelTexture(market: SkinMarket) {
   ctx.fillRect(0, 0, 12, 512);
   ctx.fillRect(54, 60, 72, 5);
   ctx.font = "700 23px monospace";
-  ctx.letterSpacing = "6px";
-  ctx.fillText("HIP-4 · BALLISTIC PRICE CALL", 54, 110);
+  ctx.letterSpacing = "2px";
+  ctx.fillText("INDEX NATIVE · PAPER RANGE", 54, 110);
   ctx.fillStyle = "#effffc";
   ctx.font = "900 58px Arial";
   ctx.letterSpacing = "-2px";
   ctx.fillText(market.name.toUpperCase(), 54, 190, 840);
-  ctx.fillStyle = "#7aa5a9";
-  ctx.font = "700 20px monospace";
-  ctx.letterSpacing = "3px";
-  ctx.fillText(market.condition, 55, 232);
+  ctx.fillStyle = "#bed8d2";
+  ctx.font = "700 24px monospace";
+  ctx.letterSpacing = "1px";
+  ctx.fillText(market.condition, 55, 232, 910);
   ctx.strokeStyle = "#295057";
   ctx.beginPath();
   ctx.moveTo(54, 275);
   ctx.lineTo(955, 275);
   ctx.stroke();
-  ctx.fillStyle = "#8ab1b5";
-  ctx.font = "700 17px monospace";
+  ctx.fillStyle = "#bed8d2";
+  ctx.font = "700 23px monospace";
   ctx.fillText("YES", 55, 345);
   ctx.fillStyle = "#74f0bd";
   ctx.font = "900 76px Arial";
   ctx.fillText(`${market.yes}¢`, 52, 430);
-  ctx.fillStyle = "#658f94";
-  ctx.font = "700 17px monospace";
+  ctx.fillStyle = "#bed8d2";
+  ctx.font = "700 23px monospace";
   ctx.fillText("REFERENCE", 420, 345);
   ctx.fillStyle = accent;
   ctx.font = "800 40px monospace";
   ctx.fillText(market.currentPrice, 418, 408);
-  ctx.fillStyle = "#658f94";
-  ctx.font = "700 17px monospace";
+  ctx.fillStyle = "#bed8d2";
+  ctx.font = "700 23px monospace";
   ctx.fillText("VOLUME", 735, 345);
   ctx.fillStyle = "#e2f4f2";
   ctx.font = "800 34px monospace";
@@ -217,6 +229,20 @@ function labelTexture(market: SkinMarket) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
+}
+
+function indexExhibitTexture(market: IndexMarket) {
+  const canvas = document.createElement("canvas"); canvas.width = 1024; canvas.height = 512;
+  const c = canvas.getContext("2d")!;
+  c.fillStyle = "#071819"; c.fillRect(0, 0, 1024, 512);
+  c.strokeStyle = "#254a43"; c.lineWidth = 1;
+  for (let x=40;x<1024;x+=80) { c.beginPath();c.moveTo(x,40);c.lineTo(x,450);c.stroke(); }
+  for (let y=50;y<450;y+=70) { c.beginPath();c.moveTo(40,y);c.lineTo(984,y);c.stroke(); }
+  c.fillStyle="#9af5df";c.font="italic 900 104px Arial";c.fillText(market.name,45,180,930);
+  c.font="700 28px monospace";c.fillStyle="#88a9a0";c.fillText("BASE 1,000 / ILLUSTRATIVE INDEX",48,235);
+  c.strokeStyle="#9af5df";c.lineWidth=4;c.setLineDash([12,10]);c.beginPath();c.moveTo(45,315);c.lineTo(979,315);c.stroke();
+  c.setLineDash([]);c.fillStyle="#eea45d";c.font="700 23px monospace";c.fillText("NO INDIVIDUAL-ITEM PREDICTIONS",48,423);
+  const texture = new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture;
 }
 
 function wordmarkTexture() {
@@ -257,7 +283,7 @@ function wordmarkTexture() {
   ctx.fillStyle = "#78a7aa";
   ctx.font = "700 21px monospace";
   ctx.letterSpacing = "7px";
-  ctx.fillText("THE BALLISTIC PREDICTION MARKET FOR CS2 SKINS", 768, 274);
+  ctx.fillText("TRADE THE CS2 ECONOMY / CANONICAL INDEX MARKETS", 768, 274);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -310,10 +336,10 @@ function environmentSignTexture(title: string, subtitle: string) {
     ctx.font = `900 ${titleSize}px Arial`;
   }
   ctx.fillText(title, 52, 120);
-  ctx.fillStyle = "#79a7a9";
+  ctx.fillStyle = "#c1ddd7";
   ctx.font = "700 25px monospace";
-  ctx.letterSpacing = "7px";
-  ctx.fillText(subtitle, 55, 180);
+  ctx.letterSpacing = "2px";
+  ctx.fillText(subtitle, 55, 180, 910);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -485,20 +511,35 @@ function industrialTexture(kind: "concrete" | "metal" | "wood") {
 
 function rangeDecalTexture(label: string, detail: string, orange = false) {
   const canvas = document.createElement("canvas");
-  canvas.width = 768;
-  canvas.height = 384;
+  canvas.width = 1024;
+  canvas.height = 448;
   const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, 768, 384);
-  ctx.globalAlpha = 0.88;
-  ctx.fillStyle = orange ? "#e89a42" : "#8ef5e3";
-  ctx.font = "italic 900 210px Arial";
-  ctx.fillText(label, 24, 230);
-  ctx.globalAlpha = 0.7;
-  ctx.font = "800 30px monospace";
-  ctx.letterSpacing = "7px";
-  ctx.fillText(detail, 34, 308);
+  const accent = orange ? "#e89a42" : "#8ef5e3";
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#07171b");
+  gradient.addColorStop(1, "#02090c");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 9;
+  ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+  ctx.fillStyle = accent;
+  ctx.fillRect(10, 10, 22, canvas.height - 20);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#effffc";
+  ctx.font = "italic 900 146px Arial";
+  ctx.fillText(label, 72, 220);
+  ctx.fillStyle = accent;
+  ctx.font = "800 35px monospace";
+  ctx.letterSpacing = "5px";
+  ctx.fillText(detail, 78, 324);
+  ctx.fillStyle = "#668d8f";
+  ctx.font = "700 22px monospace";
+  ctx.letterSpacing = "3px";
+  ctx.fillText("HYPEREVM NATIVE / WAYFINDING", 79, 377);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
   return texture;
 }
 
@@ -524,7 +565,7 @@ function disposeEffect(effect: TimedEffect) {
   effect.object.removeFromParent();
 }
 
-export function World({ markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onReady }: Props) {
+export function World({ quality="HIGH", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const enteredRef = useRef(entered);
   const selectRef = useRef(onSelect);
@@ -536,7 +577,11 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
   const votesRef = useRef(votes);
   const furnaceRef = useRef(onFurnace);
   const furnaceProximityRef = useRef(onFurnaceProximity);
+  const chartRef = useRef(onChart);
+  const chartProximityRef = useRef(onChartProximity);
   const readyRef = useRef(onReady);
+  const portfolioRef = useRef(portfolio);
+  const lcdRefreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => { enteredRef.current = entered; }, [entered]);
   useEffect(() => { selectRef.current = onSelect; }, [onSelect]);
@@ -548,7 +593,10 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
   useEffect(() => { votesRef.current = votes; }, [votes]);
   useEffect(() => { furnaceRef.current = onFurnace; }, [onFurnace]);
   useEffect(() => { furnaceProximityRef.current = onFurnaceProximity; }, [onFurnaceProximity]);
+  useEffect(() => { chartRef.current = onChart; }, [onChart]);
+  useEffect(() => { chartProximityRef.current = onChartProximity; }, [onChartProximity]);
   useEffect(() => { readyRef.current = onReady; }, [onReady]);
+  useEffect(() => { portfolioRef.current = portfolio; lcdRefreshRef.current?.(); }, [portfolio]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -559,8 +607,8 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     loadingManager.itemStart("hyperstrike-world-bootstrap");
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x010204);
-    scene.fog = new THREE.FogExp2(0x04080d, 0.021);
+    scene.background = new THREE.Color(0x111b1b);
+    scene.fog = new THREE.FogExp2(0x1a2421, 0.012);
 
     const camera = new THREE.PerspectiveCamera(76, mount.clientWidth / mount.clientHeight, 0.08, 110);
     camera.position.set(0, 1.62, 7.2);
@@ -569,28 +617,53 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     const viewModelCamera = new THREE.PerspectiveCamera(54, mount.clientWidth / mount.clientHeight, 0.01, 12);
     viewModelCamera.position.set(0, 0, 0);
     viewModelScene.add(viewModelCamera);
-    viewModelScene.add(new THREE.HemisphereLight(0xe8f5f0, 0x15252a, 2.2));
+    viewModelScene.add(new THREE.HemisphereLight(0xfff2dd, 0x333537, 1.15));
 
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false });
-    const initialPixelRatio = Math.min(window.devicePixelRatio, 1.5);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", stencil: false });
+    // Stable resolution from the first frame: no delayed quality drop/rebuild.
+    const pixelBudget=quality==="HIGH"?2_800_000:1_300_000;
+    const initialPixelRatio = Math.min(window.devicePixelRatio, quality==="HIGH"?1.6:1.25, Math.sqrt(pixelBudget / (mount.clientWidth * mount.clientHeight)));
     renderer.setPixelRatio(initialPixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.68;
+    renderer.toneMappingExposure = 0.94;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.autoUpdate = false;
     renderer.autoClear = false;
-    renderer.debug.checkShaderErrors = false;
+    renderer.debug.checkShaderErrors = import.meta.env.DEV;
     mount.appendChild(renderer.domElement);
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     composer.setPixelRatio(initialPixelRatio);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.28, 0.22, 0.9);
+    const aoPass = new GTAOPass(scene, camera, mount.clientWidth, mount.clientHeight);
+    const renderAO = aoPass.render.bind(aoPass);
+    aoPass.render = (...args: Parameters<typeof aoPass.render>) =>
+      withOpaqueOccluders(scene, () => renderAO(...args));
+    aoPass.enabled = quality === "HIGH";
+    aoPass.updateGtaoMaterial({ radius: 0.48, samples: 8, distanceExponent: 1.5, thickness: 0.5, distanceFallOff: 1 });
+    aoPass.updatePdMaterial({ samples: 8, rings: 2, radius: 4 });
+    aoPass.blendIntensity = 0.48;
+    // Keep contact occlusion at half resolution independently of the sharp scene.
+    const sizeAO = aoPass.setSize.bind(aoPass);
+    aoPass.setSize = (w: number, h: number) => sizeAO(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
+    composer.addPass(aoPass);
+    const weaponPass = new RenderPass(viewModelScene, viewModelCamera);
+    weaponPass.clear = false;
+    weaponPass.clearDepth = true;
+    composer.addPass(weaponPass);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.19, 0.16, 1.2);
     composer.addPass(bloomPass);
     const bodycamPass = new ShaderPass(BODYCAM_SHADER);
     composer.addPass(bodycamPass);
+    const fxaaPass = new ShaderPass(FXAAShader);
+    fxaaPass.uniforms.resolution.value.set(
+      1 / (mount.clientWidth * initialPixelRatio),
+      1 / (mount.clientHeight * initialPixelRatio),
+    );
+    composer.addPass(fxaaPass);
     composer.addPass(new OutputPass());
 
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -600,19 +673,19 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       if (disposed) { hdr.dispose(); return; }
       environmentMap = pmrem.fromEquirectangular(hdr).texture;
       scene.environment = environmentMap;
-      scene.environmentIntensity = 0.54;
+      scene.environmentIntensity = 0.42;
       viewModelScene.environment = environmentMap;
-      viewModelScene.environmentIntensity = 1.25;
+      viewModelScene.environmentIntensity = 0.45;
       hdr.dispose();
       pmrem.dispose();
     });
 
     scene.add(new THREE.AmbientLight(0x172b34, 0.1));
-    scene.add(new THREE.HemisphereLight(0x467b87, 0x010203, 0.32));
-    const key = new THREE.DirectionalLight(0x87b8c8, 0.84);
+    scene.add(new THREE.HemisphereLight(0xe9e2d2, 0x454039, 1.25));
+    const key = new THREE.DirectionalLight(0xffedd0, 2.6);
     key.position.set(-9, 12, 8);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.left = -18;
     key.shadow.camera.right = 18;
     key.shadow.camera.top = 16;
@@ -620,8 +693,10 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     key.shadow.camera.near = 1;
     key.shadow.camera.far = 58;
     key.shadow.bias = -0.00035;
+    key.shadow.normalBias = 0.025;
+    key.shadow.radius = 2;
     scene.add(key);
-    const coolFill = new THREE.DirectionalLight(0x13e5ff, 0.36);
+    const coolFill = new THREE.DirectionalLight(0xadd7cc, 0.65);
     coolFill.position.set(12, 6, 5);
     scene.add(coolFill);
     const rim = new THREE.DirectionalLight(0xe8fffb, 0.24);
@@ -630,7 +705,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     const orangeBounce = new THREE.PointLight(0xff7a22, 18, 15, 2);
     orangeBounce.position.set(-7, 2.4, -10);
     scene.add(orangeBounce);
-    const cyberCyan = new THREE.SpotLight(0x13e5ff, 48, 30, 0.38, 0.68, 1.4);
+    const cyberCyan = new THREE.SpotLight(0x9af5df, 24, 30, 0.38, 0.68, 1.4);
     cyberCyan.position.set(-8, 5.6, 5);
     cyberCyan.target.position.set(1, 1.2, -18);
     const cyberOrange = new THREE.SpotLight(0xff6a1a, 44, 30, 0.4, 0.68, 1.4);
@@ -643,16 +718,14 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.15), emergencyMaterial);
       fixture.position.set(-9.54, 3.25, z);
       scene.add(fixture);
-      const emergency = new THREE.PointLight(0xff174d, 18, 8, 2);
-      emergency.position.set(-8.9, 3.1, z);
-      scene.add(emergency);
+      // Emissive emergency fixtures share the architectural fill; avoid three extra lights.
     }
 
     const shootableObjects: THREE.Object3D[] = [];
     const furnaceMeshes: THREE.Mesh[] = [];
     const environmentTextures: THREE.Texture[] = [];
     const textureLoader = new THREE.TextureLoader(loadingManager);
-    const concreteRoot = "/textures/concrete-floor-worn-001";
+    const concreteRoot = "/textures/concrete_floor_worn_001-2k";
     const floorDiffuse = textureLoader.load(`${concreteRoot}/diffuse.jpg`);
     const floorNormal = textureLoader.load(`${concreteRoot}/normal-gl.jpg`);
     const floorRoughness = textureLoader.load(`${concreteRoot}/roughness.jpg`);
@@ -664,13 +737,17 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       texture.repeat.set(7, 10);
       texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
     });
-    const wallDiffuse = floorDiffuse.clone();
-    const wallNormal = floorNormal.clone();
-    const wallRoughness = floorRoughness.clone();
-    const wallTextures = [wallDiffuse, wallNormal, wallRoughness];
+    const wallRoot = "/textures/brick_wall_001-2k";
+    const wallDiffuse = textureLoader.load(`${wallRoot}/diffuse.jpg`);
+    wallDiffuse.colorSpace = THREE.SRGBColorSpace;
+    const wallNormal = textureLoader.load(`${wallRoot}/normal-gl.jpg`);
+    const wallRoughness = textureLoader.load(`${wallRoot}/roughness.jpg`);
+    const wallAo = textureLoader.load(`${wallRoot}/ao.jpg`);
+    const wallTextures = [wallDiffuse, wallNormal, wallRoughness, wallAo];
     wallTextures.forEach((texture) => {
-      texture.repeat.set(2, 6);
-      texture.needsUpdate = true;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(12, 1.5);
+      texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
     });
     const metalTexture = industrialTexture("metal");
     const woodTexture = industrialTexture("wood");
@@ -720,14 +797,14 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       wetEdge.scale.set(spec.sx * 1.06, spec.sz * 1.12, 1);
       scene.add(wetEdge);
       const puddle = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial({
-        color: 0x577e8d,
-        roughness: 0.08,
-        metalness: 0.12,
+        color: 0x424e48,
+        roughness: 0.19,
+        metalness: 0,
         clearcoat: 1,
         clearcoatRoughness: 0.04,
-        envMapIntensity: 2.2,
+        envMapIntensity: 0.55,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.36,
       }));
       puddle.rotation.x = -Math.PI / 2;
       puddle.rotation.z = spec.rotation;
@@ -751,7 +828,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     scene.add(centerLane);
 
     const architecture = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0xb6c3c1, roughness: 0.48, metalness: 0.62, envMapIntensity: 1.05 });
-    const wallInset = new THREE.MeshStandardMaterial({ map: wallDiffuse, normalMap: wallNormal, normalScale: new THREE.Vector2(1.55, 1.55), roughnessMap: wallRoughness, color: 0xaeb6af, roughness: 0.92, metalness: 0.02 });
+    const wallInset = new THREE.MeshStandardMaterial({ map: wallDiffuse, normalMap: wallNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughnessMap: wallRoughness, aoMap: wallAo, aoMapIntensity: 0.4, color: 0xe4d6c8, roughness: 0.93, metalness: 0 });
     for (const x of [-10, 10]) {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 8, 48), architecture);
       wall.position.set(x, 4, -9);
@@ -760,6 +837,8 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       shootableObjects.push(wall);
       const inset = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.2, 42), wallInset);
       inset.position.set(x * 0.96, 2.3, -9);
+      inset.geometry.setAttribute("uv1", inset.geometry.attributes.uv.clone());
+      inset.receiveShadow = true;
       scene.add(inset);
       shootableObjects.push(inset);
     }
@@ -788,7 +867,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     };
 
     const structural = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0x8fa1a2, metalness: 0.72, roughness: 0.42, envMapIntensity: 1.1 });
-    const concrete = new THREE.MeshStandardMaterial({ map: wallDiffuse, normalMap: wallNormal, normalScale: new THREE.Vector2(1.45, 1.45), roughnessMap: wallRoughness, color: 0xb8beb7, metalness: 0.02, roughness: 0.94 });
+    const concrete = new THREE.MeshStandardMaterial({ map: floorDiffuse, normalMap: floorNormal, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: floorRoughness, color: 0xc3c1aa, metalness: 0.02, roughness: 0.94 });
     const crateMaterial = new THREE.MeshStandardMaterial({ map: woodTexture, bumpMap: woodTexture, bumpScale: 0.025, color: 0xc49a6c, metalness: 0.04, roughness: 0.78 });
     const bayZ = [4, -2, -8, -14, -20, -26];
     instance([0.42, 5.3, 0.6], structural, bayZ.flatMap((z) => [-9.45, 9.45].map((x) => ({ position: [x, 2.65, z] as [number, number, number] }))));
@@ -828,18 +907,18 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     ]);
 
     const decalSpecs = [
-      { label: "A →", detail: "SKIN PRICE RANGE", x: -9.51, z: -9.2, rotation: Math.PI / 2, orange: true },
-      // Center the label in the clear bay between the z=-20 and z=-26 columns.
-      { label: "← B", detail: "HIP-4 OUTCOMES", x: 9.51, z: -23, rotation: -Math.PI / 2, orange: false },
+      // Keep signs centered in clear six-metre bays so structural columns never crop the copy.
+      { label: "RANGE A  →", detail: "CS2 INDEX MARKETS", x: -9.505, z: -11, rotation: Math.PI / 2, orange: true },
+      { label: "←  CONTROL", detail: "PORTFOLIO / INDEX INTELLIGENCE", x: 9.505, z: -23, rotation: -Math.PI / 2, orange: false },
     ];
     decalSpecs.forEach((decal) => {
       const texture = rangeDecalTexture(decal.label, decal.detail, decal.orange);
       environmentTextures.push(texture);
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.6, 1.8),
-        new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false }),
+        new THREE.PlaneGeometry(4.8, 2.1),
+        new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
       );
-      mesh.position.set(decal.x, 2.3, decal.z);
+      mesh.position.set(decal.x, 2.45, decal.z);
       mesh.rotation.y = decal.rotation;
       scene.add(mesh);
     });
@@ -866,8 +945,8 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     }
 
     const rangeSigns = [
-      { title: "1 ROUND = 1 VOTE", subtitle: "1 CONTRACT · HIT YES OR NO", position: [-6.65, 2.35, -12.4] as [number, number, number], rotation: 0.08 },
-      { title: "$HSX ARMS THE CALL", subtitle: "HYPEREVM · BURN GATE", position: [7.65, 2.25, -18] as [number, number, number], rotation: -0.28 },
+      { title: "1 HIT = 1 CONTRACT", subtitle: "AIM YES / NO · E TO REVIEW · CONFIRM TO SUBMIT", position: [-9.35, 2.6, -17] as [number, number, number], rotation: Math.PI / 2 },
+      { title: "HSX → STRIKE", subtitle: "MINT CAPACITY · CREATE MARKETS", position: [9.35, 2.6, -17] as [number, number, number], rotation: -Math.PI / 2 },
     ];
     rangeSigns.forEach((sign) => {
       const texture = environmentSignTexture(sign.title, sign.subtitle);
@@ -923,7 +1002,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     const furnaceLight = new THREE.PointLight(0xff6817, 34, 10, 2);
     furnaceLight.position.set(0, 1.7, 1.8);
     furnace.add(furnaceLight);
-    const furnaceSignTexture = environmentSignTexture("$HSX FURNACE", "E · MANUAL SUPPLY BURN");
+    const furnaceSignTexture = environmentSignTexture("STRIKE FOUNDRY", "E · EXPLORE MARKET CAPACITY");
     environmentTextures.push(furnaceSignTexture);
     const furnaceSign = new THREE.Mesh(new THREE.PlaneGeometry(3.25, 0.82), new THREE.MeshBasicMaterial({ map: furnaceSignTexture, toneMapped: false }));
     furnaceSign.position.set(0, 4.15, 0.66);
@@ -1009,18 +1088,44 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     sunShaft.position.copy(sun.position);
     sunShaft.target.position.set(1.5, 0, -10.3);
     sunShaft.castShadow = true;
-    sunShaft.shadow.mapSize.set(512, 512);
+    sunShaft.shadow.mapSize.set(1024, 1024);
     scene.add(sunShaft, sunShaft.target);
     [2, -10.4, -22.8].forEach((z, index) => {
-      const practical = new THREE.PointLight(index === 1 ? 0xffcf98 : 0xbfffee, 22, 12, 2);
+      const practical = new THREE.PointLight(index === 1 ? 0xffe0af : 0xe1eee2, 60, 16, 2);
       practical.position.set(index === 1 ? -2.8 : 2.8, 5.35, z);
       scene.add(practical);
     });
+
+    // Real spotlights + atmospheric fog; no camera-facing rectangular "shafts".
 
     const backWall = new THREE.Mesh(new THREE.BoxGeometry(20, 7, 0.6), architecture);
     backWall.position.set(0, 3.5, -29);
     scene.add(backWall);
     shootableObjects.push(backWall);
+    // The previously blank entrance end of the room is a physical market-tape wall.
+    const frontWall = new THREE.Mesh(new THREE.BoxGeometry(20, 8, 0.6), architecture);
+    frontWall.position.set(0, 4, 10);
+    scene.add(frontWall);
+    shootableObjects.push(frontWall);
+    const chartFrame = new THREE.Mesh(new THREE.BoxGeometry(12.4, 6.4, 0.16), new THREE.MeshStandardMaterial({ color: 0x132a29, metalness: 0.7, roughness: 0.35 }));
+    chartFrame.position.set(0, 3.8, 9.62);
+    scene.add(chartFrame);
+    const chartCanvas = document.createElement("canvas");
+    drawHsxChart(chartCanvas, null);
+    const chartTexture = new THREE.CanvasTexture(chartCanvas);
+    chartTexture.colorSpace = THREE.SRGBColorSpace;
+    chartTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    environmentTextures.push(chartTexture);
+    const chartScreen = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), new THREE.MeshBasicMaterial({ map: chartTexture, toneMapped: false }));
+    chartScreen.position.set(0, 3.8, 9.52);
+    chartScreen.rotation.y = Math.PI;
+    scene.add(chartScreen);
+    shootableObjects.push(chartScreen);
+    const unsubscribeChart = subscribeHsxChart(data => {
+      if (disposed) return;
+      drawHsxChart(chartCanvas, data);
+      chartTexture.needsUpdate = true;
+    });
     const wordmark = new THREE.Mesh(
       new THREE.PlaneGeometry(12, 2.5),
       new THREE.MeshBasicMaterial({ map: wordmarkTexture(), transparent: true, toneMapped: false }),
@@ -1085,7 +1190,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       screenFrame.userData.marketIndex = index;
       group.add(screenFrame);
       interactiveMeshes.push(screenFrame);
-      const screenMaterial = new THREE.MeshBasicMaterial({ map: labelTexture(market), color: new THREE.Color(1.18, 1.18, 1.18), toneMapped: false });
+      const screenMaterial = new THREE.MeshBasicMaterial({ map: labelTexture(market), toneMapped: false });
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.28, 1.78), screenMaterial);
       screen.position.set(0, 2.72, -0.315);
       screen.userData.marketIndex = index;
@@ -1093,21 +1198,18 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       interactiveMeshes.push(screen);
       screenMaterials.push(screenMaterial);
 
-      const skinTexture = textureLoader.load(market.image);
+      const skinTexture = indexExhibitTexture(market);
       skinTexture.colorSpace = THREE.SRGBColorSpace;
       skinTexture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       skinTextures.push(skinTexture);
       const officialSkin = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.25, 3.25),
+        new THREE.PlaneGeometry(3.0, 1.5),
         new THREE.MeshBasicMaterial({
           map: skinTexture,
-          transparent: true,
-          alphaTest: 0.025,
-          depthWrite: false,
           toneMapped: false,
         }),
       );
-      officialSkin.position.set(0, 1.28, 0.2);
+      officialSkin.position.set(0, 1.3, 0.2);
       officialSkin.userData.marketIndex = index;
       group.add(officialSkin);
       interactiveMeshes.push(officialSkin);
@@ -1115,7 +1217,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       (["YES", "NO"] as VoteSide[]).forEach((side, sideIndex) => {
         const texture = outcomeTexture(side);
         voteTextures.push(texture);
-        const voteMaterial = new THREE.MeshBasicMaterial({ map: texture, color: new THREE.Color(1.35, 1.35, 1.35), toneMapped: false });
+        const voteMaterial = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
         const target = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.53), voteMaterial);
         target.position.set(sideIndex === 0 ? -0.88 : 0.88, 0.73, 0.52);
         target.userData.marketIndex = index;
@@ -1131,6 +1233,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
 
     const targetMeshes: THREE.Mesh[] = [];
     const committedExposure = portfolio.reduce((sum, entry) => sum + entry.amount, 0);
+    const lcdMaterials: THREE.MeshBasicMaterial[] = [];
     const controlCenter = new THREE.Group();
     controlCenter.position.set(0, 0, -25.7);
     const controlShell = new THREE.MeshStandardMaterial({ color: 0x0b2429, metalness: 0.82, roughness: 0.26, envMapIntensity: 1.2 });
@@ -1162,8 +1265,17 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       );
       screen.position.set(x, y, -0.155);
       controlCenter.add(screen);
+      lcdMaterials.push(screen.material);
     });
-    [-5.8, -2.9, 0, 2.9, 5.8].forEach((x, index) => {
+    lcdRefreshRef.current = () => {
+      const entries = portfolioRef.current;
+      lcdMaterials.forEach((material, index) => {
+        material.map?.dispose();
+        material.map = controlCenterTexture(index === 0 ? null : entries[index - 1] ?? null, index, entries.length, entries.reduce((sum, e) => sum + e.amount, 0));
+        material.needsUpdate = true;
+      });
+    };
+    [0].forEach((x, index) => {
       const keyLight = new THREE.PointLight(index % 2 ? STRIKE_ORANGE : BRAND, 6, 4.5, 2);
       keyLight.position.set(x, 3.7, 0.25);
       controlCenter.add(keyLight);
@@ -1176,7 +1288,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     controlCenter.add(consoleStrip);
     scene.add(controlCenter);
 
-    const dustCount = 180;
+    const dustCount = 280;
     const dustPositions = new Float32Array(dustCount * 3);
     for (let i = 0; i < dustCount; i += 1) {
       dustPositions[i * 3] = (Math.random() - 0.5) * 20;
@@ -1187,7 +1299,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     dustGeometry.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
     const dust = new THREE.Points(
       dustGeometry,
-      new THREE.PointsMaterial({ color: 0xbffff4, size: 0.022, transparent: true, opacity: 0.58, depthWrite: false }),
+      new THREE.PointsMaterial({ color: 0xd5fff8, size: 0.026, transparent: true, opacity: 0.64, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     scene.add(dust);
 
@@ -1199,8 +1311,10 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     scene.add(scanningLine);
 
     const viewWeapon = new THREE.Group();
-    viewWeapon.position.set(0.68, -0.68, -1.5);
-    viewWeapon.rotation.set(0.11, 0.34, 0.025);
+    const shoulder = new THREE.Vector3(0.38, -0.42, -1.22);
+    const weaponRotation = new THREE.Euler(0.035, 0.11, 0.015);
+    viewWeapon.position.copy(shoulder);
+    viewWeapon.rotation.copy(weaponRotation);
     viewModelScene.add(viewWeapon);
     const muzzleAnchor = new THREE.Object3D();
     muzzleAnchor.position.set(-0.4, 0.42, -0.45);
@@ -1223,11 +1337,11 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
         materials.forEach((material) => {
           if (!(material instanceof THREE.MeshStandardMaterial)) return;
           const wood = material.name.includes("Material_2");
-          material.metalness = wood ? 0.04 : 0.82;
-          material.roughness = wood ? 0.42 : 0.26;
-          material.envMapIntensity = wood ? 0.8 : 1.45;
+          material.metalness = wood ? 0 : 0.7;
+          material.roughness = wood ? 0.76 : 0.52;
+          material.envMapIntensity = wood ? 0.3 : 0.7;
           material.map = wood ? weaponWoodTexture : weaponMetalTexture;
-          material.color.set(wood ? 0xd5a36d : 0xb7c4c3);
+          material.color.set(wood ? 0xa16a43 : 0x90928c);
           material.needsUpdate = true;
         });
       });
@@ -1260,6 +1374,9 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
         muzzleAnchor.position.copy(localOrigin);
         const localDirection = viewWeapon.worldToLocal(muzzleWorld.clone().add(boreDirection)).sub(localOrigin).normalize();
         muzzleAnchor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), localDirection);
+        const convergence = new THREE.Vector3(0, 0, -16).sub(muzzleWorld).normalize();
+        viewWeapon.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(boreDirection, convergence));
+        weaponRotation.copy(viewWeapon.rotation);
       }
       const magazine = object.getObjectByName("AK-47 2 Mag 1");
       if (magazine) {
@@ -1272,8 +1389,8 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       if (weaponBolt) boltBasePosition.copy(weaponBolt.position);
     });
 
-    const weaponLight = new THREE.PointLight(0xc9fff7, 7, 4, 2);
-    weaponLight.position.set(0.3, 0.2, -0.7);
+    const weaponLight = new THREE.PointLight(0xffe9ca, 1.6, 4, 2);
+    weaponLight.position.set(-0.6, 0.8, -0.4);
     viewModelScene.add(weaponLight);
     const muzzle = new THREE.PointLight(0xff9c43, 0, 5, 2);
     muzzleAnchor.add(muzzle);
@@ -1316,6 +1433,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
     let muzzleEnergy = 0;
     let lastTargeted = -1;
     let furnaceTargeted = false;
+    let chartTargeted = false;
     let lastFrameTime = performance.now();
     const magazineSize = 30;
     const fireInterval = 92;
@@ -1404,7 +1522,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
 
     const requestLock = () => {
       if (!enteredRef.current) enteredEventRef.current();
-      if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
+      if (document.pointerLockElement !== renderer.domElement) void renderer.domElement.requestPointerLock()?.catch(() => { firing = false; });
     };
     const onPointerLockChange = () => {
       const locked = document.pointerLockElement === renderer.domElement;
@@ -1453,11 +1571,15 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       if (event.button === 0) firing = false;
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.pointerLockElement !== renderer.domElement) return;
       keys.add(event.code);
       if (event.repeat) return;
       if (event.code === "KeyR") startReload();
       if (event.code === "KeyE" && furnaceTargeted) {
         furnaceRef.current();
+        document.exitPointerLock();
+      } else if (event.code === "KeyE" && chartTargeted) {
+        chartRef.current();
         document.exitPointerLock();
       } else if (event.code === "KeyE" && lastTargeted >= 0) {
         selectRef.current(markets[lastTargeted]);
@@ -1487,13 +1609,6 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
         const measuredFps = Math.round((fpsFrames * 1000) / fpsElapsed);
         mount.dataset.fps = String(measuredFps);
         lowFpsSamples = measuredFps < 54 ? lowFpsSamples + 1 : 0;
-        if (lowFpsSamples >= 2 && adaptivePixelRatio > 1) {
-          adaptivePixelRatio = Math.max(1, adaptivePixelRatio - 0.2);
-          renderer.setPixelRatio(adaptivePixelRatio);
-          composer.setPixelRatio(adaptivePixelRatio);
-          renderer.setSize(mount.clientWidth, mount.clientHeight);
-          composer.setSize(mount.clientWidth, mount.clientHeight);
-        }
         fpsFrames = 0;
         fpsSampleStarted = now;
       }
@@ -1547,14 +1662,14 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       const lateralBob = moving ? Math.cos(now * 0.0055) * 0.012 : Math.sin(now * 0.0017) * 0.003;
       const reloadSwing = reloading ? Math.sin(smooth01(reloadProgress) * Math.PI) : 0;
       viewWeapon.position.set(
-        0.68 + lateralBob - lookKickX * 2.2 - reloadSwing * 0.18,
-        -0.68 + walkBob + recoil + lookKickY * 1.6 - reloadSwing * 0.18,
-        -1.5 + reloadSwing * 0.12,
+        shoulder.x + lateralBob - lookKickX * 0.9 - reloadSwing * 0.18,
+        shoulder.y + walkBob + recoil + lookKickY * 0.7 - reloadSwing * 0.18,
+        shoulder.z + reloadSwing * 0.12,
       );
       viewWeapon.rotation.set(
-        0.11 + recoil * 1.15 + lookKickY * 0.9 + reloadSwing * 0.3,
-        0.34 + lookKickX * 1.1 + reloadSwing * 0.52,
-        0.025 - lookKickX * 0.8 - reloadSwing * 0.52,
+        weaponRotation.x + recoil * 0.6 + lookKickY * 0.45 + reloadSwing * 0.3,
+        weaponRotation.y + lookKickX * 0.55 + reloadSwing * 0.52,
+        weaponRotation.z - lookKickX * 0.4 - reloadSwing * 0.52,
       );
       if (weaponMagazine) {
         weaponMagazine.position.copy(magazineBasePosition);
@@ -1592,7 +1707,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
           stationRingMaterials[index].color.setHex(color).multiplyScalar(3.2);
         }
         const targeted = index === lastTargeted;
-        screenMaterials[index].color.setScalar(targeted ? 1.5 : 1.18);
+        screenMaterials[index].color.setScalar(targeted ? 1.08 : 1);
         group.scale.setScalar(THREE.MathUtils.lerp(group.scale.x, targeted ? 1.03 : 1, 0.1));
       });
 
@@ -1607,7 +1722,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       voteMeshes.forEach((target) => {
         const elapsed = now - (target.userData.hitAt ?? -1000);
         const pulse = elapsed < 180 ? Math.sin((elapsed / 180) * Math.PI) : 0;
-        (target.material as THREE.MeshBasicMaterial).color.setScalar(1.35 + pulse * 1.4);
+        (target.material as THREE.MeshBasicMaterial).color.setScalar(1 + pulse * 0.15);
         target.scale.setScalar(1 + pulse * 0.08);
       });
 
@@ -1634,7 +1749,7 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       });
       furnaceLight.intensity = 29 + Math.sin(now * 0.012) * 9;
       bodycamPass.uniforms.time.value = now;
-      renderer.toneMappingExposure = THREE.MathUtils.lerp(renderer.toneMappingExposure, 0.66 + Math.sin(now * 0.00037) * 0.025, Math.min(1, dt * 1.4));
+      renderer.toneMappingExposure = 0.94;
       camera.updateMatrixWorld(true);
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const aimed = raycaster.intersectObjects(interactiveMeshes, false).find((hit) => hit.distance <= 22);
@@ -1654,6 +1769,11 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
         proximityRef.current(targeted >= 0 ? markets[targeted] : null);
       }
       const nextFurnaceTargeted = raycaster.intersectObjects(furnaceMeshes, false).some((hit) => hit.distance <= 9);
+      const nextChartTargeted = raycaster.intersectObject(chartScreen, false).some(hit => hit.distance <= 22);
+      if (nextChartTargeted !== chartTargeted) {
+        chartTargeted = nextChartTargeted;
+        chartProximityRef.current(chartTargeted);
+      }
       if (nextFurnaceTargeted !== furnaceTargeted) {
         furnaceTargeted = nextFurnaceTargeted;
         furnaceProximityRef.current(furnaceTargeted);
@@ -1661,11 +1781,10 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
 
       renderer.clear();
       composer.render(dt);
-      renderer.clearDepth();
-      renderer.render(viewModelScene, viewModelCamera);
     };
     const startRendering = () => {
       if (disposed || frame) return;
+      renderer.shadowMap.needsUpdate = true;
       frame = requestAnimationFrame(animate);
       readyRef.current();
     };
@@ -1679,11 +1798,17 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       viewModelCamera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
+      fxaaPass.uniforms.resolution.value.set(
+        1 / (mount.clientWidth * adaptivePixelRatio),
+        1 / (mount.clientHeight * adaptivePixelRatio),
+      );
     };
     window.addEventListener("resize", onResize);
 
     return () => {
       disposed = true;
+      unsubscribeChart();
+      lcdRefreshRef.current = null;
       cancelAnimationFrame(frame);
       loadingManager.onLoad = () => {};
       window.removeEventListener("resize", onResize);
@@ -1717,11 +1842,14 @@ export function World({ markets, onSelect, onProximity, entered, onEntered, onLo
       environmentTextures.forEach((texture) => texture.dispose());
       environmentMap?.dispose();
       pmrem.dispose();
+      lcdMaterials.forEach(material => material.map?.dispose());
+      composer.passes.forEach(pass => pass.dispose());
       composer.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
-  }, [markets, portfolio]);
+  }, [markets, quality]);
 
   return <div className="world-canvas" ref={mountRef} aria-label="HyperStrike first-person ballistic price range" />;
 }

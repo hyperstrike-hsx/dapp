@@ -4,6 +4,11 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
+import { withOpaqueOccluders } from "./opaqueOcclusion";
+import { addStadiumDetail, footballTexture } from "./stadiumDetail";
 import type { Hip4Outcome } from "./hip4";
 import type { VoteCount, VoteSide } from "./types";
 
@@ -18,8 +23,9 @@ type Props = {
   market: Hip4Outcome | null;
   prices: { YES: number; NO: number };
   kicks: VoteCount;
-  onKick: (side: VoteSide, multiplier: number) => void;
+  onKick: (side: VoteSide, multiplier: number, outcomeId: number) => void;
   onReady: () => void;
+  paused?: boolean;
 };
 
 function drawTarget(canvas: HTMLCanvasElement, side: VoteSide, country: string, price: number, active: boolean) {
@@ -145,9 +151,9 @@ function pitchTexture(renderer: THREE.WebGLRenderer) {
   const stripeWidth = canvas.width / 12;
   for (let stripe = 0; stripe < 12; stripe += 1) {
     const gradient = ctx.createLinearGradient(stripe * stripeWidth, 0, (stripe + 1) * stripeWidth, 0);
-    gradient.addColorStop(0, stripe % 2 ? "#06172b" : "#08223a");
-    gradient.addColorStop(0.5, stripe % 2 ? "#071d34" : "#0a2943");
-    gradient.addColorStop(1, stripe % 2 ? "#051426" : "#071f35");
+    gradient.addColorStop(0, stripe % 2 ? "#25442b" : "#305336");
+    gradient.addColorStop(0.5, stripe % 2 ? "#325638" : "#446f42");
+    gradient.addColorStop(1, stripe % 2 ? "#243d29" : "#345538");
     ctx.fillStyle = gradient;
     ctx.fillRect(stripe * stripeWidth, 0, stripeWidth + 1, canvas.height);
   }
@@ -207,19 +213,21 @@ function disposeScene(scene: THREE.Scene) {
     object.geometry.dispose();
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     materials.forEach((material) => {
-      if ("map" in material && material.map instanceof THREE.Texture) material.map.dispose();
+      for (const value of Object.values(material)) if (value instanceof THREE.Texture) value.dispose();
       material.dispose();
     });
   });
 }
 
-export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
+export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = false }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const marketRef = useRef(market);
   const pricesRef = useRef(prices);
   const kicksRef = useRef(kicks);
   const kickRef = useRef(onKick);
   const readyRef = useRef(onReady);
+  const pausedRef = useRef(paused);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
   const gaugeFillRef = useRef<HTMLElement>(null);
   const gaugeNumberRef = useRef<HTMLElement>(null);
   const focusCutinRef = useRef<HTMLDivElement>(null);
@@ -235,6 +243,19 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    let disposed = false;
+    const manager = new THREE.LoadingManager();
+    manager.itemStart("stadium-bootstrap");
+    const loader = new THREE.TextureLoader(manager);
+    const surfaceTextures: THREE.Texture[] = [];
+    const loadMap = (url: string, repeatX: number, repeatY: number, srgb: boolean, apply: (map: THREE.Texture) => void) => {
+      loader.load(url, map => {
+        if (disposed) { map.dispose(); return; }
+        map.wrapS=map.wrapT=THREE.RepeatWrapping;map.repeat.set(repeatX,repeatY);
+        if (srgb) map.colorSpace=THREE.SRGBColorSpace;
+        map.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());surfaceTextures.push(map);apply(map);
+      }, undefined, () => { mount.dataset.materialStatus = "fallback"; });
+    };
     KICK_CUTINS.forEach((source) => {
       const image = new Image();
       image.decoding = "async";
@@ -243,30 +264,44 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     const scene = new THREE.Scene();
     const skyTexture = stadiumSkyTexture();
     scene.background = skyTexture;
-    scene.fog = new THREE.FogExp2(0x02040e, 0.013);
+    scene.fog = new THREE.FogExp2(0x0a1716, 0.008);
     const camera = new THREE.PerspectiveCamera(56, mount.clientWidth / mount.clientHeight, 0.08, 100);
     camera.position.set(0, 2.85, 10.6);
     camera.lookAt(0, 1.35, -6.7);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-    const renderPixelRatio = Math.min(devicePixelRatio, 1.5);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", stencil: false });
+    const renderPixelRatio = Math.min(devicePixelRatio, 1.75, Math.sqrt(2_800_000 / (mount.clientWidth * mount.clientHeight)));
     renderer.setPixelRatio(renderPixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.74;
-    renderer.shadowMap.enabled = false;
+    renderer.toneMappingExposure = 1.02;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.autoUpdate = false;
     mount.appendChild(renderer.domElement);
+    renderer.domElement.tabIndex = 0;
+    renderer.domElement.setAttribute("aria-label", "Penalty pitch. Left arrow selects YES, right arrow selects NO, Space kicks.");
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     composer.setPixelRatio(renderPixelRatio);
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.26, 0.2, 0.9));
+    const ao = new GTAOPass(scene,camera,mount.clientWidth,mount.clientHeight);
+    const aoRender = ao.render.bind(ao);
+    ao.render = (...args: Parameters<typeof ao.render>) => withOpaqueOccluders(scene,()=>aoRender(...args));
+    ao.updateGtaoMaterial({radius:.42,samples:8,thickness:.45,distanceFallOff:1});
+    ao.updatePdMaterial({samples:8,rings:2,radius:3});ao.blendIntensity=.3;
+    const sizeAo=ao.setSize.bind(ao);ao.setSize=(w,h)=>sizeAo(Math.max(1,Math.floor(w/2)),Math.max(1,Math.floor(h/2)));
+    composer.addPass(ao);
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.14, 0.18, 1.65));
+    const fxaa=new ShaderPass(FXAAShader);fxaa.uniforms.resolution.value.set(1/(mount.clientWidth*renderPixelRatio),1/(mount.clientHeight*renderPixelRatio));composer.addPass(fxaa);
     composer.addPass(new OutputPass());
 
-    scene.add(new THREE.HemisphereLight(0x527b77, 0x010506, 0.28));
-    const moon = new THREE.DirectionalLight(0x8ef5e3, 0.82);
+    scene.add(new THREE.HemisphereLight(0xb1d6ca, 0x263328, 0.85));
+    const moon = new THREE.DirectionalLight(0xf0f5df, 2.6);
     moon.position.set(-8, 14, 8);
+    moon.target.position.set(0,0,-9);scene.add(moon.target);
+    moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);moon.shadow.camera.left=-22;moon.shadow.camera.right=22;moon.shadow.camera.top=24;moon.shadow.camera.bottom=-24;moon.shadow.camera.far=65;moon.shadow.normalBias=.035;moon.shadow.bias=-.00015;
     scene.add(moon);
     const cyan = new THREE.SpotLight(0x8ef5e3, 75, 38, 0.42, 0.6, 1.2);
     cyan.position.set(-8, 10, 5);
@@ -277,15 +312,29 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     scene.add(cyan, cyan.target, magenta, magenta.target);
 
     const fieldMap = pitchTexture(renderer);
+    const turf = new THREE.MeshStandardMaterial({map:fieldMap,color:0xb2cf9c,roughness:.92,metalness:0,vertexColors:true,normalScale:new THREE.Vector2(.65,.65)});
+    const turfGeometry = new THREE.PlaneGeometry(24,44,24,88);
+    const turfColors=[];
+    for(let i=0;i<turfGeometry.attributes.position.count;i++) {
+      const y=turfGeometry.attributes.position.getY(i);
+      const stripe = Math.floor((y+22)/2.75)%2 ? .84 : 1;
+      turfColors.push(stripe,stripe,stripe);
+    }
+    turfGeometry.setAttribute("color",new THREE.Float32BufferAttribute(turfColors,3));
+    turfGeometry.setAttribute("uv1",turfGeometry.attributes.uv.clone());
+    loadMap("/textures/grass_ground-2k/diffuse.jpg",12,22,true,map=>{turf.map=map;turf.needsUpdate=true;});
+    loadMap("/textures/grass_ground-2k/normal-gl.jpg",12,22,false,map=>{turf.normalMap=map;turf.needsUpdate=true;});
+    loadMap("/textures/grass_ground-2k/roughness.jpg",12,22,false,map=>{turf.roughnessMap=map;turf.needsUpdate=true;});
+    loadMap("/textures/grass_ground-2k/ao.jpg",12,22,false,map=>{turf.aoMap=map;turf.aoMapIntensity=.45;turf.needsUpdate=true;});
     const field = new THREE.Mesh(
-      new THREE.PlaneGeometry(24, 44, 1, 1),
-      new THREE.MeshPhysicalMaterial({ map: fieldMap, color: 0xffffff, roughness: 0.34, metalness: 0.22, clearcoat: 0.88, clearcoatRoughness: 0.12 }),
+      turfGeometry,
+      turf,
     );
     field.rotation.x = -Math.PI / 2;
     field.position.z = -6;
     field.receiveShadow = true;
     scene.add(field);
-    const lineMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xeff3ee).multiplyScalar(1.4), transparent: true, opacity: 0.82, toneMapped: false });
+    const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xd9e0c9, roughness:.98, metalness:0 });
     const addPitchLine = (x: number, z: number, width: number, depth: number) => {
       const line = new THREE.Mesh(new THREE.BoxGeometry(width, 0.012, depth), lineMaterial);
       line.position.set(x, 0.022, z);
@@ -295,53 +344,63 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       addPitchLine(x, -6, 0.055, 38);
     }
     addPitchLine(0, -9, 17, 0.055);
-    addPitchLine(0, -3.35, 12, 0.055);
-    addPitchLine(-6, -6.175, 0.055, 5.65);
-    addPitchLine(6, -6.175, 0.055, 5.65);
-    addPitchLine(0, -6.9, 7, 0.055);
-    addPitchLine(-3.5, -7.95, 0.055, 2.1);
-    addPitchLine(3.5, -7.95, 0.055, 2.1);
+    addPitchLine(0, 3.2, 14.5, 0.075);
+    addPitchLine(-7.25, -2.9, 0.075, 12.2);
+    addPitchLine(7.25, -2.9, 0.075, 12.2);
+    addPitchLine(0, -5.8, 11, 0.075);
+    addPitchLine(-5.5, -7.4, 0.075, 3.2);
+    addPitchLine(5.5, -7.4, 0.075, 3.2);
     const penaltySpot = new THREE.Mesh(new THREE.CircleGeometry(0.09, 20), lineMaterial);
     penaltySpot.rotation.x = -Math.PI / 2;
     penaltySpot.position.set(0, 0.024, 1.65);
     scene.add(penaltySpot);
-    const penaltyArc = new THREE.Mesh(new THREE.RingGeometry(2.65, 2.7, 64, 1, Math.PI, Math.PI), lineMaterial);
+    const arcCut = Math.asin((3.2 - 1.65) / 2.7);
+    const penaltyArc = new THREE.Mesh(new THREE.RingGeometry(2.65, 2.7, 64, 1, Math.PI + arcCut, Math.PI - 2 * arcCut), lineMaterial);
     penaltyArc.rotation.x = -Math.PI / 2;
     penaltyArc.position.set(0, 0.024, 1.65);
     scene.add(penaltyArc);
 
-    const standMaterial = new THREE.MeshStandardMaterial({ color: 0x03091b, metalness: 0.78, roughness: 0.34 });
-    for (const x of [-11.2, 11.2]) {
+    const standMaterial = new THREE.MeshStandardMaterial({ color: 0x68776e, metalness: 0, roughness: .88 });
+    loadMap("/textures/concrete_floor_worn_001-2k/diffuse.jpg",4,4,true,map=>{standMaterial.map=map;standMaterial.needsUpdate=true;});
+    loadMap("/textures/concrete_floor_worn_001-2k/normal-gl.jpg",4,4,false,map=>{standMaterial.normalMap=map;standMaterial.normalScale.set(.35,.35);standMaterial.needsUpdate=true;});
+    for (const x of [-1, 1]) {
       for (let level = 0; level < 7; level += 1) {
-        const stand = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.7, 38), standMaterial);
-        stand.position.set(x + Math.sign(x) * level * 0.65, 0.4 + level * 0.72, -6);
+        const height=(level+1)*.72;
+        const stand = new THREE.Mesh(new THREE.BoxGeometry(.76, height, 38), standMaterial);
+        stand.position.set(x * (9.55 + level * .75), height/2, -6);
+        stand.receiveShadow=true;
         scene.add(stand);
       }
     }
     for (let level = 0; level < 8; level += 1) {
-      const endStand = new THREE.Mesh(new THREE.BoxGeometry(22, 0.62, 3.5), standMaterial);
-      endStand.position.set(0, 0.42 + level * 0.68, -18.5 - level * 0.42);
+      const height=(level+1)*.68;
+      const endStand = new THREE.Mesh(new THREE.BoxGeometry(22, height, .71), standMaterial);
+      endStand.position.set(0, height/2, -18 - level * .7);
+      endStand.receiveShadow=true;
       scene.add(endStand);
     }
 
     const seatedCrowd: number[] = [];
     for (const side of [-1, 1]) {
       for (let level = 0; level < 7; level += 1) {
-        for (let lane = 0; lane < 3; lane += 1) {
+        for (let lane = 0; lane < 1; lane += 1) {
           for (let seat = 0; seat < 75; seat += 1) {
-            seatedCrowd.push(side * (9.05 + level * 0.64 + lane * 0.23), 0.81 + level * 0.72 + lane * 0.018, 10.5 - seat * 0.5);
+            if (seat % 18 < 2) continue;
+            seatedCrowd.push(side * (9.55 + level * .75), 1.57 + level * .72, 10.5 - seat * 0.5);
           }
         }
       }
     }
     for (let level = 0; level < 8; level += 1) {
-      for (let lane = 0; lane < 3; lane += 1) {
+      for (let lane = 0; lane < 1; lane += 1) {
         for (let seat = 0; seat < 44; seat += 1) {
-          seatedCrowd.push(-10.25 + seat * 0.48, 0.79 + level * 0.68 + lane * 0.018, -17.9 - level * 0.42 - lane * 0.34);
+          if (seat % 15 < 2) continue;
+          seatedCrowd.push(-10.25 + seat * 0.48, 1.53 + level * .68, -18 - level * .7);
         }
       }
     }
     const crowdCount = seatedCrowd.length / 3;
+    const stadiumDetail=addStadiumDetail(scene,seatedCrowd,standMaterial);
     const crowdPositions = Float32Array.from(seatedCrowd);
     const crowdBaseY = new Float32Array(crowdCount);
     const crowdPhase = new Float32Array(crowdCount);
@@ -358,7 +417,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     const crowdMaterial = new THREE.PointsMaterial({ size: 0.098, vertexColors: true, transparent: true, opacity: 0.94, depthWrite: false, blending: THREE.AdditiveBlending });
     scene.add(new THREE.Points(crowdGeometry, crowdMaterial));
 
-    const neonMaterial = (color: number) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3.2), toneMapped: false });
+    const neonMaterial = (color: number) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2), toneMapped: false });
     for (const x of [-8.2, 8.2]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 39), neonMaterial(x < 0 ? 0x8ef5e3 : 0xe89a42));
       rail.position.set(x, 0.11, -6);
@@ -381,7 +440,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     flagPlacements.forEach((position, index) => {
       const geometry = new THREE.PlaneGeometry(2.05, 1.25, 14, 7);
       const base = Float32Array.from((geometry.attributes.position as THREE.BufferAttribute).array as ArrayLike<number>);
-      const flag = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ map: supporterFlagTexture(index), side: THREE.DoubleSide, transparent: true, opacity: 0.94, toneMapped: false }));
+      const flag = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ map: supporterFlagTexture(index), side: THREE.DoubleSide, roughness:.95, metalness:0 }));
       flag.position.set(...position);
       flag.rotation.y = position[0] < -7 ? Math.PI * 0.2 : position[0] > 7 ? -Math.PI * 0.2 : 0;
       scene.add(flag);
@@ -401,25 +460,31 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       scene.add(light);
       flareLights.push(light);
       for (let particle = 0; particle < 20; particle += 1) {
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeMap, color: particle % 4 === 0 ? 0xff7357 : 0xf00b43, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeMap, color: particle % 4 === 0 ? 0xff7357 : 0xf00b43, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.NormalBlending, toneMapped: false }));
         sprite.position.copy(origin);
         scene.add(sprite);
         flareSprites.push({ sprite, origin, phase: particle / 20 + flareIndex * 0.17, speed: 0.55 + Math.random() * 0.4 });
       }
     });
 
-    const floodlightMaterials = [0x8ef5e3, 0xe89a42].map((color) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3.9), toneMapped: false }));
+    const floodlightMaterials = [0xd5fff0, 0xffe7c7].map((color) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.8), toneMapped: false }));
     for (const x of [-10.4, 10.4]) {
       for (const z of [7, -5, -17]) {
         const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 9, 8), standMaterial);
         mast.position.set(x, 4.5, z);
         scene.add(mast);
         const bankColorIndex = (x < 0 ? 0 : 1) as 0 | 1;
-        const bank = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.72, 0.12), floodlightMaterials[bankColorIndex]);
+        const bank = new THREE.Group();
+        bank.add(new THREE.Mesh(new THREE.BoxGeometry(2.5,.78,.16),new THREE.MeshStandardMaterial({color:0x2c3d38,metalness:.75,roughness:.4})));
+        for(let column=0;column<5;column++)for(let row=0;row<2;row++) {
+          const cell=new THREE.Mesh(new THREE.BoxGeometry(.36,.24,.04),floodlightMaterials[bankColorIndex]);
+          cell.position.set((column-2)*.46,(row-.5)*.34,.11);bank.add(cell);
+        }
         bank.position.set(x, 8.9, z);
         bank.lookAt(0, 1.2, z - 8);
         scene.add(bank);
-        const flood = new THREE.SpotLight(bankColorIndex === 0 ? 0x8ef5e3 : 0xe89a42, 34, 32, 0.52, 0.78, 1.3);
+        if(z !== -5) continue; // Two broad practical fills, not six overlapping per-pixel lights.
+        const flood = new THREE.SpotLight(bankColorIndex === 0 ? 0xdbffed : 0xffd9ab, 100, 40, 0.7, 0.78, 1.3);
         flood.position.set(x, 8.7, z);
         flood.target.position.set(Math.sign(x) * 2.2, 0, z - 7);
         scene.add(flood, flood.target);
@@ -438,7 +503,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
 
     const goal = new THREE.Group();
     goal.position.z = -9;
-    const postMaterial = new THREE.MeshStandardMaterial({ color: 0xcffff6, emissive: 0x8ef5e3, emissiveIntensity: 2.1, metalness: 0.52, roughness: 0.18 });
+    const postMaterial = new THREE.MeshStandardMaterial({ color: 0xe8f0df, emissive: 0x8ef5e3, emissiveIntensity: .12, metalness: 0.25, roughness: 0.36 });
     const post = (height: number, rotationZ = 0) => {
       const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, height, 12), postMaterial);
       mesh.rotation.z = rotationZ;
@@ -450,11 +515,23 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     const crossbar = post(8.3, Math.PI / 2); crossbar.position.set(0, 3.3, 0);
     goal.add(leftPost, rightPost, crossbar);
     const netPoints: number[] = [];
-    for (let x = -4.1; x <= 4.11; x += 0.41) netPoints.push(x, 0, 0.05, x, 3.28, 0.05);
-    for (let y = 0; y <= 3.3; y += 0.33) netPoints.push(-4.1, y, 0.05, 4.1, y, 0.05);
+    // Back, roof and side netting: a goal has depth, not a grid across its mouth.
+    for (let x=-4.1;x<=4.11;x+=.205) {
+      netPoints.push(x,0,-2,x,3.28,-1.3,x,3.28,-1.3,x,3.28,0);
+    }
+    for(let y=0;y<=3.3;y+=.205) {
+      const z=-2+y/3.28*.7;netPoints.push(-4.1,y,z,4.1,y,z);
+      for(const x of [-4.1,4.1]) netPoints.push(x,y,0,x,y,z);
+    }
+    for(let z=-1.3;z<=0;z+=.2) netPoints.push(-4.1,3.28,z,4.1,3.28,z);
+    for(const x of [-4.1,4.1]) for(let z=-1.2;z<0;z+=.2) netPoints.push(x,0,z,x,3.28,z);
     const netGeometry = new THREE.BufferGeometry();
     netGeometry.setAttribute("position", new THREE.Float32BufferAttribute(netPoints, 3));
-    goal.add(new THREE.LineSegments(netGeometry, new THREE.LineBasicMaterial({ color: 0xe89a42, transparent: true, opacity: 0.42 })));
+    const netRest=Float32Array.from(netPoints);
+    goal.add(new THREE.LineSegments(netGeometry, new THREE.LineBasicMaterial({ color: 0xc1cbbb, transparent: true, opacity: 0.62 })));
+    for(const x of [-4.15,4.15]) {
+      const foot=new THREE.Mesh(new THREE.BoxGeometry(.09,.09,2.1),postMaterial);foot.position.set(x,.045,-1);goal.add(foot);
+    }
     scene.add(goal);
 
     const targetCanvases = [document.createElement("canvas"), document.createElement("canvas")];
@@ -477,8 +554,8 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     scene.add(scoreboard);
 
     const ball = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 28, 18),
-      new THREE.MeshStandardMaterial({ color: 0xf1f5f2, roughness: 0.48, metalness: 0.04, emissive: 0x164154, emissiveIntensity: 0.2 }),
+      new THREE.SphereGeometry(0.22, 40, 24),
+      new THREE.MeshStandardMaterial({ map: footballTexture(), color: 0xf1f5f2, roughness: 0.66, metalness: 0 }),
     );
     const ballStart = new THREE.Vector3(0, 0.24, 1.65);
     ball.position.copy(ballStart);
@@ -529,6 +606,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     let kickStarted = 0;
     let kicking = false;
     let kickSide: VoteSide = "YES";
+    let kickOutcome = 0;
     let registered = false;
     let lastUiKey = "";
     let gaugePower = 1;
@@ -537,10 +615,11 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
     let kickCutinIndex = 0;
     const chooseSide = (side: VoteSide) => { if (!kicking) aimedSide = side; };
     const startKick = () => {
-      if (kicking || !marketRef.current) return;
+      if (kicking || !marketRef.current || pausedRef.current) return;
       kicking = true;
       registered = false;
       kickSide = aimedSide;
+      kickOutcome = marketRef.current.outcome;
       capturedMultiplier = Math.round(gaugePower);
       kickStarted = performance.now();
       ball.visible = true;
@@ -561,8 +640,10 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       const rect = renderer.domElement.getBoundingClientRect();
       chooseSide(event.clientX - rect.left < rect.width / 2 ? "YES" : "NO");
     };
-    const onClick = () => startKick();
+    const onClick = () => { renderer.domElement.focus({ preventScroll: true }); startKick(); };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || document.activeElement !== renderer.domElement || pausedRef.current) return;
+      if (["ArrowLeft", "ArrowRight"].includes(event.code)) event.preventDefault();
       if (event.code === "KeyA" || event.code === "ArrowLeft") chooseSide("YES");
       if (event.code === "KeyD" || event.code === "ArrowRight") chooseSide("NO");
       if (event.code === "Space") { event.preventDefault(); startKick(); }
@@ -573,15 +654,19 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
 
     let frame = 0;
     let previous = performance.now();
+    let fpsSince=previous, fpsFrames=0;
     focusCutinRef.current?.classList.add("active");
     const animate = (now: number) => {
       frame = requestAnimationFrame(animate);
       const dt = Math.min((now - previous) / 1000, 0.04);
       previous = now;
+      stadiumDetail.update(now);
+      fpsFrames++;
+      if(now-fpsSince>=1000) { mount.dataset.fps=String(Math.round(fpsFrames*1000/(now-fpsSince)));fpsSince=now;fpsFrames=0; }
       const currentMarket = marketRef.current;
       const currentPrices = pricesRef.current;
       const currentKicks = kicksRef.current;
-      if (!kicking) {
+      if (!kicking && !pausedRef.current) {
         const phase = (now * 0.00078) % 2;
         gaugePower = 1 + (phase <= 1 ? phase : 2 - phase) * 99;
       }
@@ -607,6 +692,15 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       });
 
       let impactShake = 0;
+      const netAttribute=netGeometry.attributes.position as THREE.BufferAttribute;
+      const netTime=kicking?(now-kickStarted)/1000-.8:0;
+      for(let i=0;i<netAttribute.count;i++) {
+        const x=netRest[i*3],y=netRest[i*3+1],z=netRest[i*3+2];
+        const falloff=Math.exp(-((x-(kickSide==="YES"?-2.05:2.05))**2+(y-1.75)**2)*.7);
+        const stretch=netTime>0?Math.sin(netTime*18)*Math.exp(-netTime*5)*.32*falloff:0;
+        netAttribute.setZ(i,z-stretch);
+      }
+      netAttribute.needsUpdate=true;
       if (kicking) {
         const progress = Math.min(1, (now - kickStarted) / 1500);
         if (progress >= 0.48) kickCutinRef.current?.classList.remove("active");
@@ -656,7 +750,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
           }
           if (progress >= 0.54 && !registered) {
             registered = true;
-            kickRef.current(kickSide, capturedMultiplier);
+            kickRef.current(kickSide, capturedMultiplier, kickOutcome);
           }
         }
         if (progress >= 1) {
@@ -713,7 +807,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
           origin.z - life * 0.72 + Math.cos(life * 5.4 + index * 0.7) * (0.1 + life * 0.3),
         );
         sprite.scale.setScalar(0.58 + life * 2.15);
-        (sprite.material as THREE.SpriteMaterial).opacity = Math.sin(life * Math.PI) * 0.72;
+        (sprite.material as THREE.SpriteMaterial).opacity = Math.sin(life * Math.PI) * 0.28;
       });
       flareLights.forEach((light, index) => {
         light.intensity = 18 + Math.sin(now * 0.012 + index * 1.7) * 7;
@@ -725,17 +819,25 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       magenta.intensity = 40 + Math.cos(now * 0.0017) * 7;
       composer.render(dt);
     };
-    frame = requestAnimationFrame(animate);
-    readyRef.current();
+    // Reveal one fully textured frame; no delayed "low detail → high detail" swap.
+    manager.onLoad=()=>{
+      if(disposed)return;
+      renderer.shadowMap.needsUpdate=true;
+      frame=requestAnimationFrame(animate);
+      readyRef.current();
+    };
+    manager.itemEnd("stadium-bootstrap");
 
     const onResize = () => {
       camera.aspect = mount.clientWidth / mount.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
+      fxaa.uniforms.resolution.value.set(1/(mount.clientWidth*renderPixelRatio),1/(mount.clientHeight*renderPixelRatio));
     };
     window.addEventListener("resize", onResize);
     return () => {
+      disposed=true;manager.onLoad=()=>{};
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
@@ -744,8 +846,11 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady }: Props) {
       disposeScene(scene);
       skyTexture.dispose();
       fieldMap.dispose();
+      surfaceTextures.forEach(texture=>texture.dispose());
+      composer.passes.forEach(pass => pass.dispose());
       composer.dispose();
       renderer.dispose();
+      renderer.forceContextLoss();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
   }, []);

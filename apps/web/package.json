@@ -11,6 +11,8 @@
     "lint": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@hyperstrike/sdk": "workspace:*",
+    "@hyperstrike/market-types": "workspace:*",
     "@nktkas/hyperliquid": "^0.33.3",
     "@vitejs/plugin-react": "latest",
     "ethers": "^6.17.0",

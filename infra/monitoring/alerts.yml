@@ -1,0 +1,27 @@
+groups:
+  - name: hyperstrike-native
+    rules:
+      - alert: IndexUnavailable
+        expr: hyperstrike_index_available == 0
+        for: 0m
+        labels: { severity: critical }
+      - alert: SourceStale
+        expr: hyperstrike_source_age_seconds > 300
+        for: 0m
+        labels: { severity: warning }
+      - alert: PublicationLate
+        expr: hyperstrike_publication_latency_seconds > 90
+        for: 0m
+        labels: { severity: critical }
+      - alert: QuorumLost
+        expr: hyperstrike_oracle_signatures < 2
+        for: 1m
+        labels: { severity: critical }
+      - alert: CollateralInvariant
+        expr: hyperstrike_collateral_surplus < 0
+        for: 0m
+        labels: { severity: critical }
+      - alert: ResolutionDelayed
+        expr: hyperstrike_resolution_delay_seconds > 86400
+        for: 0m
+        labels: { severity: critical }

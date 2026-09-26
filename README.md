@@ -1,100 +1,83 @@
-# HyperStrike
+# HyperStrike — Trade the CS2 Economy
 
-The world's first prediction market for Counter-Strike 2 skin prices, presented as a browser-native first-person 3D experience.
+Five canonical CS2 economy indexes. Native, fully collateralized binary markets on HyperEVM. A browser-first trading terminal with an optional first-person range.
 
-> **Status:** production-candidate paper launch. The browser app validates mainnet HIP-4 outcomes and multi-outcome questions, while live skin trading stays fail-closed until permissionless deployment, settlement, oracle, gate, and jurisdiction checks pass. [`HYPERSTRIKE_SPEC.md`](./HYPERSTRIKE_SPEC.md) is authoritative. [`SKINCAST_SPEC.md`](./SKINCAST_SPEC.md) is historical source material only.
+**Current status: local implementation / index alpha, not an audited mainnet launch.** The default experience is a clearly labelled paper sandbox. No provider prices, signed history, native contract addresses, collateral choice, or production readiness are fabricated. See [implementation status](docs/IMPLEMENTATION_STATUS.md) before enabling real value flows.
 
-Canonical `$HSX` on HyperEVM mainnet: `0xab5dbc5a6070d066697d8e55471877ea4343ece3` (`HSX`, 18 decimals, 1 billion current supply). The deployed token supports `burn` and `burnFrom`, so the burn gate can reduce total supply directly.
+**Launch display feed:** the Indexes page now reads Skinport's public USD listing
+API through `/v1/indicative/indexes` (five-minute upstream cache, no key required).
+Frozen preview baskets start at 1,000 and build real observation history. This is
+an indicative ask-price proxy, **not** the canonical settlement index. USDC remains
+market collateral. [Methodology, limitations and operations](docs/INDICATIVE_INDEX_FEED.md).
 
-HyperStrike is built on Hyperliquid: HIP-4 outcome markets execute natively on HyperCore, while optional HyperStrike-specific onchain components live on HyperEVM. It combines three layers:
+## Run locally
 
-1. **HIP-4 skin outcome markets** — Fully collateralized, dated markets about future CS2 skin prices, executed and settled by HyperCore's native outcome-trading primitive.
-2. **First-person market world** — An original WebGL/WebGPU environment where users move, inspect market exhibits, use a shooting range, and open precise trading panels without leaving the world.
-3. **Skin price oracle** — A versioned, multi-venue reference-price service using resolution-window observations rather than a manipulable single spot quote.
+Use Node **22.13+** (Node 24 recommended), pnpm 11.7, and Foundry for Solidity tests. pnpm is the JavaScript package manager used by this monorepo.
 
-The prediction subject is always a skin or the skin economy. HyperStrike does not offer markets on match winners, rounds, kills, or player performance.
+```sh
+pnpm install
+pnpm dev
+```
 
-## Repository layout
+This starts the API on `127.0.0.1:8787` and Vite on `localhost:5173` (or the next available port printed by Vite). The frontend proxies `/v1` to the API. Open the printed Vite URL in Chrome/Firefox for mouse capture; embedded browsers can reject pointer lock. Markets and paper trading do not require a wallet.
+
+```sh
+pnpm typecheck
+pnpm test                   # TypeScript and Solidity tests
+pnpm build
+pnpm production:check       # deliberately fails without reviewed live configuration
+pnpm native:deploy          # plan only; never broadcasts by default
+```
+
+Default SQLite storage is `<repo>/var/hyperstrike.sqlite`, regardless of the service working directory. Set `HS_DATABASE_PATH` to an absolute path to override it. Use the variables in `.env.native.example`; services consume process environment, and Vite reads public variables from `apps/web/.env.local`. Do not put private keys in any `VITE_` variable. No credentials are required for local paper trading.
+
+## Product model
+
+`licensed observations → constituent reference prices → canonical indexes → index markets`
+
+- **HS-CS50**, **HS-KNIFE20**, **HS-GLOVE10**, **HS-BLUE20**, **HS-CASE20** are the only market underlyings. Individual skins are data constituents, never market IDs.
+- **LEVEL** asks whether the index reaches a canonical level. **MOVE** asks whether it moves a canonical percentage from its creation reference.
+- **HSX → STRIKE:** minting capacity burns actual HSX supply and pays an integrated HYPE mint cost. The existing HSX address is `0xab5dbc5a6070d066697d8e55471877ea4343ece3`; its reviewed deployment behavior must still pass launch preflight.
+- **Create:** burning exactly one STRIKE, seeding stablecoin liquidity, and registering a unique market happen atomically.
+- **Trade:** native complete-set AMM, 20 bps fee, 30% of that fee accrued to the creator. No participation burn.
+- **Resolve:** signed index observations, deterministic settlement windows, bonded challenge window, then claim redemption. Fees are segregated from outcome backing.
+- **Range:** one target hit stages one contract. It does not send an order. Review and explicit confirmation are required; current range targets use paper markets only.
+
+HIP-4 is a future optional adapter, **not the V1 execution dependency**. World Cup is retired from primary navigation. Historical paper, demo, and legacy World Cup records are preserved and available through Portfolio → Historical archive. Legacy HIP-4 code/contracts remain for reference but are not imported into the new execution path.
+
+## Repository
 
 ```text
-hyperstrike/
-├── apps/
-│   └── web/                 Browser shell, 3D client, 2D market UI
-├── packages/
-│   ├── game/                First-person controls, scene, interactions
-│   ├── hip4/                Outcome metadata, CLOB and signing adapters
-│   ├── protocol/            API and event schemas
-│   └── ui/                  Accessible application components
-├── services/
-│   ├── api/                 HIP-4 indexer and application API
-│   └── oracle/              Venue adapters, aggregation, signed reports
-├── contracts/               Tested HyperEVM HSXBurnGate; never market execution
-├── scripts/                 Deployment and fixture tooling
-└── HYPERSTRIKE_SPEC.md      Authoritative specification
+apps/web/                   React terminal, paper ledger, native wallet actions, Three.js range
+packages/index-core/        Pure integer reference-price/index/settlement calculations
+packages/market-types/      Canonical index IDs, market definitions, calendars and hashes
+packages/oracle-types/      Signed observation schema
+packages/sdk/               AMM and integrated mint-curve quote math
+services/api/               Append-only store, providers, engine, API, sign/replay/index CLIs
+contracts/src/native/       HyperEVM index-native contracts
+contracts/test/             Integration, invariants and fuzz tests
+infra/                      Monitoring and operational runbooks
+docs/                       Improved specification, coverage and release status
 ```
 
-## Delivery order
+## Operator tools
 
-Build the experience before expanding the protocol surface:
-
-1. A one-room first-person market gallery with a local HIP-4-shaped paper CLOB.
-2. A deterministic oracle prototype with recorded fixtures.
-3. HIP-4 discovery, order, position, and settlement integration on Hyperliquid testnet.
-4. Signed HyperCore trading inside the browser.
-5. Production data agreements, security review, and jurisdiction review before Hyperliquid mainnet.
-
-## Commands
-
-```bash
-pnpm install
-pnpm dev                 # browser application
-pnpm build               # JavaScript/TypeScript workspaces
-pnpm test                # browser + Solidity suites
-pnpm hip4:test           # HIP-4 adapter and testnet integration tests
-pnpm production:check    # fail-closed mainnet configuration + outcome discovery
-pnpm contracts:test      # HSXBurnGate tests
+```sh
+pnpm exec tsx services/api/src/indexer-engine.ts /path/to/approved-config.json
+pnpm replay-index --index HS-KNIFE20 --timestamp 2026-09-25T16:00:00Z
+pnpm oracle:sign /path/to/candidate-observation.json
+pnpm oracle:publish /path/to/signer-a.json /path/to/signer-b.json # simulate only
+pnpm chain:index
 ```
 
-The local alpha opens at `http://localhost:5173`. Its three launch-candidate skin markets and `$HSX` balance are explicitly simulated; the HIP-4 network status is live. The retired World Cup event is a demo replay: the anime penalty sequence still stages contract size through its oscillating 1–100 power gauge, but the ticket is saved locally only. It never opens a wallet, burns `$HSX`, or submits a HIP-4 order.
+These are one-shot processes for isolated scheduling, not a claim that a production service fleet is operating. The signer holds one key only and replays committed inputs before signing. The publisher verifies a matching quorum and simulates by default; broadcasting requires `--broadcast` and a separate funded publisher key. Deploy separate signer hosts with independent verification and approved source access. See [operator runbook](infra/runbooks/index-incidents.md) and [launch checklist](docs/IMPLEMENTATION_STATUS.md).
 
-## Permissionless HIP-4 production path
+## Design and assets
 
-The permissionless upgrade changes HyperStrike from waiting for a curated listing into operating a deployer. Production enablement remains conditional on a validator-approved market template, 500,000 HYPE staked and locked for six months, deployer settlement operations, and three mainnet outcome IDs discoverable through `outcomeMeta`. The app now parses both `outcomes` and `questions`; `pnpm production:check` refuses readiness when any required configuration or launch outcome is missing.
+[DESIGN.md](DESIGN.md) defines grounded industrial materials, mint/teal brand surfaces, orange accents and readable financial state. The range has local 2K PBR maps, contact occlusion, fixed-resolution rendering, restrained bloom and shoulder-aligned weapon convergence. It does not use ray tracing or Valve game assets. The existing stylized AK is still a fidelity limitation; a licensed realistic first-person weapon/hand rig and authored lighting/props are the next art-production step.
 
-The first launch set is deliberately liquidity-first:
+Texture and model attribution lives alongside assets in `apps/web/public/textures/README.md` and `apps/web/public/models/README.md`.
 
-1. **AK-47 Slate (Field-Tested)** - broad retail price point and the strongest observed Steam turnover.
-2. **AK-47 Redline (Field-Tested)** - iconic, long-lived reference item with meaningful turnover.
-3. **Glock-18 Water Elemental (Field-Tested)** - recognizable non-AK exposure with adequate turnover.
+## Which specification applies?
 
-The former Dragon Lore, Howl, and Karambit Fade fixtures are removed from the launch set. They are attractive showcase assets but had no reported Steam volume in the August 5 snapshot, making their reference prices materially easier to distort and harder to reproduce. Thresholds must be refreshed from the approved oracle report immediately before deployment; the values in the 3D client remain paper fixtures until then.
-
-## World Cup demo replay
-
-Because the World Cup event is over, the stadium is preserved as a product demo rather than a trading surface. It demonstrates the event-world pattern without implying active tradability:
-
-1. Choose a demo outcome from the stadium selector.
-2. Aim a penalty at YES or NO.
-3. Click while the 1–100 gauge is moving; the captured value becomes the demo contract count.
-4. Review the simulated reference price, order value, and 1% `$HSX` burn math.
-5. Save a local demo receipt in the portfolio.
-
-No injected wallet, HyperEVM transaction, burn gate, or HyperCore IOC order is called from this flow.
-
-The `contracts/` burn-gate tooling and `apps/web/src/liveOrder.ts` remain in the repository as future-event infrastructure, but the current production UI only uses them for non-World-Cup paths such as the manual `$HSX` furnace or future audited live markets.
-
-## Required before live orders
-
-- Production `HSXBurnGate` deployed, verified, funded/owned by the intended owner, and configured for the next live market launch.
-- Supported live HIP-4 outcome IDs bound in the gate by the owner/admin wallet.
-- One real tiny funded-wallet end-to-end test covering approval, burn, IOC submit, zero/partial/full fill messaging, and portfolio receipt before enabling any live order UI.
-- Registered HIP-4 CS2 skin outcome IDs and accepted settlement/oracle policy before moving skins out of paper mode.
-- Validator-approved HIP-4 template, 500,000 HYPE deployer stake, six-month lock acknowledgment, settlement runbook, and slashing controls.
-- `pnpm production:check` passing against mainnet with exactly three approved launch outcome IDs.
-- Wallet, jurisdiction, risk-disclosure, and production hosting configuration.
-
-The participation burn is enforceable inside HyperStrike, but a public HIP-4 market can also be traded through other clients. It must not be advertised as a protocol-wide participation requirement unless HIP-4 adds a native gate.
-
-## License
-
-MIT. Counter-Strike 2 and related marks and assets belong to their respective owners. HyperStrike must use original world, weapon, sound, and interface assets unless separate commercial rights are obtained.
+[docs/INDEX_NATIVE_SPEC.md](docs/INDEX_NATIVE_SPEC.md) records the operational clarifications to the supplied Index-Native Production Spec v3. [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) identifies implemented, partial and externally blocked requirements. Older `HYPERSTRIKE_SPEC.md` and `SKINCAST_SPEC.md` are historical and must not be used as current launch instructions.

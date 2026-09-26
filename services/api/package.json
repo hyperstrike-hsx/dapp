@@ -1,0 +1,1 @@
+{"name":"@hyperstrike/api","version":"0.3.0","private":true,"type":"module","scripts":{"dev":"tsx watch src/server.ts","start":"tsx src/server.ts","test":"vitest run"},"dependencies":{"@hyperstrike/index-core":"workspace:*","@hyperstrike/market-types":"workspace:*","@hyperstrike/oracle-types":"workspace:*","@hyperstrike/sdk":"workspace:*","ethers":"6.17.0","tsx":"4.20.5"}}
