@@ -29,3 +29,21 @@ export type IndicativeFeed = {
   error?: string;
   indexes: IndicativeIndex[];
 };
+
+/** Expire source observations at read time, even from cached static files. */
+export function ageIndicativeFeed(
+  feed: IndicativeFeed,
+  now = Date.now(),
+): IndicativeFeed {
+  return {
+    ...feed,
+    indexes: feed.indexes.map((i) =>
+      i.status === "OK" &&
+      (i.observedAt === null ||
+        i.observedAt > now / 1000 + 60 ||
+        now / 1000 - i.observedAt > 900)
+        ? { ...i, status: "STALE" }
+        : i,
+    ),
+  };
+}

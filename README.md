@@ -4,8 +4,9 @@ Five canonical CS2 economy indexes. Native, fully collateralized binary markets 
 
 **Current status: local implementation / index alpha, not an audited mainnet launch.** The default experience is a clearly labelled paper sandbox. No provider prices, signed history, native contract addresses, collateral choice, or production readiness are fabricated. See [implementation status](docs/IMPLEMENTATION_STATUS.md) before enabling real value flows.
 
-**Launch display feed:** the Indexes page now reads Skinport's public USD listing
-API through `/v1/indicative/indexes` (five-minute upstream cache, no key required).
+**Static first release:** the app reads published `/data/*.json` files, with **no
+runtime backend**. The scheduled snapshot publisher fetches Skinport outside the
+browser and commits public data; your static host must deploy those updates.
 Frozen preview baskets start at 1,000 and build real observation history. This is
 an indicative ask-price proxy, **not** the canonical settlement index. USDC remains
 market collateral. [Methodology, limitations and operations](docs/INDICATIVE_INDEX_FEED.md).
@@ -19,7 +20,38 @@ pnpm install
 pnpm dev
 ```
 
-This starts the API on `127.0.0.1:8787` and Vite on `localhost:5173` (or the next available port printed by Vite). The frontend proxies `/v1` to the API. Open the printed Vite URL in Chrome/Firefox for mouse capture; embedded browsers can reject pointer lock. Markets and paper trading do not require a wallet.
+This starts only Vite on `localhost:5173` (or the next available port). It serves
+the same checked-in snapshots as production. Open the printed URL in Chrome or
+Firefox for mouse capture. Paper trading and the sports demo require no wallet.
+
+## Deploy the static release
+
+Build with `pnpm install --frozen-lockfile && pnpm build` from the repository root.
+Publish **`apps/web/dist`**. Leave `VITE_DATA_MODE` unset (or set to `static`).
+Configure your host's SPA fallback for page routes, but serve `/data/*.json` as
+real files. No API process, database, signing keys or contract deployment is needed.
+
+`.github/workflows/publish-snapshots.yml` targets ten-minute updates and supports
+manual runs. Enable GitHub Actions with repository-content write permission and
+allow this workflow to push data commits to `main`. Each run retains the frozen
+baseline/history in `apps/web/public/data/indicative-indexes.json`. It never resets
+the baseline on deploy. Provider failures preserve the prior snapshot; the browser
+marks old data stale based on source timestamps.
+
+**Hosting requirement:** your Git-connected static host must redeploy on snapshot
+commits. This repo does not contain hosting credentials or a production deployment
+workflow. GitHub-token pushes do not trigger other GitHub Actions workflows; if
+you deploy through Actions, add deployment to the snapshot workflow itself. Verify
+both `/data/indicative-indexes.json` and `/data/hsx-ohlcv.json` on the live domain.
+Use short/revalidated cache lifetimes for these files, not immutable asset caching.
+Scheduled runs and host builds may be delayed, so this is a periodically published
+preview, not a real-time price service.
+
+Run `pnpm snapshots:publish` manually to refresh the public files (network needed).
+Normal builds never fetch providers. Do not delete the published index snapshot:
+it contains the persistent preview baseline. For API development only, run
+`pnpm dev:full`; production API mode requires explicit `VITE_DATA_MODE=api`, a Node
+API deployment with persistent SQLite storage, and `/v1` reverse-proxy routing.
 
 ```sh
 pnpm typecheck

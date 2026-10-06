@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { API_ENABLED } from "./dataMode";
 import {
   DEXTOOLS_HSX,
   drawHsxChart,
@@ -22,9 +23,11 @@ export function HsxChartPanel() {
     <section className="hsx-chart-panel">
       <h1>HSX market tape</h1>
       <p>
-        Real trades from the HSX / WHYPE pool. Hourly USD candles, checked every
-        30 seconds. Provider indexing may lag; gaps are left empty when there
-        are no trades.
+        Real trades from the HSX / WHYPE pool. Hourly USD candles.{" "}
+        {API_ENABLED
+          ? "API checked every 30 seconds."
+          : "Published snapshots target ten-minute updates, not a live stream."}{" "}
+        Provider indexing may lag; gaps are left empty when there are no trades.
       </p>
       <div className="hsx-chart-stats">
         <span>
@@ -43,7 +46,9 @@ export function HsxChartPanel() {
             {!data
               ? "Connecting"
               : data.status === "OK"
-                ? "Connected · 30s refresh"
+                ? API_ENABLED
+                  ? "Connected · 30s refresh"
+                  : "Published snapshot"
                 : data.status === "STALE"
                   ? "Stale · retrying"
                   : "Unavailable · retrying"}

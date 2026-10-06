@@ -1,3 +1,4 @@
+import { API_ENABLED, HSX_FEED_URL } from "./dataMode";
 export const HSX_POOL = "0xa92ab5ed3041025b844233b109216c6c3c0bc63c";
 export const DEXTOOLS_HSX = `https://www.dextools.io/app/hyperevm/pair-explorer/${HSX_POOL}`;
 export type HsxChartData = {
@@ -24,13 +25,22 @@ async function refresh() {
   controller = request;
   const timeout = setTimeout(() => request.abort(), 12_000);
   try {
-    const r = await fetch("/v1/hsx/ohlcv", { signal: request.signal });
+    const r = await fetch(HSX_FEED_URL, {
+      signal: request.signal,
+      cache: "no-store",
+    });
     if (!r.ok) throw Error("Chart unavailable");
     const next = (await r.json()) as HsxChartData;
     if (next.pool !== HSX_POOL || !Array.isArray(next.candles))
       throw Error("Wrong pool");
     if (controller !== request) return;
-    data = next;
+    data =
+      next.status === "OK" &&
+      (!next.fetchedAt ||
+        Date.now() - next.fetchedAt > 900000 ||
+        next.fetchedAt > Date.now() + 60000)
+        ? { ...next, status: "STALE" }
+        : next;
   } catch {
     if (controller !== request) return;
     data = {
@@ -98,7 +108,9 @@ export function drawHsxChart(
   const status = !data
     ? "CONNECTING"
     : data.status === "OK"
-      ? "AUTO-REFRESH · 30s"
+      ? API_ENABLED
+        ? "AUTO-REFRESH · 30s"
+        : "PUBLISHED SNAPSHOT"
       : data.status === "STALE"
         ? "STALE DATA · RETRYING"
         : "FEED UNAVAILABLE";

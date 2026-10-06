@@ -12,6 +12,7 @@ import {
 import { integratedCost, WAD } from "@hyperstrike/sdk";
 import { createNativeMarket } from "./nativeClient";
 import { MintAction } from "./MintAction";
+import { API_ENABLED } from "./dataMode";
 import { PreviewDetail } from "./IndicativeIndex";
 import type { IndicativeIndex } from "@hyperstrike/market-types";
 const human = (v: number) =>
@@ -143,6 +144,7 @@ export function IndexDetail({
     let alive = true;
     setHistory([]);
     setComposition(null);
+    if (!API_ENABLED) return;
     fetch(`/v1/indexes/${index.indexId}/history`)
       .then((r) => (r.ok ? r.json() : []))
       .then((rows) => {
@@ -171,7 +173,11 @@ export function IndexDetail({
       <PreviewDetail index={indicative} />
       <section className="index-observation">
         <div>
-          <span>CURRENT CANONICAL OBSERVATION</span>
+          <span>
+            {API_ENABLED
+              ? "CURRENT CANONICAL OBSERVATION"
+              : "CANONICAL ORACLE · NOT ENABLED IN STATIC DEMO"}
+          </span>
           <strong>
             {obs ? human(Number(obs.valueE8) / 1e8) : "UNAVAILABLE"}
           </strong>
@@ -282,10 +288,15 @@ export function CreatorForm({
     settlementPolicyId: SETTLEMENT_POLICY_ID,
   };
   const healthy =
+    API_ENABLED &&
     ref &&
     ref.confidenceBps >= 9000 &&
     Date.now() / 1000 - ref.observedAt <= 300;
   const launch = async () => {
+    if (!API_ENABLED) {
+      onNotice("Live market creation is not enabled in this static demo.");
+      return;
+    }
     setBusy(true);
     try {
       const r = await fetch("/v1/markets/prepare", {

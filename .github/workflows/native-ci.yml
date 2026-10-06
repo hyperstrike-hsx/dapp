@@ -22,3 +22,4 @@ jobs:
         env:
           FOUNDRY_PROFILE: ci
       - run: pnpm build
+      - run: pnpm static:check

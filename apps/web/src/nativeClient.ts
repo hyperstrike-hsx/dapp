@@ -9,7 +9,8 @@ import {
   type MarketDefinition,
   type Expiry,
 } from "@hyperstrike/market-types";
-const env = import.meta.env;
+import { API_ENABLED } from "./dataMode";
+const env: Partial<ImportMetaEnv> = API_ENABLED ? import.meta.env : {};
 export const nativeConfig = {
   factory: env.VITE_NATIVE_FACTORY_ADDRESS as string | undefined,
   minter: env.VITE_STRIKE_MINTER_ADDRESS as string | undefined,

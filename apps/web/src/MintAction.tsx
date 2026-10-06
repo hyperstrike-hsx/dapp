@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatUnits, parseUnits } from "ethers";
 import { mintNativeStrike } from "./nativeClient";
+import { API_ENABLED } from "./dataMode";
 export function MintAction({ amount }: { amount: string }) {
   const [supply, setSupply] = useState<string | null>(null),
     [quote, setQuote] = useState<{
@@ -12,6 +13,7 @@ export function MintAction({ amount }: { amount: string }) {
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (!API_ENABLED) return;
     let active = true;
     setQuote(null);
     fetch("/v1/strike/stats")
@@ -25,6 +27,7 @@ export function MintAction({ amount }: { amount: string }) {
     };
   }, [amount]);
   const refresh = async () => {
+    if (!API_ENABLED) return;
     setBusy(true);
     try {
       const r = await fetch(
@@ -62,7 +65,9 @@ export function MintAction({ amount }: { amount: string }) {
     return (
       <>
         <button className="primary full" disabled>
-          MINT UNAVAILABLE · ORACLE REQUIRED
+          {API_ENABLED
+            ? "MINT UNAVAILABLE · ORACLE REQUIRED"
+            : "MINT NOT ENABLED · STATIC DEMO"}
         </button>
         <small>
           Live minting requires a reviewed HSX/USD TWAP, independent reference,

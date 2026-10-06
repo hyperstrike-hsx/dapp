@@ -1,5 +1,6 @@
 import { AbiCoder, id, keccak256 } from "ethers";
 export type { IndicativeIndex, IndicativeFeed } from "./indicative";
+export { ageIndicativeFeed } from "./indicative";
 import type { Hex } from "@hyperstrike/oracle-types";
 export const INDEXES = [
   {

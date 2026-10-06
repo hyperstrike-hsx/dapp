@@ -7,6 +7,28 @@ USDC. Do not imply a conversion or redemption guarantee.
 
 ## Source and operation
 
+### Default release: static snapshots
+
+The browser reads `/data/indicative-indexes.json` and `/data/hsx-ohlcv.json`, not
+the API routes below. `pnpm dev` starts only the frontend; `pnpm build` copies the
+checked-in public snapshots without network access. The optional API mode requires
+`VITE_DATA_MODE=api` explicitly (`pnpm dev:full` locally).
+
+`pnpm snapshots:publish` runs the existing preview calculator in a temporary
+in-memory database, restores baskets/history from the last published JSON, fetches
+fresh prices, and atomically replaces public snapshots. No operational database,
+wallets, positions or credentials are published. A failed index refresh leaves
+the prior files untouched; a failed chart request retains prior candles.
+
+The GitHub Actions publisher targets ten-minute updates, commits only these two
+data files to `main`, and never force-pushes on conflicts. The static hosting
+provider must deploy these data commits. See the README deployment requirements.
+The browser re-evaluates the 15-minute source age even when the file says `OK`.
+Delayed jobs/builds therefore produce a visible `STALE` label, never fake freshness.
+Sampling gaps are retained; no history is filled in retrospectively.
+
+### Optional runtime API (not required for release one)
+
 - Official endpoint: `https://api.skinport.com/v1/items?app_id=730&currency=USD&tradable=1`.
 - Documentation: https://docs.skinport.com/items. No API key required.
 - Server requests Brotli encoding, as required by Skinport. One catalog request
@@ -15,7 +37,7 @@ USDC. Do not imply a conversion or redemption guarantee.
 - Public application endpoint: `GET /v1/indicative/indexes`. The browser checks
   it every minute. Upstream refresh is demand-driven, not a continuous collector.
   History therefore contains gaps while no clients request the feed.
-- Run with `pnpm dev` (web + API), or `pnpm dev:api` alongside the web server.
+- Run with `pnpm dev:full` (web + API), or `pnpm dev:api` alongside an API-mode web server.
   Preserve `HS_DATABASE_PATH` on a persistent volume so the baseline survives
   deployments. A new empty database starts a new preview baseline.
 - `HS_INDICATIVE_ENABLED=false` disables upstream reads after the cached response

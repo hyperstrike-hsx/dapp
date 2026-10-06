@@ -44,6 +44,7 @@ import {
 } from "./TradeTicket";
 import "./native.css";
 import "./terminal.css";
+import { API_ENABLED } from "./dataMode";
 import {
   useIndicativeIndexes,
   PreviewSummary,
@@ -157,6 +158,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     let alive = true;
+    if (!API_ENABLED) return;
     fetch("/v1/markets")
       .then((r) => (r.ok ? r.json() : []))
       .then((rows) => {
@@ -173,6 +175,10 @@ export default function App() {
   }, [ledger]);
   useEffect(() => {
     let live = true;
+    if (!API_ENABLED) {
+      setOracle({ status: "NOT ENABLED · STATIC DEMO" });
+      return;
+    }
     const refresh = async () => {
       try {
         const [o, i] = await Promise.all([

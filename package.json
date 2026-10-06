@@ -10,7 +10,10 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @hyperstrike/web --filter @hyperstrike/api dev",
+    "dev": "pnpm dev:web",
+    "dev:full": "VITE_DATA_MODE=api pnpm --parallel --filter @hyperstrike/web --filter @hyperstrike/api dev",
+    "snapshots:publish": "node --import tsx scripts/publish-snapshots.mts",
+    "static:check": "node scripts/check-static-build.mjs",
     "dev:web": "pnpm --filter @hyperstrike/web dev",
     "dev:api": "pnpm --filter @hyperstrike/api dev",
     "replay-index": "tsx services/api/src/replay.ts",

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { INDEXES } from "./markets";
+import { API_ENABLED, INDEX_FEED_URL } from "./dataMode";
+import { ageIndicativeFeed } from "@hyperstrike/market-types";
 import type {
   IndicativeFeed,
   IndicativeIndex,
@@ -12,7 +14,8 @@ export function useIndicativeIndexes() {
     const controller = new AbortController();
     const refresh = async () => {
       try {
-        const response = await fetch("/v1/indicative/indexes", {
+        const response = await fetch(INDEX_FEED_URL, {
+          cache: "no-store",
           signal: AbortSignal.any([
             controller.signal,
             AbortSignal.timeout(20000),
@@ -22,7 +25,7 @@ export function useIndicativeIndexes() {
         const next = (await response.json()) as IndicativeFeed;
         if (!Array.isArray(next.indexes) || next.source !== "Skinport")
           throw Error("Invalid feed");
-        if (alive) setFeed(next);
+        if (alive) setFeed(ageIndicativeFeed(next));
       } catch {
         if (alive)
           setFeed((previous) =>
@@ -69,7 +72,7 @@ export function useIndicativeIndexes() {
       clearInterval(timer);
     };
   }, []);
-  return feed;
+  return feed ? ageIndicativeFeed(feed) : null;
 }
 export const previewValue = (index?: IndicativeIndex) =>
   index?.value == null
@@ -157,16 +160,22 @@ export function PreviewDetail({ index }: { index?: IndicativeIndex }) {
   return (
     <section className="preview-detail">
       <div>
-        <span className="overline">LIVE MARKET PREVIEW / DISPLAY ONLY</span>
+        <span className="overline">
+          {API_ENABLED ? "LIVE MARKET PREVIEW" : "PUBLISHED MARKET SNAPSHOT"} /
+          DISPLAY ONLY
+        </span>
         <h2>The market, in perspective.</h2>
         <p>
           Public{" "}
           <a href="https://skinport.com/" target="_blank" rel="noreferrer">
             Skinport
           </a>{" "}
-          minimum listing prices in USD, refreshed every five minutes. This is
-          an ask-price proxy, not executed sales, a USDC quote, or an approved
-          settlement benchmark.
+          minimum listing prices in USD.{" "}
+          {API_ENABLED
+            ? "Upstream refresh every five minutes."
+            : "Published snapshots target ten-minute updates; scheduling and deployment can lag. Check the source timestamp below."}{" "}
+          This is an ask-price proxy, not executed sales, a USDC quote, or an
+          approved settlement benchmark.
         </p>
         <p>
           Frozen preview basket, rebased to 1,000 on{" "}
