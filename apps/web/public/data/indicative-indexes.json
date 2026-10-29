@@ -3,7 +3,7 @@
   "sourceUrl": "https://skinport.com/",
   "currency": "USD",
   "methodology": "skinport-ask-preview-v1",
-  "checkedAt": 1793241830,
+  "checkedAt": 1793264142,
   "indexes": [
     {
       "ticker": "HS-CS50",
@@ -11,10 +11,10 @@
       "provenance": "INDICATIVE",
       "settlementEligible": false,
       "status": "OK",
-      "value": 935.460901,
-      "changeSinceBasePct": -6.453909899999999,
+      "value": 944.183675,
+      "changeSinceBasePct": -5.5816324999999996,
       "baseAt": 1790438219,
-      "observedAt": 1793241613,
+      "observedAt": 1793263816,
       "coverage": 50,
       "count": 50,
       "constituents": [
@@ -22,351 +22,351 @@
           "name": "★ Paracord Knife | Fade (Factory New)",
           "baseUsd": 132.07,
           "weight": 0.02,
-          "priceUsd": 129.46,
-          "updatedAt": 1793241613
+          "priceUsd": 129.78,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Kukri Knife | Fade (Factory New)",
           "baseUsd": 165.76,
           "weight": 0.02,
-          "priceUsd": 146.77,
-          "updatedAt": 1793241613
+          "priceUsd": 147.15,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bowie Knife | Tiger Tooth (Factory New)",
           "baseUsd": 118.19,
           "weight": 0.02,
-          "priceUsd": 111.86,
-          "updatedAt": 1793241613
+          "priceUsd": 118.94,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Falchion Knife | Marble Fade (Factory New)",
           "baseUsd": 159.07,
           "weight": 0.02,
-          "priceUsd": 156.61,
-          "updatedAt": 1793241613
+          "priceUsd": 154.65,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife",
           "baseUsd": 54.81,
           "weight": 0.02,
-          "priceUsd": 55.1,
-          "updatedAt": 1793241613
+          "priceUsd": 55.21,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bayonet | Tiger Tooth (Factory New)",
           "baseUsd": 266.3,
           "weight": 0.02,
-          "priceUsd": 259.84,
-          "updatedAt": 1793241613
+          "priceUsd": 258.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Falchion Knife | Tiger Tooth (Factory New)",
           "baseUsd": 126.91,
           "weight": 0.02,
-          "priceUsd": 132.45,
-          "updatedAt": 1793241613
+          "priceUsd": 132.79,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Huntsman Knife | Tiger Tooth (Factory New)",
           "baseUsd": 146.53,
           "weight": 0.02,
-          "priceUsd": 122.89,
-          "updatedAt": 1793241613
+          "priceUsd": 122.9,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife | Fade (Factory New)",
           "baseUsd": 126.15,
           "weight": 0.02,
-          "priceUsd": 128.32,
-          "updatedAt": 1793241613
+          "priceUsd": 128.64,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Huntsman Knife | Marble Fade (Factory New)",
           "baseUsd": 185.29,
           "weight": 0.02,
-          "priceUsd": 163.76,
-          "updatedAt": 1793241613
+          "priceUsd": 164.16,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Nomad Knife | Tiger Tooth (Factory New)",
           "baseUsd": 181.8,
           "weight": 0.02,
-          "priceUsd": 165.26,
-          "updatedAt": 1793241613
+          "priceUsd": 165.69,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Skeleton Knife | Tiger Tooth (Factory New)",
           "baseUsd": 308.95,
           "weight": 0.02,
-          "priceUsd": 270.78,
-          "updatedAt": 1793241613
+          "priceUsd": 267.51,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Nomad Knife | Marble Fade (Factory New)",
           "baseUsd": 207.47,
           "weight": 0.02,
-          "priceUsd": 213.88,
-          "updatedAt": 1793241613
+          "priceUsd": 214.41,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bowie Knife | Marble Fade (Factory New)",
           "baseUsd": 142.71,
           "weight": 0.02,
-          "priceUsd": 136.72,
-          "updatedAt": 1793241613
+          "priceUsd": 138,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife | Marble Fade (Factory New)",
           "baseUsd": 115.24,
           "weight": 0.02,
-          "priceUsd": 122.6,
-          "updatedAt": 1793241613
+          "priceUsd": 122.85,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Specialist Gloves | Crimson Web (Field-Tested)",
           "baseUsd": 131.38,
           "weight": 0.01875,
-          "priceUsd": 111.31,
-          "updatedAt": 1793241613
+          "priceUsd": 111.6,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Imperial Plaid (Field-Tested)",
           "baseUsd": 138.46,
           "weight": 0.01875,
-          "priceUsd": 134.27,
-          "updatedAt": 1793241613
+          "priceUsd": 151.51,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Racing Green (Field-Tested)",
           "baseUsd": 32.77,
           "weight": 0.01875,
-          "priceUsd": 27.31,
-          "updatedAt": 1793241613
+          "priceUsd": 27.37,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Overtake (Field-Tested)",
           "baseUsd": 44.76,
           "weight": 0.01875,
-          "priceUsd": 47.28,
-          "updatedAt": 1793241613
+          "priceUsd": 47.4,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Polygon (Field-Tested)",
           "baseUsd": 105.11,
           "weight": 0.01875,
-          "priceUsd": 92.3,
-          "updatedAt": 1793241613
+          "priceUsd": 92.52,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Blood Pressure (Field-Tested)",
           "baseUsd": 112.65,
           "weight": 0.01875,
-          "priceUsd": 98.32,
-          "updatedAt": 1793241613
+          "priceUsd": 100.37,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Turtle (Field-Tested)",
           "baseUsd": 58.83,
           "weight": 0.01875,
-          "priceUsd": 54.59,
-          "updatedAt": 1793241613
+          "priceUsd": 55.28,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Broken Fang Gloves | Unhinged (Field-Tested)",
           "baseUsd": 50.76,
           "weight": 0.01875,
-          "priceUsd": 53.57,
-          "updatedAt": 1793241613
+          "priceUsd": 53.7,
+          "updatedAt": 1793263816
         },
         {
           "name": "SSG 08 | Blue Spruce (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "MP7 | Army Recon (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "SCAR-20 | Contractor (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Dual Berettas | Contractor (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "G3SG1 | Desert Storm (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "AUG | Sweeper (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "MP9 | Slide (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "P90 | Sand Spray (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "MP9 | Sand Dashed (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "AUG | Contractor (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "AUG | Storm (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Tec-9 | Army Mesh (Field-Tested)",
           "baseUsd": 0.02,
           "weight": 0.020833333333333332,
           "priceUsd": 0.02,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Danger Zone Case",
           "baseUsd": 1.02,
           "weight": 0.02,
           "priceUsd": 0.9,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Dreams & Nightmares Case",
           "baseUsd": 1.15,
           "weight": 0.02,
-          "priceUsd": 0.87,
-          "updatedAt": 1793241613
+          "priceUsd": 0.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "Prisma Case",
           "baseUsd": 1.12,
           "weight": 0.02,
-          "priceUsd": 0.93,
-          "updatedAt": 1793241613
+          "priceUsd": 0.94,
+          "updatedAt": 1793263816
         },
         {
           "name": "Prisma 2 Case",
           "baseUsd": 1.08,
           "weight": 0.02,
           "priceUsd": 0.96,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Recoil Case",
           "baseUsd": 0.35,
           "weight": 0.02,
           "priceUsd": 0.28,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Horizon Case",
           "baseUsd": 1.36,
           "weight": 0.02,
-          "priceUsd": 1.24,
-          "updatedAt": 1793241613
+          "priceUsd": 1.3,
+          "updatedAt": 1793263816
         },
         {
           "name": "Spectrum 2 Case",
           "baseUsd": 2.68,
           "weight": 0.02,
-          "priceUsd": 2.56,
-          "updatedAt": 1793241613
+          "priceUsd": 2.53,
+          "updatedAt": 1793263816
         },
         {
           "name": "Operation Breakout Weapon Case",
           "baseUsd": 7.27,
           "weight": 0.02,
-          "priceUsd": 6.73,
-          "updatedAt": 1793241613
+          "priceUsd": 6.9,
+          "updatedAt": 1793263816
         },
         {
           "name": "Fever Case",
           "baseUsd": 0.66,
           "weight": 0.02,
-          "priceUsd": 0.57,
-          "updatedAt": 1793241613
+          "priceUsd": 0.58,
+          "updatedAt": 1793263816
         },
         {
           "name": "CS20 Case",
           "baseUsd": 0.82,
           "weight": 0.02,
-          "priceUsd": 0.65,
-          "updatedAt": 1793241613
+          "priceUsd": 0.68,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A1-S | Printstream (Minimal Wear)",
           "baseUsd": 264.05,
           "weight": 0.02,
-          "priceUsd": 222.13,
-          "updatedAt": 1793241613
+          "priceUsd": 222.68,
+          "updatedAt": 1793263816
         },
         {
           "name": "SSG 08 | Dragonfire (Minimal Wear)",
           "baseUsd": 253.81,
           "weight": 0.02,
-          "priceUsd": 199.74,
-          "updatedAt": 1793241613
+          "priceUsd": 200.24,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A1-S | Blue Phosphor (Factory New)",
           "baseUsd": 558.8,
           "weight": 0.02,
-          "priceUsd": 495.3,
-          "updatedAt": 1793241613
+          "priceUsd": 491.59,
+          "updatedAt": 1793263816
         },
         {
           "name": "SSG 08 | Dragonfire (Factory New)",
           "baseUsd": 323.33,
           "weight": 0.02,
-          "priceUsd": 282.91,
-          "updatedAt": 1793241613
+          "priceUsd": 284.34,
+          "updatedAt": 1793263816
         },
         {
           "name": "AK-47 | Vulcan (Minimal Wear)",
           "baseUsd": 362.22,
           "weight": 0.02,
-          "priceUsd": 326.45,
-          "updatedAt": 1793241613
+          "priceUsd": 327.26,
+          "updatedAt": 1793263816
         }
       ],
       "history": [
@@ -1025,6 +1025,10 @@
         {
           "value": 935.460901,
           "observedAt": 1793241613
+        },
+        {
+          "value": 944.183675,
+          "observedAt": 1793263816
         }
       ]
     },
@@ -1034,10 +1038,10 @@
       "provenance": "INDICATIVE",
       "settlementEligible": false,
       "status": "OK",
-      "value": 944.009073,
-      "changeSinceBasePct": -5.599092700000008,
+      "value": 947.915777,
+      "changeSinceBasePct": -5.208422299999993,
       "baseAt": 1790438219,
-      "observedAt": 1793241613,
+      "observedAt": 1793263816,
       "coverage": 20,
       "count": 20,
       "constituents": [
@@ -1045,141 +1049,141 @@
           "name": "★ Paracord Knife | Fade (Factory New)",
           "baseUsd": 132.07,
           "weight": 0.05,
-          "priceUsd": 129.46,
-          "updatedAt": 1793241613
+          "priceUsd": 129.78,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Kukri Knife | Fade (Factory New)",
           "baseUsd": 165.76,
           "weight": 0.05,
-          "priceUsd": 146.77,
-          "updatedAt": 1793241613
+          "priceUsd": 147.15,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bowie Knife | Tiger Tooth (Factory New)",
           "baseUsd": 118.19,
           "weight": 0.05,
-          "priceUsd": 111.86,
-          "updatedAt": 1793241613
+          "priceUsd": 118.94,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Falchion Knife | Marble Fade (Factory New)",
           "baseUsd": 159.07,
           "weight": 0.05,
-          "priceUsd": 156.61,
-          "updatedAt": 1793241613
+          "priceUsd": 154.65,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife",
           "baseUsd": 54.81,
           "weight": 0.05,
-          "priceUsd": 55.1,
-          "updatedAt": 1793241613
+          "priceUsd": 55.21,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bayonet | Tiger Tooth (Factory New)",
           "baseUsd": 266.3,
           "weight": 0.05,
-          "priceUsd": 259.84,
-          "updatedAt": 1793241613
+          "priceUsd": 258.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Falchion Knife | Tiger Tooth (Factory New)",
           "baseUsd": 126.91,
           "weight": 0.05,
-          "priceUsd": 132.45,
-          "updatedAt": 1793241613
+          "priceUsd": 132.79,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Huntsman Knife | Tiger Tooth (Factory New)",
           "baseUsd": 146.53,
           "weight": 0.05,
-          "priceUsd": 122.89,
-          "updatedAt": 1793241613
+          "priceUsd": 122.9,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife | Fade (Factory New)",
           "baseUsd": 126.15,
           "weight": 0.05,
-          "priceUsd": 128.32,
-          "updatedAt": 1793241613
+          "priceUsd": 128.64,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Huntsman Knife | Marble Fade (Factory New)",
           "baseUsd": 185.29,
           "weight": 0.05,
-          "priceUsd": 163.76,
-          "updatedAt": 1793241613
+          "priceUsd": 164.16,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Nomad Knife | Tiger Tooth (Factory New)",
           "baseUsd": 181.8,
           "weight": 0.05,
-          "priceUsd": 165.26,
-          "updatedAt": 1793241613
+          "priceUsd": 165.69,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Skeleton Knife | Tiger Tooth (Factory New)",
           "baseUsd": 308.95,
           "weight": 0.05,
-          "priceUsd": 270.78,
-          "updatedAt": 1793241613
+          "priceUsd": 267.51,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Nomad Knife | Marble Fade (Factory New)",
           "baseUsd": 207.47,
           "weight": 0.05,
-          "priceUsd": 213.88,
-          "updatedAt": 1793241613
+          "priceUsd": 214.41,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Bowie Knife | Marble Fade (Factory New)",
           "baseUsd": 142.71,
           "weight": 0.05,
-          "priceUsd": 136.72,
-          "updatedAt": 1793241613
+          "priceUsd": 138,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Survival Knife | Marble Fade (Factory New)",
           "baseUsd": 115.24,
           "weight": 0.05,
-          "priceUsd": 122.6,
-          "updatedAt": 1793241613
+          "priceUsd": 122.85,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Huntsman Knife | Lore (Field-Tested)",
           "baseUsd": 82.68,
           "weight": 0.05,
-          "priceUsd": 76.55,
-          "updatedAt": 1793241613
+          "priceUsd": 76.74,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Shadow Daggers | Marble Fade (Factory New)",
           "baseUsd": 90.88,
           "weight": 0.05,
-          "priceUsd": 76.8,
-          "updatedAt": 1793241613
+          "priceUsd": 76.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Ursus Knife | Tiger Tooth (Factory New)",
           "baseUsd": 135.64,
           "weight": 0.05,
-          "priceUsd": 127.88,
-          "updatedAt": 1793241613
+          "priceUsd": 128.2,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Kukri Knife | Case Hardened (Field-Tested)",
           "baseUsd": 93.45,
           "weight": 0.05,
-          "priceUsd": 81.24,
-          "updatedAt": 1793241613
+          "priceUsd": 81.95,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Paracord Knife | Tiger Tooth (Factory New)",
           "baseUsd": 107.29,
           "weight": 0.05,
-          "priceUsd": 96.33,
-          "updatedAt": 1793241613
+          "priceUsd": 96.32,
+          "updatedAt": 1793263816
         }
       ],
       "history": [
@@ -1838,6 +1842,10 @@
         {
           "value": 944.009073,
           "observedAt": 1793241613
+        },
+        {
+          "value": 947.915777,
+          "observedAt": 1793263816
         }
       ]
     },
@@ -1847,10 +1855,10 @@
       "provenance": "INDICATIVE",
       "settlementEligible": false,
       "status": "OK",
-      "value": 935.934084,
-      "changeSinceBasePct": -6.4065916000000005,
+      "value": 952.765347,
+      "changeSinceBasePct": -4.7234652999999955,
       "baseAt": 1790438219,
-      "observedAt": 1793241613,
+      "observedAt": 1793263816,
       "coverage": 10,
       "count": 10,
       "constituents": [
@@ -1858,71 +1866,71 @@
           "name": "★ Specialist Gloves | Crimson Web (Field-Tested)",
           "baseUsd": 131.38,
           "weight": 0.1,
-          "priceUsd": 111.31,
-          "updatedAt": 1793241613
+          "priceUsd": 111.6,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Imperial Plaid (Field-Tested)",
           "baseUsd": 138.46,
           "weight": 0.1,
-          "priceUsd": 134.27,
-          "updatedAt": 1793241613
+          "priceUsd": 151.51,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Racing Green (Field-Tested)",
           "baseUsd": 32.77,
           "weight": 0.1,
-          "priceUsd": 27.31,
-          "updatedAt": 1793241613
+          "priceUsd": 27.37,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Overtake (Field-Tested)",
           "baseUsd": 44.76,
           "weight": 0.1,
-          "priceUsd": 47.28,
-          "updatedAt": 1793241613
+          "priceUsd": 47.4,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Polygon (Field-Tested)",
           "baseUsd": 105.11,
           "weight": 0.1,
-          "priceUsd": 92.3,
-          "updatedAt": 1793241613
+          "priceUsd": 92.52,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Blood Pressure (Field-Tested)",
           "baseUsd": 112.65,
           "weight": 0.1,
-          "priceUsd": 98.32,
-          "updatedAt": 1793241613
+          "priceUsd": 100.37,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Moto Gloves | Turtle (Field-Tested)",
           "baseUsd": 58.83,
           "weight": 0.1,
-          "priceUsd": 54.59,
-          "updatedAt": 1793241613
+          "priceUsd": 55.28,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Broken Fang Gloves | Unhinged (Field-Tested)",
           "baseUsd": 50.76,
           "weight": 0.1,
-          "priceUsd": 53.57,
-          "updatedAt": 1793241613
+          "priceUsd": 53.7,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Hydra Gloves | Case Hardened (Field-Tested)",
           "baseUsd": 53.42,
           "weight": 0.1,
-          "priceUsd": 50.83,
-          "updatedAt": 1793241613
+          "priceUsd": 50.84,
+          "updatedAt": 1793263816
         },
         {
           "name": "★ Driver Gloves | Rezan the Red (Field-Tested)",
           "baseUsd": 60.53,
           "weight": 0.1,
-          "priceUsd": 58.53,
-          "updatedAt": 1793241613
+          "priceUsd": 58.67,
+          "updatedAt": 1793263816
         }
       ],
       "history": [
@@ -2581,6 +2589,10 @@
         {
           "value": 935.934084,
           "observedAt": 1793241613
+        },
+        {
+          "value": 952.765347,
+          "observedAt": 1793263816
         }
       ]
     },
@@ -2590,10 +2602,10 @@
       "provenance": "INDICATIVE",
       "settlementEligible": false,
       "status": "OK",
-      "value": 848.462105,
-      "changeSinceBasePct": -15.153789500000004,
+      "value": 844.102106,
+      "changeSinceBasePct": -15.589789399999997,
       "baseAt": 1790438219,
-      "observedAt": 1793241613,
+      "observedAt": 1793263816,
       "coverage": 20,
       "count": 20,
       "constituents": [
@@ -2601,141 +2613,141 @@
           "name": "M4A1-S | Printstream (Minimal Wear)",
           "baseUsd": 264.05,
           "weight": 0.05,
-          "priceUsd": 222.13,
-          "updatedAt": 1793241613
+          "priceUsd": 222.68,
+          "updatedAt": 1793263816
         },
         {
           "name": "SSG 08 | Dragonfire (Minimal Wear)",
           "baseUsd": 253.81,
           "weight": 0.05,
-          "priceUsd": 199.74,
-          "updatedAt": 1793241613
+          "priceUsd": 200.24,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A1-S | Blue Phosphor (Factory New)",
           "baseUsd": 558.8,
           "weight": 0.05,
-          "priceUsd": 495.3,
-          "updatedAt": 1793241613
+          "priceUsd": 491.59,
+          "updatedAt": 1793263816
         },
         {
           "name": "SSG 08 | Dragonfire (Factory New)",
           "baseUsd": 323.33,
           "weight": 0.05,
-          "priceUsd": 282.91,
-          "updatedAt": 1793241613
+          "priceUsd": 284.34,
+          "updatedAt": 1793263816
         },
         {
           "name": "AK-47 | Vulcan (Minimal Wear)",
           "baseUsd": 362.22,
           "weight": 0.05,
-          "priceUsd": 326.45,
-          "updatedAt": 1793241613
+          "priceUsd": 327.26,
+          "updatedAt": 1793263816
         },
         {
           "name": "Desert Eagle | Emerald Jörmungandr (Factory New)",
           "baseUsd": 534.26,
           "weight": 0.05,
-          "priceUsd": 420.93,
-          "updatedAt": 1793241613
+          "priceUsd": 422.02,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A4 | Buzz Kill (Minimal Wear)",
           "baseUsd": 302.12,
           "weight": 0.05,
-          "priceUsd": 242.09,
-          "updatedAt": 1793241613
+          "priceUsd": 242.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "Desert Eagle | Blaze (Factory New)",
           "baseUsd": 630.74,
           "weight": 0.05,
-          "priceUsd": 560.43,
-          "updatedAt": 1793241613
+          "priceUsd": 561.81,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A1-S | Icarus Fell (Factory New)",
           "baseUsd": 484.61,
           "weight": 0.05,
-          "priceUsd": 419.87,
-          "updatedAt": 1793241613
+          "priceUsd": 420.91,
+          "updatedAt": 1793263816
         },
         {
           "name": "AWP | Lightning Strike (Factory New)",
           "baseUsd": 490.38,
           "weight": 0.05,
-          "priceUsd": 439.71,
-          "updatedAt": 1793241613
+          "priceUsd": 440.8,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A1-S | Nightmare (Factory New)",
           "baseUsd": 269.49,
           "weight": 0.05,
-          "priceUsd": 185.56,
-          "updatedAt": 1793241613
+          "priceUsd": 186.02,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A4 | The Coalition (Minimal Wear)",
           "baseUsd": 429.57,
           "weight": 0.05,
-          "priceUsd": 416.5,
-          "updatedAt": 1793241613
+          "priceUsd": 417.53,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A4 | The Emperor (Factory New)",
           "baseUsd": 258.78,
           "weight": 0.05,
-          "priceUsd": 184.88,
-          "updatedAt": 1793241613
+          "priceUsd": 179.72,
+          "updatedAt": 1793263816
         },
         {
           "name": "AK-47 | Fire Serpent (Field-Tested)",
           "baseUsd": 731.53,
           "weight": 0.05,
-          "priceUsd": 742.95,
-          "updatedAt": 1793241613
+          "priceUsd": 744.79,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A4 | The Coalition (Field-Tested)",
           "baseUsd": 426.92,
           "weight": 0.05,
-          "priceUsd": 291.35,
-          "updatedAt": 1793241613
+          "priceUsd": 293.16,
+          "updatedAt": 1793263816
         },
         {
           "name": "AK-47 | Vulcan (Factory New)",
           "baseUsd": 576.9,
           "weight": 0.05,
-          "priceUsd": 547.92,
-          "updatedAt": 1793241613
+          "priceUsd": 496.53,
+          "updatedAt": 1793263816
         },
         {
           "name": "Five-SeveN | Hyper Beast (Minimal Wear)",
           "baseUsd": 357.69,
           "weight": 0.05,
-          "priceUsd": 335.46,
-          "updatedAt": 1793241613
+          "priceUsd": 336.29,
+          "updatedAt": 1793263816
         },
         {
           "name": "Glock-18 | Twilight Galaxy (Factory New)",
           "baseUsd": 516.57,
           "weight": 0.05,
-          "priceUsd": 384.05,
-          "updatedAt": 1793241613
+          "priceUsd": 384.06,
+          "updatedAt": 1793263816
         },
         {
           "name": "AWP | Fade (Factory New)",
           "baseUsd": 691.15,
           "weight": 0.05,
-          "priceUsd": 570.62,
-          "updatedAt": 1793241613
+          "priceUsd": 564.23,
+          "updatedAt": 1793263816
         },
         {
           "name": "M4A4 | Hellfire (Factory New)",
           "baseUsd": 328.9,
           "weight": 0.05,
-          "priceUsd": 299.41,
-          "updatedAt": 1793241613
+          "priceUsd": 300.15,
+          "updatedAt": 1793263816
         }
       ],
       "history": [
@@ -3394,6 +3406,10 @@
         {
           "value": 848.462105,
           "observedAt": 1793241613
+        },
+        {
+          "value": 844.102106,
+          "observedAt": 1793263816
         }
       ]
     },
@@ -3403,10 +3419,10 @@
       "provenance": "INDICATIVE",
       "settlementEligible": false,
       "status": "OK",
-      "value": 862.921113,
-      "changeSinceBasePct": -13.707888700000003,
+      "value": 877.706933,
+      "changeSinceBasePct": -12.229306699999999,
       "baseAt": 1790438219,
-      "observedAt": 1793241613,
+      "observedAt": 1793263816,
       "coverage": 20,
       "count": 20,
       "constituents": [
@@ -3415,140 +3431,140 @@
           "baseUsd": 1.02,
           "weight": 0.05,
           "priceUsd": 0.9,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Dreams & Nightmares Case",
           "baseUsd": 1.15,
           "weight": 0.05,
-          "priceUsd": 0.87,
-          "updatedAt": 1793241613
+          "priceUsd": 0.98,
+          "updatedAt": 1793263816
         },
         {
           "name": "Prisma Case",
           "baseUsd": 1.12,
           "weight": 0.05,
-          "priceUsd": 0.93,
-          "updatedAt": 1793241613
+          "priceUsd": 0.94,
+          "updatedAt": 1793263816
         },
         {
           "name": "Prisma 2 Case",
           "baseUsd": 1.08,
           "weight": 0.05,
           "priceUsd": 0.96,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Recoil Case",
           "baseUsd": 0.35,
           "weight": 0.05,
           "priceUsd": 0.28,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Horizon Case",
           "baseUsd": 1.36,
           "weight": 0.05,
-          "priceUsd": 1.24,
-          "updatedAt": 1793241613
+          "priceUsd": 1.3,
+          "updatedAt": 1793263816
         },
         {
           "name": "Spectrum 2 Case",
           "baseUsd": 2.68,
           "weight": 0.05,
-          "priceUsd": 2.56,
-          "updatedAt": 1793241613
+          "priceUsd": 2.53,
+          "updatedAt": 1793263816
         },
         {
           "name": "Operation Breakout Weapon Case",
           "baseUsd": 7.27,
           "weight": 0.05,
-          "priceUsd": 6.73,
-          "updatedAt": 1793241613
+          "priceUsd": 6.9,
+          "updatedAt": 1793263816
         },
         {
           "name": "Fever Case",
           "baseUsd": 0.66,
           "weight": 0.05,
-          "priceUsd": 0.57,
-          "updatedAt": 1793241613
+          "priceUsd": 0.58,
+          "updatedAt": 1793263816
         },
         {
           "name": "CS20 Case",
           "baseUsd": 0.82,
           "weight": 0.05,
-          "priceUsd": 0.65,
-          "updatedAt": 1793241613
+          "priceUsd": 0.68,
+          "updatedAt": 1793263816
         },
         {
           "name": "Operation Phoenix Weapon Case",
           "baseUsd": 3.39,
           "weight": 0.05,
-          "priceUsd": 2.86,
-          "updatedAt": 1793241613
+          "priceUsd": 2.87,
+          "updatedAt": 1793263816
         },
         {
           "name": "Fracture Case",
           "baseUsd": 0.5,
           "weight": 0.05,
-          "priceUsd": 0.39,
-          "updatedAt": 1793241613
+          "priceUsd": 0.41,
+          "updatedAt": 1793263816
         },
         {
           "name": "Clutch Case",
           "baseUsd": 0.48,
           "weight": 0.05,
-          "priceUsd": 0.34,
-          "updatedAt": 1793241613
+          "priceUsd": 0.37,
+          "updatedAt": 1793263816
         },
         {
           "name": "Snakebite Case",
           "baseUsd": 0.4,
           "weight": 0.05,
           "priceUsd": 0.34,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Gallery Case",
           "baseUsd": 0.75,
           "weight": 0.05,
           "priceUsd": 0.56,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Falchion Case",
           "baseUsd": 1.49,
           "weight": 0.05,
-          "priceUsd": 1.29,
-          "updatedAt": 1793241613
+          "priceUsd": 1.35,
+          "updatedAt": 1793263816
         },
         {
           "name": "Spectrum Case",
           "baseUsd": 3.31,
           "weight": 0.05,
-          "priceUsd": 3.22,
-          "updatedAt": 1793241613
+          "priceUsd": 3.08,
+          "updatedAt": 1793263816
         },
         {
           "name": "Shadow Case",
           "baseUsd": 1.51,
           "weight": 0.05,
           "priceUsd": 1.41,
-          "updatedAt": 1793241613
+          "updatedAt": 1793263816
         },
         {
           "name": "Chroma 3 Case",
           "baseUsd": 3.06,
           "weight": 0.05,
-          "priceUsd": 2.98,
-          "updatedAt": 1793241613
+          "priceUsd": 2.99,
+          "updatedAt": 1793263816
         },
         {
           "name": "Chroma 2 Case",
           "baseUsd": 3.39,
           "weight": 0.05,
-          "priceUsd": 3.31,
-          "updatedAt": 1793241613
+          "priceUsd": 3.23,
+          "updatedAt": 1793263816
         }
       ],
       "history": [
@@ -4207,6 +4223,10 @@
         {
           "value": 862.921113,
           "observedAt": 1793241613
+        },
+        {
+          "value": 877.706933,
+          "observedAt": 1793263816
         }
       ]
     }
