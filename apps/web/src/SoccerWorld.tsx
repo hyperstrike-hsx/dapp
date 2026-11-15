@@ -9,6 +9,10 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { withOpaqueOccluders } from "./opaqueOcclusion";
 import { addStadiumDetail, footballTexture } from "./stadiumDetail";
+import { applyWetTurf, createRain, glareTexture, ledBoardTexture } from "./stadiumSurface";
+import { displayMaterial, projectUv } from "./range/environment";
+import { createFloorReflection } from "./range/floor";
+import { VolumetricPass } from "./range/volumetric";
 import type { Hip4Outcome } from "./hip4";
 import type { VoteCount, VoteSide } from "./types";
 
@@ -264,7 +268,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     const scene = new THREE.Scene();
     const skyTexture = stadiumSkyTexture();
     scene.background = skyTexture;
-    scene.fog = new THREE.FogExp2(0x0a1716, 0.008);
+    scene.fog = new THREE.FogExp2(0x0a1716, 0.0035);
     const camera = new THREE.PerspectiveCamera(56, mount.clientWidth / mount.clientHeight, 0.08, 100);
     camera.position.set(0, 2.85, 10.6);
     camera.lookAt(0, 1.35, -6.7);
@@ -293,16 +297,26 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     ao.updatePdMaterial({samples:8,rings:2,radius:3});ao.blendIntensity=.3;
     const sizeAo=ao.setSize.bind(ao);ao.setSize=(w,h)=>sizeAo(Math.max(1,Math.floor(w/2)),Math.max(1,Math.floor(h/2)));
     composer.addPass(ao);
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.14, 0.18, 1.65));
-    const fxaa=new ShaderPass(FXAAShader);fxaa.uniforms.resolution.value.set(1/(mount.clientWidth*renderPixelRatio),1/(mount.clientHeight*renderPixelRatio));composer.addPass(fxaa);
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.24, 0.5, 1.2));
     composer.addPass(new OutputPass());
+    // Anti-alias the final display-referred image, after tone mapping.
+    const fxaa=new ShaderPass(FXAAShader);fxaa.uniforms.resolution.value.set(1/(mount.clientWidth*renderPixelRatio),1/(mount.clientHeight*renderPixelRatio));composer.addPass(fxaa);
+    const anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    const reflection = createFloorReflection(renderer, true);
+    reflection.setSize(mount.clientWidth * renderPixelRatio * 0.35, mount.clientHeight * renderPixelRatio * 0.35);
+    const mirrorHidden: THREE.Object3D[] = [];
 
-    scene.add(new THREE.HemisphereLight(0xb1d6ca, 0x263328, 0.85));
-    const moon = new THREE.DirectionalLight(0xf0f5df, 2.6);
-    moon.position.set(-8, 14, 8);
-    moon.target.position.set(0,0,-9);scene.add(moon.target);
-    moon.castShadow=true;moon.shadow.mapSize.set(2048,2048);moon.shadow.camera.left=-22;moon.shadow.camera.right=22;moon.shadow.camera.top=24;moon.shadow.camera.bottom=-24;moon.shadow.camera.far=65;moon.shadow.normalBias=.035;moon.shadow.bias=-.00015;
-    scene.add(moon);
+    // The key is a raking floodlight from behind the goal: it back-lights the rain
+    // and haze, and the canopies cut it into shafts. Everything else is fill.
+    scene.add(new THREE.HemisphereLight(0x9fc4c8, 0x1c2a22, 0.3));
+    const key = new THREE.DirectionalLight(0xe6f1ff, 3.3);
+    key.position.set(-7, 18, -17);
+    key.target.position.set(2,0,-2);scene.add(key.target);
+    key.castShadow=true;key.shadow.mapSize.set(4096,4096);key.shadow.camera.left=-27;key.shadow.camera.right=27;key.shadow.camera.top=27;key.shadow.camera.bottom=-27;key.shadow.camera.near=.5;key.shadow.camera.far=70;key.shadow.normalBias=.04;key.shadow.bias=-.0002;
+    scene.add(key);
+    const volumetric = new VolumetricPass(camera, key, ao.depthTexture, new THREE.Color(0.006, 0.011, 0.013));
+    volumetric.density = 0.0042; volumetric.ceiling = 13; volumetric.ceilingFade = 8;
+    composer.insertPass(volumetric, 2);
     const cyan = new THREE.SpotLight(0x8ef5e3, 75, 38, 0.42, 0.6, 1.2);
     cyan.position.set(-8, 10, 5);
     cyan.target.position.set(-2.2, 1.3, -9);
@@ -312,15 +326,9 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     scene.add(cyan, cyan.target, magenta, magenta.target);
 
     const fieldMap = pitchTexture(renderer);
-    const turf = new THREE.MeshStandardMaterial({map:fieldMap,color:0xb2cf9c,roughness:.92,metalness:0,vertexColors:true,normalScale:new THREE.Vector2(.65,.65)});
-    const turfGeometry = new THREE.PlaneGeometry(24,44,24,88);
-    const turfColors=[];
-    for(let i=0;i<turfGeometry.attributes.position.count;i++) {
-      const y=turfGeometry.attributes.position.getY(i);
-      const stripe = Math.floor((y+22)/2.75)%2 ? .84 : 1;
-      turfColors.push(stripe,stripe,stripe);
-    }
-    turfGeometry.setAttribute("color",new THREE.Float32BufferAttribute(turfColors,3));
+    const turf = new THREE.MeshStandardMaterial({map:fieldMap,color:0xa9d886,roughness:.92,metalness:0,envMapIntensity:.3,normalScale:new THREE.Vector2(.8,.8)});
+    applyWetTurf(turf, reflection);
+    const turfGeometry = new THREE.PlaneGeometry(24,44);
     turfGeometry.setAttribute("uv1",turfGeometry.attributes.uv.clone());
     loadMap("/textures/grass_ground-2k/diffuse.jpg",12,22,true,map=>{turf.map=map;turf.needsUpdate=true;});
     loadMap("/textures/grass_ground-2k/normal-gl.jpg",12,22,false,map=>{turf.normalMap=map;turf.needsUpdate=true;});
@@ -334,6 +342,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     field.position.z = -6;
     field.receiveShadow = true;
     scene.add(field);
+    mirrorHidden.push(field);
     const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xd9e0c9, roughness:.98, metalness:0 });
     const addPitchLine = (x: number, z: number, width: number, depth: number) => {
       const line = new THREE.Mesh(new THREE.BoxGeometry(width, 0.012, depth), lineMaterial);
@@ -361,12 +370,12 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     scene.add(penaltyArc);
 
     const standMaterial = new THREE.MeshStandardMaterial({ color: 0x68776e, metalness: 0, roughness: .88 });
-    loadMap("/textures/concrete_floor_worn_001-2k/diffuse.jpg",4,4,true,map=>{standMaterial.map=map;standMaterial.needsUpdate=true;});
-    loadMap("/textures/concrete_floor_worn_001-2k/normal-gl.jpg",4,4,false,map=>{standMaterial.normalMap=map;standMaterial.normalScale.set(.35,.35);standMaterial.needsUpdate=true;});
+    loadMap("/textures/concrete_floor_worn_001-2k/diffuse.jpg",1,1,true,map=>{standMaterial.map=map;standMaterial.needsUpdate=true;});
+    loadMap("/textures/concrete_floor_worn_001-2k/normal-gl.jpg",1,1,false,map=>{standMaterial.normalMap=map;standMaterial.normalScale.set(.6,.6);standMaterial.needsUpdate=true;});
     for (const x of [-1, 1]) {
       for (let level = 0; level < 7; level += 1) {
         const height=(level+1)*.72;
-        const stand = new THREE.Mesh(new THREE.BoxGeometry(.76, height, 38), standMaterial);
+        const stand = new THREE.Mesh(projectUv(new THREE.BoxGeometry(.76, height, 38), 3.2), standMaterial);
         stand.position.set(x * (9.55 + level * .75), height/2, -6);
         stand.receiveShadow=true;
         scene.add(stand);
@@ -374,7 +383,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     }
     for (let level = 0; level < 8; level += 1) {
       const height=(level+1)*.68;
-      const endStand = new THREE.Mesh(new THREE.BoxGeometry(22, height, .71), standMaterial);
+      const endStand = new THREE.Mesh(projectUv(new THREE.BoxGeometry(22, height, .71), 3.2), standMaterial);
       endStand.position.set(0, height/2, -18 - level * .7);
       endStand.receiveShadow=true;
       scene.add(endStand);
@@ -401,6 +410,8 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     }
     const crowdCount = seatedCrowd.length / 3;
     const stadiumDetail=addStadiumDetail(scene,seatedCrowd,standMaterial);
+    // Individual supporters are far too rough a detail to survive the turf's blurred mirror.
+    mirrorHidden.push(...stadiumDetail.crowd);
     const crowdPositions = Float32Array.from(seatedCrowd);
     const crowdBaseY = new Float32Array(crowdCount);
     const crowdPhase = new Float32Array(crowdCount);
@@ -415,7 +426,9 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     crowdGeometry.setAttribute("position", new THREE.BufferAttribute(crowdPositions, 3));
     crowdGeometry.setAttribute("color", new THREE.BufferAttribute(crowdColors, 3));
     const crowdMaterial = new THREE.PointsMaterial({ size: 0.098, vertexColors: true, transparent: true, opacity: 0.94, depthWrite: false, blending: THREE.AdditiveBlending });
-    scene.add(new THREE.Points(crowdGeometry, crowdMaterial));
+    const crowdLights = new THREE.Points(crowdGeometry, crowdMaterial);
+    scene.add(crowdLights);
+    mirrorHidden.push(crowdLights);
 
     const neonMaterial = (color: number) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2), toneMapped: false });
     for (const x of [-8.2, 8.2]) {
@@ -455,10 +468,12 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     const flareLights: THREE.PointLight[] = [];
     const flareOrigins = [new THREE.Vector3(-8.2, 4.45, -5), new THREE.Vector3(8.2, 4.65, -11), new THREE.Vector3(-5.2, 5.8, -17.8), new THREE.Vector3(5.1, 6, -17.8)];
     flareOrigins.forEach((origin, flareIndex) => {
-      const light = new THREE.PointLight(0xff123f, 22, 9, 2);
-      light.position.copy(origin);
-      scene.add(light);
-      flareLights.push(light);
+      if (flareIndex < 2) { // The far-end flares read through smoke and haze alone.
+        const light = new THREE.PointLight(0xff123f, 22, 9, 2);
+        light.position.copy(origin);
+        scene.add(light);
+        flareLights.push(light);
+      }
       for (let particle = 0; particle < 20; particle += 1) {
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeMap, color: particle % 4 === 0 ? 0xff7357 : 0xf00b43, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.NormalBlending, toneMapped: false }));
         sprite.position.copy(origin);
@@ -467,6 +482,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
       }
     });
 
+    const glareMap = glareTexture();
     const floodlightMaterials = [0xd5fff0, 0xffe7c7].map((color) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.8), toneMapped: false }));
     for (const x of [-10.4, 10.4]) {
       for (const z of [7, -5, -17]) {
@@ -483,6 +499,11 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
         bank.position.set(x, 8.9, z);
         bank.lookAt(0, 1.2, z - 8);
         scene.add(bank);
+        const tint = new THREE.Color(bankColorIndex === 0 ? 0xd5fff0 : 0xffe7c7);
+        const glare = new THREE.Sprite(new THREE.SpriteMaterial({ map: glareMap, color: tint, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+        glare.position.set(x - Math.sign(x) * .25, 8.85, z - .2); glare.scale.set(5.2, 3.4, 1);
+        scene.add(glare);
+        if (z !== 7) volumetric.glows.push({ position: new THREE.Vector3(x, 8.9, z), color: tint.clone().multiplyScalar(z === -5 ? 2.6 : 1.8) });
         if(z !== -5) continue; // Two broad practical fills, not six overlapping per-pixel lights.
         const flood = new THREE.SpotLight(bankColorIndex === 0 ? 0xdbffed : 0xffd9ab, 100, 40, 0.7, 0.78, 1.3);
         flood.position.set(x, 8.7, z);
@@ -491,21 +512,30 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
       }
     }
 
-    const ribbonColors = [0x8ef5e3, 0xe89a42, 0xf06d63];
-    for (let z = 9; z > -27; z -= 4.5) {
-      const color = ribbonColors[Math.abs(Math.round(z * 2)) % ribbonColors.length];
-      for (const x of [-9.25, 9.25]) {
-        const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 3.7), neonMaterial(color));
-        ribbon.position.set(x, 2.35 + ((z + 27) % 2) * 0.15, z);
-        scene.add(ribbon);
-      }
-    }
+    // LED perimeter boards: the brightest things at pitch level, and what the wet turf mirrors.
+    const ledMap = ledBoardTexture(anisotropy);
+    const ledMaterial = displayMaterial(ledMap, 1.7);
+    const boardCasing = new THREE.MeshStandardMaterial({ color: 0x11181a, roughness: .45, metalness: .7 });
+    const addBoard = (x: number, z: number, length: number, yaw: number, shift: number) => {
+      const geometry = new THREE.PlaneGeometry(length, .86);
+      const uv = geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i += 1) uv.setX(i, uv.getX(i) * length / 27.5 + shift);
+      const face = new THREE.Mesh(geometry, ledMaterial);
+      face.position.set(x, .52, z); face.rotation.y = yaw;
+      const casing = new THREE.Mesh(new THREE.BoxGeometry(length + .12, 1, .12), boardCasing);
+      casing.position.copy(face.position); casing.rotation.y = yaw; casing.translateZ(-.07);
+      casing.castShadow = true;
+      scene.add(face, casing);
+    };
+    addBoard(-8.95, -3.5, 28, Math.PI / 2, 0);
+    addBoard(8.95, -3.5, 28, -Math.PI / 2, .37);
+    addBoard(0, -11.75, 17, 0, .68);
 
     const goal = new THREE.Group();
     goal.position.z = -9;
-    const postMaterial = new THREE.MeshStandardMaterial({ color: 0xe8f0df, emissive: 0x8ef5e3, emissiveIntensity: .12, metalness: 0.25, roughness: 0.36 });
+    const postMaterial = new THREE.MeshPhysicalMaterial({ color: 0xeef2ea, metalness: 0, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.12 });
     const post = (height: number, rotationZ = 0) => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, height, 12), postMaterial);
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, height, 20), postMaterial);
       mesh.rotation.z = rotationZ;
       mesh.castShadow = true;
       return mesh;
@@ -539,7 +569,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     const targetTextures = targetCanvases.map((canvas) => new THREE.CanvasTexture(canvas));
     targetTextures.forEach((texture) => { texture.colorSpace = THREE.SRGBColorSpace; });
     const targetMeshes = targetTextures.map((texture, index) => {
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.25, 1.25), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.25, 1.25), displayMaterial(texture, 1.35));
       mesh.position.set(index === 0 ? -2.05 : 2.05, 1.75, -8.88);
       scene.add(mesh);
       return mesh;
@@ -549,14 +579,15 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     scoreboardCanvas.width = 1024; scoreboardCanvas.height = 180;
     const scoreboardTexture = new THREE.CanvasTexture(scoreboardCanvas);
     scoreboardTexture.colorSpace = THREE.SRGBColorSpace;
-    const scoreboard = new THREE.Mesh(new THREE.PlaneGeometry(10.2, 1.8), new THREE.MeshBasicMaterial({ map: scoreboardTexture, toneMapped: false }));
+    const scoreboard = new THREE.Mesh(new THREE.PlaneGeometry(10.2, 1.8), displayMaterial(scoreboardTexture, 2));
     scoreboard.position.set(0, 5.35, -10.8);
     scene.add(scoreboard);
 
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(0.22, 40, 24),
-      new THREE.MeshStandardMaterial({ map: footballTexture(), color: 0xf1f5f2, roughness: 0.66, metalness: 0 }),
+      new THREE.MeshPhysicalMaterial({ map: footballTexture(), color: 0xf1f5f2, roughness: 0.5, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.3 }),
     );
+    ball.castShadow = true;
     const ballStart = new THREE.Vector3(0, 0.24, 1.65);
     ball.position.copy(ballStart);
     ball.visible = false;
@@ -590,17 +621,26 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     const impactLight = new THREE.PointLight(0xff7b27, 0, 15, 2);
     scene.add(impactLight);
 
-    const rainCount = 360;
-    const rainPositions = new Float32Array(rainCount * 3);
-    for (let index = 0; index < rainCount; index += 1) {
-      rainPositions[index * 3] = (Math.random() - 0.5) * 28;
-      rainPositions[index * 3 + 1] = Math.random() * 12;
-      rainPositions[index * 3 + 2] = 12 - Math.random() * 43;
-    }
-    const rainGeometry = new THREE.BufferGeometry();
-    rainGeometry.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3));
-    const rain = new THREE.Points(rainGeometry, new THREE.PointsMaterial({ color: 0x8ef5e3, size: 0.025, transparent: true, opacity: 0.38, depthWrite: false }));
-    scene.add(rain);
+    const rain = createRain(1500);
+    scene.add(rain.object);
+    mirrorHidden.push(rain.object);
+
+    // Image-based light comes from the stadium itself, captured twice for one bounce.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    let probe: THREE.WebGLRenderTarget | null = null;
+    const captureProbe = () => {
+      rain.object.visible = false;
+      reflection.uniforms.reflectionStrength.value = 0;
+      for (let bounce = 0; bounce < 2; bounce += 1) {
+        const next = pmrem.fromScene(scene, 0, 0.1, 90, { size: 256, position: new THREE.Vector3(0, 2.4, -3) });
+        probe?.dispose();
+        probe = next;
+        scene.environment = next.texture;
+      }
+      scene.environmentIntensity = 1;
+      reflection.uniforms.reflectionStrength.value = 1;
+      rain.object.visible = true;
+    };
 
     let aimedSide: VoteSide = "YES";
     let kickStarted = 0;
@@ -653,6 +693,7 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
     document.addEventListener("keydown", onKeyDown);
 
     let frame = 0;
+    let ballShadowStale = false;
     let previous = performance.now();
     let fpsSince=previous, fpsFrames=0;
     focusCutinRef.current?.classList.add("active");
@@ -768,13 +809,8 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
         }
       }
 
-      const positions = rainGeometry.attributes.position as THREE.BufferAttribute;
-      for (let index = 0; index < rainCount; index += 1) {
-        let y = positions.getY(index) - dt * 5.8;
-        if (y < 0) y = 10 + Math.random() * 3;
-        positions.setY(index, y);
-      }
-      positions.needsUpdate = true;
+      rain.update(dt);
+      ledMap.offset.x = (now * 0.000014) % 1;
 
       const crowdPositionAttribute = crowdGeometry.attributes.position as THREE.BufferAttribute;
       for (let index = 0; index < crowdCount; index += 1) {
@@ -817,12 +853,16 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
       camera.lookAt(0, 1.34, -6.7);
       cyan.intensity = 38 + Math.sin(now * 0.002) * 7;
       magenta.intensity = 40 + Math.cos(now * 0.0017) * 7;
+      if (kicking || ballShadowStale) { renderer.shadowMap.needsUpdate = true; ballShadowStale = kicking; }
+      reflection.render(scene, camera, mirrorHidden);
       composer.render(dt);
     };
     // Reveal one fully textured frame; no delayed "low detail → high detail" swap.
     manager.onLoad=()=>{
       if(disposed)return;
       renderer.shadowMap.needsUpdate=true;
+      captureProbe();
+      pmrem.dispose();
       frame=requestAnimationFrame(animate);
       readyRef.current();
     };
@@ -834,7 +874,9 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
       fxaa.uniforms.resolution.value.set(1/(mount.clientWidth*renderPixelRatio),1/(mount.clientHeight*renderPixelRatio));
+      reflection.setSize(mount.clientWidth * renderPixelRatio * 0.35, mount.clientHeight * renderPixelRatio * 0.35);
     };
+    if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__hsStadium = { scene, camera, renderer, composer, volumetric, key, kick: startKick, aim: chooseSide };
     window.addEventListener("resize", onResize);
     return () => {
       disposed=true;manager.onLoad=()=>{};
@@ -844,6 +886,9 @@ export function SoccerWorld({ market, prices, kicks, onKick, onReady, paused = f
       renderer.domElement.removeEventListener("click", onClick);
       document.removeEventListener("keydown", onKeyDown);
       disposeScene(scene);
+      reflection.dispose();
+      probe?.dispose();
+      pmrem.dispose();
       skyTexture.dispose();
       fieldMap.dispose();
       surfaceTextures.forEach(texture=>texture.dispose());

@@ -13,7 +13,7 @@ import { polymer, steel, timber, type PbrSet } from "./pbr";
 // This is the curvature-driven "smart material" approach used for hero props,
 // computed in a few milliseconds instead of being baked into textures.
 
-type Finish = {
+export type Finish = {
   set: PbrSet;
   wearColor: THREE.Color;
   wearRoughness: number;
@@ -177,7 +177,7 @@ function surfaceGeometry(mesh: THREE.Mesh, toRifle: THREE.Matrix4, uvScale: numb
 }
 
 /** Re-surfaces the loaded rifle in place. `root` must not yet be parented. */
-export function surfaceWeapon(root: THREE.Object3D, anisotropy: number): WeaponSurfacing {
+export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?: THREE.LoadingManager): WeaponSurfacing {
   root.updateMatrixWorld(true);
   const length = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
   const span = Math.max(length.x, length.y, length.z);
@@ -232,6 +232,26 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number): WeaponS
     child.receiveShadow = true;
     geometries.push(geometry);
   });
+  // Furniture: a scanned lacquered hardwood replaces the generated grain once it has loaded.
+  const scanned: THREE.Texture[] = [];
+  const furniture = materials.get("Material_2");
+  if (furniture) {
+    const loader = new THREE.TextureLoader(manager);
+    const load = (file: string, srgb: boolean, apply: (texture: THREE.Texture) => void) => loader.load(`/textures/lacquered_cherry_wood-2k/${file}.jpg`, (texture) => {
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.center.set(0.5, 0.5);
+      texture.rotation = Math.PI / 2;
+      texture.repeat.set(0.34, 0.34);
+      texture.anisotropy = anisotropy;
+      if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+      scanned.push(texture);
+      apply(texture);
+      furniture.needsUpdate = true;
+    });
+    load("diffuse", true, (texture) => { furniture.map = texture; furniture.color.setRGB(1, 0.74, 0.58); });
+    load("normal-gl", false, (texture) => { furniture.normalMap = texture; furniture.normalScale.set(1.4, 1.4); });
+    load("roughness", false, (texture) => { furniture.roughnessMap = texture; });
+  }
   // Locate the muzzle: the rifle's long axis, at whichever end is the slimmer one.
   const bounds = new THREE.Box3();
   geometries.forEach((geometry) => bounds.union(new THREE.Box3().setFromBufferAttribute(geometry.attributes.aRifle as THREE.BufferAttribute)));
@@ -259,7 +279,128 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number): WeaponS
     dispose() {
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
+      scanned.forEach((texture) => texture.dispose());
       Object.values(sets).forEach((set) => { set.map.dispose(); set.normalMap.dispose(); set.ormMap.dispose(); });
     },
   };
+}
+
+/**
+ * Prepares an authored rifle (baked PBR textures) for the viewmodel: shadows,
+ * texture filtering, and the muzzle crown found geometrically — the long axis,
+ * at whichever end is the slimmer one. Display-only props are removed.
+ */
+export function prepareRifle(root: THREE.Object3D, anisotropy: number): WeaponSurfacing {
+  const props: THREE.Object3D[] = [];
+  root.traverse((child) => { if (/bullet/i.test(child.name)) props.push(child); });
+  props.forEach((prop) => prop.removeFromParent());
+  root.updateMatrixWorld(true);
+  const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const meshes: THREE.Mesh[] = [];
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    meshes.push(child);
+    child.castShadow = true;
+    child.receiveShadow = true;
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+      materials.add(material);
+      if (material instanceof THREE.MeshStandardMaterial) {
+        material.envMapIntensity = 1.1;
+        for (const texture of [material.map, material.normalMap, material.roughnessMap, material.metalnessMap, material.aoMap]) {
+          if (texture) { texture.anisotropy = anisotropy; textures.add(texture); }
+        }
+      }
+    }
+  });
+  const bounds = new THREE.Box3();
+  const toRoot = new THREE.Matrix4(), point = new THREE.Vector3();
+  const each = (visit: (p: THREE.Vector3) => void) => meshes.forEach((mesh) => {
+    toRoot.multiplyMatrices(inverseRoot, mesh.matrixWorld);
+    const position = mesh.geometry.attributes.position;
+    for (let i = 0; i < position.count; i += 1) visit(point.fromBufferAttribute(position, i).applyMatrix4(toRoot));
+  });
+  each((p) => bounds.expandByPoint(p));
+  const extent = bounds.getSize(new THREE.Vector3());
+  const span = Math.max(extent.x, extent.y, extent.z);
+  const axis = extent.x >= extent.y && extent.x >= extent.z ? "x" : extent.y >= extent.z ? "y" : "z";
+  const ends = [new THREE.Box3(), new THREE.Box3()];
+  each((p) => {
+    if (p[axis] < bounds.min[axis] + span * 0.02) ends[0].expandByPoint(p);
+    else if (p[axis] > bounds.max[axis] - span * 0.02) ends[1].expandByPoint(p);
+  });
+  const girth = ends.map((end) => { const size = end.getSize(new THREE.Vector3()); size[axis] = 0; return size.length(); });
+  const front = girth[1] <= girth[0] ? 1 : 0;
+  const muzzle = ends[front].getCenter(new THREE.Vector3());
+  muzzle[axis] = front ? bounds.max[axis] : bounds.min[axis];
+  const bore = new THREE.Vector3();
+  bore[axis] = front ? 1 : -1;
+  return {
+    muzzle,
+    bore,
+    dispose() {
+      meshes.forEach((mesh) => mesh.geometry.dispose());
+      materials.forEach((material) => material.dispose());
+      textures.forEach((texture) => texture.dispose());
+    },
+  };
+}
+
+/** Shared finishes for weapons modelled in code. Each mesh names one in `userData.finish`. */
+export type FinishKit = { finishes: Record<string, Finish>; dispose: () => void };
+
+export function createFinishKit(anisotropy: number): FinishKit {
+  const sets = {
+    anodized: steel(anisotropy, [0.075, 0.078, 0.084], 0.56, 201),
+    parkerized: steel(anisotropy, [0.13, 0.135, 0.14], 0.64, 203),
+    blued: steel(anisotropy, [0.05, 0.052, 0.06], 0.42, 205),
+    bright: steel(anisotropy, [0.46, 0.46, 0.45], 0.3, 207, 256),
+    polymer: polymer(anisotropy, [0.03, 0.03, 0.032], 209),
+    grey: polymer(anisotropy, [0.075, 0.08, 0.078], 211),
+    rubber: polymer(anisotropy, [0.018, 0.018, 0.018], 213),
+    brass: steel(anisotropy, [0.72, 0.52, 0.2], 0.3, 215, 256),
+  };
+  const metal = (set: PbrSet, wear: number, amount: number, env = 1.1, metalness = 1): Finish => ({ set, wearColor: new THREE.Color(wear, wear, wear * 0.98), wearRoughness: 0.32, wearMetalness: 1, wearAmount: amount, options: { envMapIntensity: env, metalness } });
+  const plastic = (set: PbrSet, wear: number, amount: number): Finish => ({ set, wearColor: new THREE.Color(wear, wear, wear), wearRoughness: 0.4, wearMetalness: 0, wearAmount: amount, options: { metalness: 0, envMapIntensity: 0.8, normalScale: new THREE.Vector2(0.3, 0.3) } });
+  return {
+    finishes: {
+      anodized: metal(sets.anodized, 0.5, 0.75, 0.8, 0.55),
+      parkerized: metal(sets.parkerized, 0.52, 0.85, 0.85, 0.6),
+      blued: metal(sets.blued, 0.5, 0.9, 1.2),
+      bright: metal(sets.bright, 0.75, 0.6, 1.3),
+      polymer: plastic(sets.polymer, 0.09, 0.7),
+      grey: plastic(sets.grey, 0.17, 0.75),
+      rubber: plastic(sets.rubber, 0.05, 0.4),
+      brass: metal(sets.brass, 0.85, 0.3),
+    },
+    dispose() { Object.values(sets).forEach((set) => { set.map.dispose(); set.normalMap.dispose(); set.ormMap.dispose(); }); },
+  };
+}
+
+/** Surfaces every mesh under `root` that names a finish. `root` must not yet be parented. */
+export function surfaceBuilt(root: THREE.Object3D, kit: FinishKit) {
+  root.updateMatrixWorld(true);
+  const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+  const span = Math.max(size.x, size.y, size.z);
+  const materials = new Map<string, THREE.MeshPhysicalMaterial>();
+  const geometries: THREE.BufferGeometry[] = [];
+  const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const toRoot = new THREE.Matrix4();
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.userData.finish) return;
+    const name = child.userData.finish as string;
+    let material = materials.get(name);
+    if (!material) { material = wearMaterial(kit.finishes[name], 0.0055, 60); materials.set(name, material); }
+    toRoot.multiplyMatrices(inverseRoot, child.matrixWorld);
+    const geometry = surfaceGeometry(child, toRoot, 7);
+    child.geometry.dispose();
+    child.geometry = geometry;
+    child.material = material;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    geometries.push(geometry);
+  });
+  void span;
+  return { dispose() { geometries.forEach((geometry) => geometry.dispose()); materials.forEach((material) => material.dispose()); } };
 }

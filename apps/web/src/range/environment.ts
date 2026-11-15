@@ -29,6 +29,8 @@ export type RangeEnvironment = {
   furnace: THREE.Group;
   materials: { darkMetal: THREE.MeshStandardMaterial; machine: THREE.MeshStandardMaterial; structural: THREE.MeshStandardMaterial; brushed: THREE.MeshStandardMaterial };
   sun: THREE.DirectionalLight;
+  /** Overhead lamp fill lights, exposed so game modes can restage the room. */
+  fills: THREE.PointLight[];
   reflection: FloorReflection;
   /** Objects hidden while the mirrored floor pass renders. */
   mirrorHidden: THREE.Object3D[];
@@ -504,10 +506,11 @@ export function buildRange(options: {
   sun.shadow.radius = 2.5;
   scene.add(sun, sun.target);
   // Soft overhead fill from the lamp rows (the probe carries the rest).
-  [3, -9, -21].forEach((z, index) => {
+  const fills = [3, -9, -21].map((z, index) => {
     const lampFill = new THREE.PointLight(0xd3f1ec, 52, 19, 2);
     lampFill.position.set(index === 1 ? -3.4 : 3.4, 5.1, z);
     scene.add(lampFill);
+    return lampFill;
   });
 
   // ---- Air -----------------------------------------------------------------
@@ -536,6 +539,7 @@ export function buildRange(options: {
     furnace,
     materials: { darkMetal, machine: machineMaterial, structural, brushed: ductMaterial },
     sun,
+    fills,
     reflection,
     mirrorHidden,
     glows,

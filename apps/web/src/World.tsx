@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -13,7 +12,12 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { createBallistics } from "./range/ballistics";
 import { buildRange, displayMaterial, projectUv } from "./range/environment";
 import { VolumetricPass } from "./range/volumetric";
-import { surfaceWeapon, type WeaponSurfacing } from "./range/weapon";
+import { createArsenal, type ReloadSound, type RigPose, type Timeline } from "./range/arsenal";
+import { createTrigger, nextMode, pressTrigger, releaseTrigger, resetTrigger, takeShot, type FireMode, type WeaponSpec } from "./range/arsenalSpec";
+import { createArms, emptyPose } from "./range/hands";
+import { RangeHud, type WeaponHud } from "./RangeHud";
+import { createHorde, type HordeHud } from "./range/horde";
+import { createSequenceDetector } from "./range/konami";
 import { withOpaqueOccluders } from "./opaqueOcclusion";
 import { drawHsxChart, subscribeHsxChart } from "./hsxChart";
 import type { PortfolioDisplayEntry, IndexMarket, VoteCount, VoteSide } from "./types";
@@ -397,6 +401,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
   const readyRef = useRef(onReady);
   const portfolioRef = useRef(portfolio);
   const lcdRefreshRef = useRef<(() => void) | null>(null);
+  const [weaponHud, setWeaponHud] = useState<WeaponHud | null>(null);
+  const [hordeHud, setHordeHud] = useState<HordeHud | null>(null);
 
   useEffect(() => { enteredRef.current = entered; }, [entered]);
   useEffect(() => { selectRef.current = onSelect; }, [onSelect]);
@@ -731,50 +737,28 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     scanningLine.position.set(0, 0.04, -3);
     scene.add(scanningLine);
 
+    // Viewmodel: `viewWeapon` carries sway and recoil, `weaponBody` the reload tilt.
+    // Weapons and hands are built in real metres and scaled up into view units.
+    const VIEW_SCALE = 2.5;
     const viewWeapon = new THREE.Group();
-    const shoulder = new THREE.Vector3(0.38, -0.42, -1.22);
+    viewWeapon.scale.setScalar(VIEW_SCALE);
+    const shoulder = new THREE.Vector3(0.44, -0.5, -1.6);
     const weaponRotation = new THREE.Euler(0.035, 0.11, 0.015);
     viewWeapon.position.copy(shoulder);
     viewWeapon.rotation.copy(weaponRotation);
     viewModelScene.add(viewWeapon);
+    const weaponBody = new THREE.Group();
+    viewWeapon.add(weaponBody);
+    const anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    const arsenal = createArsenal(anisotropy, loadingManager, () => disposed);
+    const arms = createArms(anisotropy);
+    weaponBody.add(arms.hands);
+    viewWeapon.add(arms.sleeves);
+    arsenal.rigs.forEach((rig, index) => { rig.root.visible = index === 0; weaponBody.add(rig.root); });
+    const rigPose: RigPose = { left: emptyPose(), right: emptyPose(), bodyPosition: new THREE.Vector3(), bodyRotation: new THREE.Euler() };
     const muzzleAnchor = new THREE.Object3D();
-    muzzleAnchor.position.set(-0.4, 0.42, -0.45);
-    viewWeapon.add(muzzleAnchor);
-    let weaponMagazine: THREE.Object3D | null = null;
-    let weaponSurfacing: WeaponSurfacing | null = null;
-    const magazineBasePosition = new THREE.Vector3();
-    const magazineBaseQuaternion = new THREE.Quaternion();
-    new GLTFLoader(loadingManager).load("/models/ak-platform.glb", ({ scene: object }) => {
-      if (disposed) return;
-      const bounds = new THREE.Box3().setFromObject(object);
-      const size = bounds.getSize(new THREE.Vector3());
-      const center = bounds.getCenter(new THREE.Vector3());
-      object.position.sub(center);
-      weaponSurfacing = surfaceWeapon(object, Math.min(16, renderer.capabilities.getMaxAnisotropy()));
-      // GLTFLoader may sanitise node names, so accept both spellings.
-      const part = (name: string) => object.getObjectByName(name) ?? object.getObjectByName(name.replace(/\s/g, "_"));
-      const model = new THREE.Group();
-      model.add(object);
-      model.scale.setScalar(2.04 / Math.max(size.x, size.y, size.z));
-      model.rotation.y = Math.PI;
-      model.position.set(0, 0.02, -0.08);
-      viewWeapon.add(model);
-      viewWeapon.updateMatrixWorld(true);
-      model.updateMatrixWorld(true);
-      // Flash, light and tracers originate from the real muzzle crown.
-      const crown = viewWeapon.worldToLocal(object.localToWorld(weaponSurfacing.muzzle.clone()));
-      const ahead = viewWeapon.worldToLocal(object.localToWorld(weaponSurfacing.muzzle.clone().add(weaponSurfacing.bore)));
-      muzzleAnchor.position.copy(crown);
-      muzzleAnchor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), ahead.sub(crown).normalize());
-      const magazine = part("AK-47 2 Mag 1");
-      if (magazine) {
-        model.attach(magazine);
-        weaponMagazine = magazine;
-        magazineBasePosition.copy(magazine.position);
-        magazineBaseQuaternion.copy(magazine.quaternion);
-      }
-      
-    });
+    muzzleAnchor.scale.setScalar(1 / VIEW_SCALE);
+    weaponBody.add(muzzleAnchor);
 
     // The rifle is lit by the room: an overhead key that stays world-anchored as the
     // player looks around, plus direct sun whenever they stand in a sun patch.
@@ -838,43 +822,113 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     let furnaceTargeted = false;
     let chartTargeted = false;
     let lastFrameTime = performance.now();
-    const magazineSize = 30;
-    const fireInterval = 92;
-    const reloadDuration = 2300;
-    let magazine = magazineSize;
-    let reserve = Number.POSITIVE_INFINITY;
+    let current = 0;
+    let previous = 1;
+    let switchingTo = -1;
+    let switchStartedAt = 0;
+    const SWITCH_DOWN = 190, SWITCH_UP = 300;
+    const magazines = arsenal.rigs.map((rig) => rig.spec.magazine);
+    const modes: FireMode[] = arsenal.rigs.map((rig) => rig.spec.modes[0]);
+    const trigger = createTrigger();
+    const reserve = Number.POSITIVE_INFINITY;
     let reloading = false;
     let reloadStartedAt = 0;
-    let lastShot = -fireInterval;
-    let firing = false;
+    let reloadCursor = 0;
+    let cycleStartedAt = -1;
+    let cycleCursor = 0;
+    let cycleEjected = false;
+    let autoReloadAt = -1;
+    let climbDebt = 0;
+    let forceFire = false;
+    let frozenReload: number | null = null;
+
+    // Wave mode (unlocked with the Konami code).
+    let shake = 0;
+    const horde = createHorde({
+      scene,
+      obstacles: [...marketPositions.map((position) => ({ x: position.x, z: position.z, r: 2.15 })), { x: 9.18, z: -11.6, r: 2.6 }],
+      audio: () => (audioContext ??= new AudioContext()),
+      onHud: (hud) => { if (!disposed) setHordeHud(hud); },
+      onHurt: (amount) => { shake = Math.max(shake, amount <= 1 ? 0.25 + amount * 0.5 : 1); },
+    });
+    volumetricPass.glows.push(...horde.glows);
+    const konami = createSequenceDetector();
+    const calm = {
+      fog: (scene.fog as THREE.FogExp2).color.clone(), fogDensity: (scene.fog as THREE.FogExp2).density,
+      sun: range.sun.color.clone(), sunIntensity: range.sun.intensity,
+      haze: volumetricPass.haze.clone(), density: volumetricPass.density,
+      fills: range.fills.map((light) => light.intensity),
+    };
+    const dread = { fog: new THREE.Color(0x140303), sun: new THREE.Color(1, 0.34, 0.24), haze: new THREE.Color(0.05, 0.012, 0.01) };
+    const toggleHorde = () => {
+      if (horde.active) horde.stop();
+      else horde.start(performance.now());
+    };
     let audioContext: AudioContext | null = null;
     const moveDirection = new THREE.Vector3();
-    ammoRef.current(magazine, reserve, reloading);
+    const reportWeapon = () => {
+      const spec = arsenal.rigs[current].spec;
+      ammoRef.current(magazines[current], reserve, reloading);
+      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading });
+    };
+    reportWeapon();
 
-    const playShot = () => {
+    const burst = (frequency: number, q: number, length: number, gain: number, delay = 0, type: BiquadFilterType = "bandpass") => {
+      audioContext ??= new AudioContext();
+      const context = audioContext;
+      const at = context.currentTime + delay;
+      const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * length)), context.sampleRate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < channel.length; i += 1) channel[i] = (Math.random() * 2 - 1) * (1 - i / channel.length) ** 2;
+      const noise = context.createBufferSource();
+      noise.buffer = buffer;
+      const filter = context.createBiquadFilter();
+      filter.type = type;
+      filter.frequency.value = frequency;
+      filter.Q.value = q;
+      const volume = context.createGain();
+      volume.gain.value = gain;
+      noise.connect(filter).connect(volume).connect(context.destination);
+      noise.start(at);
+    };
+    const playAction = (kind: ReloadSound | "select" | "draw" | "dry") => {
+      if (kind === "magOut") { burst(900, 2, 0.05, 0.3); burst(2600, 4, 0.03, 0.14, 0.04); }
+      else if (kind === "magIn") { burst(520, 1.5, 0.07, 0.42); burst(2100, 5, 0.025, 0.2, 0.03); }
+      else if (kind === "rack") { burst(1700, 3, 0.05, 0.3); burst(1100, 2, 0.06, 0.38, 0.11); burst(3200, 6, 0.02, 0.16, 0.13); }
+      else if (kind === "slap") { burst(320, 1, 0.07, 0.5, 0, "lowpass"); burst(1500, 3, 0.04, 0.24, 0.015); }
+      else if (kind === "boltUp") burst(2300, 5, 0.035, 0.26);
+      else if (kind === "boltBack") { burst(1250, 2.5, 0.09, 0.3); burst(3400, 7, 0.02, 0.14, 0.085); }
+      else if (kind === "boltHome") { burst(950, 2, 0.08, 0.32); burst(2500, 5, 0.03, 0.22, 0.09); }
+      else if (kind === "cloth") burst(700, 0.6, 0.16, 0.08, 0, "lowpass");
+      else if (kind === "select") burst(3100, 8, 0.02, 0.22);
+      else if (kind === "draw") { burst(600, 0.7, 0.14, 0.12, 0, "lowpass"); burst(1900, 4, 0.03, 0.14, 0.12); }
+      else burst(2800, 9, 0.018, 0.2);
+    };
+
+    const playShot = (spec: WeaponSpec) => {
       audioContext ??= new AudioContext();
       const context = audioContext;
       const at = context.currentTime;
-      const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.075), context.sampleRate);
+      const buffer = context.createBuffer(1, Math.floor(context.sampleRate * spec.sound.length), context.sampleRate);
       const channel = buffer.getChannelData(0);
       for (let i = 0; i < channel.length; i += 1) channel[i] = (Math.random() * 2 - 1) * (1 - i / channel.length);
       const noise = context.createBufferSource();
       noise.buffer = buffer;
       const filter = context.createBiquadFilter();
       filter.type = "bandpass";
-      filter.frequency.value = 1250;
+      filter.frequency.value = spec.sound.pitch;
       filter.Q.value = 0.65;
       const gain = context.createGain();
-      gain.gain.setValueAtTime(0.28, at);
-      gain.gain.exponentialRampToValueAtTime(0.001, at + 0.075);
+      gain.gain.setValueAtTime(spec.sound.gain, at);
+      gain.gain.exponentialRampToValueAtTime(0.001, at + spec.sound.length);
       noise.connect(filter).connect(gain).connect(context.destination);
       noise.start(at);
       const thump = context.createOscillator();
       const thumpGain = context.createGain();
       thump.type = "triangle";
-      thump.frequency.setValueAtTime(120, at);
+      thump.frequency.setValueAtTime(spec.sound.thump, at);
       thump.frequency.exponentialRampToValueAtTime(48, at + 0.09);
-      thumpGain.gain.setValueAtTime(0.22, at);
+      thumpGain.gain.setValueAtTime(spec.sound.gain * 0.8, at);
       thumpGain.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
       thump.connect(thumpGain).connect(context.destination);
       thump.start(at);
@@ -882,13 +936,36 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     };
 
     const startReload = () => {
-      if (reloading) return;
+      if (reloading || switchingTo >= 0 || magazines[current] === arsenal.rigs[current].spec.magazine) return;
       reloading = true;
       reloadStartedAt = performance.now();
-      ammoRef.current(magazine, reserve, true);
+      reloadCursor = 0;
+      cycleStartedAt = -1;
+      autoReloadAt = -1;
+      resetTrigger(trigger);
+      reportWeapon();
+    };
+    const switchWeapon = (index: number) => {
+      if (index === current || index < 0 || index >= arsenal.rigs.length || switchingTo >= 0) return;
+      reloading = false;
+      cycleStartedAt = -1;
+      autoReloadAt = -1;
+      resetTrigger(trigger);
+      switchingTo = index;
+      switchStartedAt = performance.now();
+      playAction("draw");
+    };
+    const cycleMode = () => {
+      const spec = arsenal.rigs[current].spec;
+      const next = nextMode(spec, modes[current]);
+      if (next === modes[current]) return;
+      modes[current] = next;
+      resetTrigger(trigger);
+      playAction("select");
+      reportWeapon();
     };
 
-    const spawnShotEffects = (now: number, endpoint: THREE.Vector3, hit?: THREE.Intersection<THREE.Object3D>) => {
+    const spawnShotEffects = (now: number, endpoint: THREE.Vector3, hit: THREE.Intersection<THREE.Object3D> | undefined, eject: boolean) => {
       camera.updateMatrixWorld(true);
       viewModelCamera.updateMatrixWorld(true);
       muzzleAnchor.updateWorldMatrix(true, false);
@@ -897,7 +974,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       const start = tracerRaycaster.ray.origin.clone().addScaledVector(tracerRaycaster.ray.direction, 1.15);
       roomMuzzleLight.position.copy(start);
       ballistics.fire(now, start, endpoint, hit);
-      ballistics.eject(
+      if (eject) ballistics.eject(
         now,
         camera.localToWorld(new THREE.Vector3(0.36, -0.2, -0.75)),
         new THREE.Vector3(1.5 + Math.random() * 0.9, 1.5 + Math.random() * 0.6, 0.25).applyQuaternion(camera.quaternion),
@@ -906,11 +983,11 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
 
     const requestLock = () => {
       if (!enteredRef.current) enteredEventRef.current();
-      if (document.pointerLockElement !== renderer.domElement) void renderer.domElement.requestPointerLock()?.catch(() => { firing = false; });
+      if (document.pointerLockElement !== renderer.domElement) void renderer.domElement.requestPointerLock()?.catch(() => { releaseTrigger(trigger); });
     };
     const onPointerLockChange = () => {
       const locked = document.pointerLockElement === renderer.domElement;
-      if (!locked) firing = false;
+      if (!locked) { releaseTrigger(trigger); resetTrigger(trigger); }
       lockRef.current(locked);
     };
     const onMouseMove = (event: MouseEvent) => {
@@ -921,44 +998,68 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       lookKickY = THREE.MathUtils.clamp(lookKickY + event.movementY * 0.00026, -0.028, 0.028);
       pitch = THREE.MathUtils.clamp(pitch, -1.28, 1.28);
     };
-    const fireShot = (now: number, force = false) => {
-      if ((!force && document.pointerLockElement !== renderer.domElement) || reloading || now - lastShot < fireInterval) return;
-      if (magazine <= 0) {
-        startReload();
-        return;
-      }
-      lastShot = now;
-      magazine -= 1;
-      ammoRef.current(magazine, reserve, false);
-      recoil = 0.1;
+    const fireShot = (now: number) => {
+      const rig = arsenal.rigs[current], spec = rig.spec;
+      magazines[current] -= 1;
+      reportWeapon();
+      recoil = spec.kick;
+      climbDebt += spec.climb;
+      pitch = THREE.MathUtils.clamp(pitch + spec.climb, -1.28, 1.28);
+      lookKickX = THREE.MathUtils.clamp(lookKickX + (Math.random() - 0.5) * spec.climb * 1.6, -0.035, 0.035);
       muzzleEnergy = 1;
-      playShot();
+      playShot(spec);
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      const hit = raycaster.intersectObjects([...voteMeshes, ...targetMeshes, ...interactiveMeshes, ...shootableObjects], false)[0];
-      const endpoint = hit?.point.clone() ?? raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, 45);
+      const hits = raycaster.intersectObjects([...voteMeshes, ...targetMeshes, ...interactiveMeshes, ...shootableObjects, ...(horde.active ? horde.targets : [])], false);
+      // Bullets stop in the first zombie; the bolt-action punches through a line of them.
+      let hit: THREE.Intersection<THREE.Object3D> | undefined;
+      let flesh: THREE.Vector3 | null = null;
+      const struck = new Set<number>();
+      for (const candidate of hits) {
+        const zombie = candidate.object.userData.zombie as number | undefined;
+        if (zombie === undefined) { hit = candidate; break; }
+        if (struck.has(zombie)) continue;
+        struck.add(zombie);
+        if (horde.hit(candidate.object, candidate.point, raycaster.ray.direction, spec.damage, spec.headshot, now)) flesh ??= candidate.point.clone();
+        if (modes[current] !== "BOLT" || struck.size >= 4) { hit = undefined; break; }
+      }
+      if (flesh && modes[current] !== "BOLT") hit = undefined;
+      const endpoint = hit?.point.clone() ?? flesh ?? raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, 45);
       if (hit && targetMeshes.includes(hit.object as THREE.Mesh)) hit.object.userData.hitAt = now;
-      if (hit && voteMeshes.includes(hit.object as THREE.Mesh)) {
+      if (hit && !horde.active && voteMeshes.includes(hit.object as THREE.Mesh)) {
         const marketIndex = Number(hit.object.userData.marketIndex);
         const side = hit.object.userData.voteSide as VoteSide;
         hit.object.userData.hitAt = now;
         voteRef.current(markets[marketIndex], side);
       }
-      spawnShotEffects(now, endpoint, hit);
-      if (magazine === 0) startReload();
+      spawnShotEffects(now, endpoint, hit, modes[current] !== "BOLT");
+      if (modes[current] === "BOLT" && magazines[current] > 0) { cycleStartedAt = now; cycleCursor = 0; cycleEjected = false; }
+      if (magazines[current] === 0) { autoReloadAt = now + (modes[current] === "BOLT" ? 420 : 160); resetTrigger(trigger); }
     };
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 0 || document.pointerLockElement !== renderer.domElement) return;
-      firing = true;
-      fireShot(performance.now());
+      pressTrigger(trigger);
     };
     const onMouseUp = (event: MouseEvent) => {
-      if (event.button === 0) firing = false;
+      if (event.button === 0) releaseTrigger(trigger);
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (document.pointerLockElement !== renderer.domElement || event.deltaY === 0) return;
+      const count = arsenal.rigs.length;
+      switchWeapon((current + (event.deltaY > 0 ? 1 : count - 1)) % count);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (enteredRef.current && !event.repeat && konami(event.code)) toggleHorde();
+      if (horde.phase === "over" && !event.repeat) {
+        if (event.code === "Enter") horde.start(performance.now());
+        if (event.code === "Backspace") horde.stop();
+      }
       if (document.pointerLockElement !== renderer.domElement) return;
       keys.add(event.code);
       if (event.repeat) return;
       if (event.code === "KeyR") startReload();
+      if (event.code === "KeyV") cycleMode();
+      if (event.code === "KeyQ") switchWeapon(previous);
+      if (/^Digit[1-5]$/.test(event.code)) switchWeapon(Number(event.code.slice(5)) - 1);
       if (event.code === "KeyE" && furnaceTargeted) {
         furnaceRef.current();
         document.exitPointerLock();
@@ -977,6 +1078,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     document.addEventListener("mouseup", onMouseUp);
     document.addEventListener("pointerlockchange", onPointerLockChange);
     document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("wheel", onWheel, { passive: true });
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
 
@@ -985,6 +1087,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     let fpsSampleStarted = performance.now();
     let lowFpsSamples = 0;
     let adaptivePixelRatio = initialPixelRatio;
+    let moodApplied = 0;
     const animate = (now: number) => {
       frame = requestAnimationFrame(animate);
       fpsFrames += 1;
@@ -1020,19 +1123,83 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       lookKickX = THREE.MathUtils.lerp(lookKickX, 0, Math.min(1, dt * 8));
       lookKickY = THREE.MathUtils.lerp(lookKickY, 0, Math.min(1, dt * 8));
       camera.position.y = 1.62 + bodyBob;
-      camera.rotation.set(pitch + lookKickY * 0.2, yaw, bodyRoll - lookKickX * 0.34);
+      shake = THREE.MathUtils.lerp(shake, 0, Math.min(1, dt * 7));
+      camera.rotation.set(
+        pitch + lookKickY * 0.2 + Math.sin(now * 0.09) * shake * 0.03,
+        yaw + Math.sin(now * 0.071) * shake * 0.024,
+        bodyRoll - lookKickX * 0.34 + Math.sin(now * 0.113) * shake * 0.05,
+      );
 
-      let reloadProgress = 0;
+      // Wave mode restages the room: lamps fail, the sun turns blood red, alarms sweep.
+      horde.update(now, dt, camera.position, yaw);
+      const dreadful = horde.mood();
+      if (dreadful > 0.002 || moodApplied > 0) {
+        moodApplied = dreadful > 0.002 ? dreadful : 0;
+        const m = moodApplied, fog = scene.fog as THREE.FogExp2;
+        fog.color.copy(calm.fog).lerp(dread.fog, m);
+        fog.density = calm.fogDensity * (1 + m * 1.5);
+        scene.environmentIntensity = THREE.MathUtils.lerp(1.2, 0.3, m);
+        scene.backgroundIntensity = THREE.MathUtils.lerp(1, 0.1, m);
+        viewModelScene.environmentIntensity = THREE.MathUtils.lerp(1.15, 0.5, m);
+        range.sun.color.copy(calm.sun).lerp(dread.sun, m);
+        range.sun.intensity = THREE.MathUtils.lerp(calm.sunIntensity, 2.2, m);
+        volumetricPass.haze.copy(calm.haze).lerp(dread.haze, m);
+        volumetricPass.density = THREE.MathUtils.lerp(calm.density, 0.026, m);
+        const flicker = Math.sin(now * 0.021) * Math.sin(now * 0.0047) > 0.72 ? 0.2 : 1;
+        range.fills.forEach((light, index) => { light.intensity = calm.fills[index] * THREE.MathUtils.lerp(1, 0.2 * flicker, m); });
+        bloomPass.strength = THREE.MathUtils.lerp(0.26, 0.42, m);
+      }
+
+      // Weapon switch: lower the old weapon, swap, raise the new one.
+      let lowered = 0;
+      if (switchingTo >= 0) {
+        const elapsed = now - switchStartedAt;
+        if (elapsed >= SWITCH_DOWN && switchingTo !== current) {
+          arsenal.rigs[current].root.visible = false;
+          previous = current;
+          current = switchingTo;
+          arsenal.rigs[current].root.visible = true;
+          reportWeapon();
+        }
+        lowered = elapsed < SWITCH_DOWN ? smooth01(elapsed / SWITCH_DOWN) : 1 - smooth01(Math.min(1, (elapsed - SWITCH_DOWN) / SWITCH_UP));
+        if (elapsed >= SWITCH_DOWN + SWITCH_UP) { switchingTo = -1; lowered = 0; }
+      }
+      const rig = arsenal.rigs[current], spec = rig.spec;
+      let timeline: Timeline | null = null;
+      let progress = 0;
       if (reloading) {
-        reloadProgress = THREE.MathUtils.clamp((now - reloadStartedAt) / reloadDuration, 0, 1);
-        if (reloadProgress >= 1) {
-          magazine = magazineSize;
+        progress = frozenReload ?? THREE.MathUtils.clamp((now - reloadStartedAt) / spec.reloadMs, 0, 1);
+        timeline = rig.reload;
+        const sounds = timeline.sounds ?? [];
+        while (reloadCursor < sounds.length && sounds[reloadCursor].t <= progress) { playAction(sounds[reloadCursor].kind); reloadCursor += 1; }
+        if (progress >= 1) {
+          magazines[current] = spec.magazine;
           reloading = false;
-          reloadProgress = 0;
-          ammoRef.current(magazine, reserve, false);
+          timeline = null;
+          reportWeapon();
+        }
+      } else if (cycleStartedAt >= 0 && rig.cycle) {
+        progress = frozenReload ?? (now - cycleStartedAt) / spec.cycleMs;
+        if (progress >= 1) cycleStartedAt = -1;
+        else {
+          timeline = rig.cycle;
+          const sounds = timeline.sounds ?? [];
+          while (cycleCursor < sounds.length && sounds[cycleCursor].t <= progress) { playAction(sounds[cycleCursor].kind); cycleCursor += 1; }
+          if (!cycleEjected && progress >= (timeline.eject ?? 2)) {
+            cycleEjected = true;
+            ballistics.eject(now, camera.localToWorld(new THREE.Vector3(0.36, -0.2, -0.75)), new THREE.Vector3(1.2 + Math.random() * 0.6, 1.9 + Math.random() * 0.5, 0.5).applyQuaternion(camera.quaternion));
+          }
         }
       }
-      if (firing) fireShot(now);
+      if (autoReloadAt >= 0 && now >= autoReloadAt) startReload();
+      const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || document.pointerLockElement === renderer.domElement);
+      if (armed && takeShot(spec, modes[current], trigger, now)) {
+        if (magazines[current] > 0) fireShot(now);
+        else { playAction("dry"); resetTrigger(trigger); startReload(); }
+      }
+      const climbBack = climbDebt * Math.min(1, dt * 5);
+      climbDebt -= climbBack;
+      pitch -= climbBack;
 
       recoil = THREE.MathUtils.lerp(recoil, 0, Math.min(1, dt * 14));
       muzzleEnergy = THREE.MathUtils.lerp(muzzleEnergy, 0, Math.min(1, dt * 25));
@@ -1044,34 +1211,23 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       roomMuzzleLight.intensity = muzzleEnergy * 72;
       const walkBob = moving ? Math.sin(now * 0.011) * 0.018 : Math.sin(now * 0.0022) * 0.004;
       const lateralBob = moving ? Math.cos(now * 0.0055) * 0.012 : Math.sin(now * 0.0017) * 0.003;
-      const reloadSwing = reloading ? Math.sin(smooth01(reloadProgress) * Math.PI) : 0;
+      rig.pose(timeline, progress, rigPose);
+      weaponBody.position.copy(rigPose.bodyPosition);
+      weaponBody.rotation.copy(rigPose.bodyRotation);
+      arms.left.apply(rigPose.left);
+      arms.right.apply(rigPose.right);
+      muzzleAnchor.position.copy(rig.muzzle.position);
       viewWeapon.position.set(
-        shoulder.x + lateralBob - lookKickX * 0.9 - reloadSwing * 0.18,
-        shoulder.y + walkBob + recoil + lookKickY * 0.7 - reloadSwing * 0.18,
-        shoulder.z + reloadSwing * 0.12,
+        shoulder.x + rig.view.p[0] * VIEW_SCALE + lateralBob - lookKickX * 0.9,
+        shoulder.y + rig.view.p[1] * VIEW_SCALE + walkBob + recoil * 0.35 + lookKickY * 0.7 - lowered * 0.75,
+        shoulder.z + rig.view.p[2] * VIEW_SCALE + recoil * 0.9,
       );
       viewWeapon.rotation.set(
-        weaponRotation.x + recoil * 0.6 + lookKickY * 0.45 + reloadSwing * 0.3,
-        weaponRotation.y + lookKickX * 0.55 + reloadSwing * 0.52,
-        weaponRotation.z - lookKickX * 0.4 - reloadSwing * 0.52,
+        weaponRotation.x + rig.view.r[0] + recoil * 0.55 + lookKickY * 0.45 - lowered * 0.7,
+        weaponRotation.y + rig.view.r[1] + lookKickX * 0.55 + lowered * 0.25,
+        weaponRotation.z + rig.view.r[2] - lookKickX * 0.4,
       );
-      if (weaponMagazine) {
-        weaponMagazine.position.copy(magazineBasePosition);
-        weaponMagazine.quaternion.copy(magazineBaseQuaternion);
-        weaponMagazine.visible = true;
-        if (reloading && reloadProgress >= 0.16 && reloadProgress < 0.48) {
-          const drop = smooth01((reloadProgress - 0.16) / 0.32);
-          weaponMagazine.position.y -= drop * 0.24;
-          weaponMagazine.position.x -= drop * 0.07;
-          weaponMagazine.rotateZ(-drop * 0.38);
-          weaponMagazine.visible = reloadProgress < 0.44;
-        } else if (reloading && reloadProgress >= 0.48 && reloadProgress < 0.72) {
-          const rise = smooth01((reloadProgress - 0.48) / 0.24);
-          weaponMagazine.position.y -= (1 - rise) * 0.24;
-          weaponMagazine.position.x += (1 - rise) * 0.09;
-          weaponMagazine.rotateZ((1 - rise) * 0.42);
-        }
-      }
+      arms.update();
 
       exhibitGroups.forEach((group, index) => {
         const market = markets[index];
@@ -1153,7 +1309,13 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       (window as unknown as Record<string, unknown>).__hsRange = {
         view: (x: number, z: number, nextYaw: number, nextPitch = 0) => { camera.position.x = x; camera.position.z = z; yaw = nextYaw; pitch = nextPitch; },
         flash: (energy = 1) => { muzzleEnergy = energy; },
-        shoot: () => fireShot(performance.now(), true),
+        shoot: () => { if (magazines[current] > 0) fireShot(performance.now()); },
+        hold: (down: boolean) => { forceFire = down; if (down) pressTrigger(trigger); else releaseTrigger(trigger); },
+        weapon: (index: number) => switchWeapon(index),
+        mode: () => cycleMode(),
+        arsenal, arms, weaponBody, viewWeapon,
+        freeze: (at: number | null) => { frozenReload = at; },
+        horde, toggleHorde,
         reload: () => startReload(),
         scene, viewModelScene, camera, renderer, range, composer,
       };
@@ -1208,6 +1370,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       document.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
       document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("wheel", onWheel);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       furnaceProximityRef.current(false);
@@ -1234,7 +1397,9 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       skyMap?.dispose();
       range.dispose();
       ballistics.dispose();
-      weaponSurfacing?.dispose();
+      arsenal.dispose();
+      arms.dispose();
+      horde.dispose();
       pmrem.dispose();
       lcdMaterials.forEach(material => material.emissiveMap?.dispose());
       composer.passes.forEach(pass => pass.dispose());
@@ -1245,5 +1410,10 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     };
   }, [markets, quality]);
 
-  return <div className="world-canvas" ref={mountRef} aria-label="HyperStrike first-person ballistic price range" />;
+  return (
+    <>
+      <div className="world-canvas" ref={mountRef} aria-label="HyperStrike first-person ballistic price range" />
+      {entered && <RangeHud weapon={weaponHud} horde={hordeHud} />}
+    </>
+  );
 }

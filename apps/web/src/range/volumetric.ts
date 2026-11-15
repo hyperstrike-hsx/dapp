@@ -31,6 +31,8 @@ const MARCH_SHADER = {
     uniform vec3 sunColor;
     uniform vec3 hazeColor;
     uniform float density;
+    uniform float hazeTop;
+    uniform float hazeFade;
     uniform float time;
     uniform vec3 glowPosition[MAX_GLOWS];
     uniform vec3 glowColor[MAX_GLOWS];
@@ -80,8 +82,8 @@ const MARCH_SHADER = {
           lit = texture(tShadow, vec3(coordinate.xy, coordinate.z - 0.0006));
         }
         float swirl = 0.55 + 0.9 * noise(p * 0.55 + drift);
-        // The haze belongs to the room: nothing scatters above the roof deck.
-        float local = density * swirl * (1.0 + 0.5 * smoothstep(2.4, 0.0, p.y)) * (1.0 - smoothstep(6.05, 6.3, p.y));
+        // The haze belongs to the venue: nothing scatters above its ceiling.
+        float local = density * swirl * (1.0 + 0.5 * smoothstep(2.4, 0.0, p.y)) * (1.0 - smoothstep(hazeTop - hazeFade, hazeTop, p.y));
         scatter += transmittance * (sunColor * phase * lit + hazeColor) * local * stride;
         transmittance *= exp(-local * stride * 0.85);
       }
@@ -134,6 +136,11 @@ export type Glow = { position: THREE.Vector3; color: THREE.Color };
 export class VolumetricPass extends Pass {
   readonly glows: Glow[] = [];
   density = 0.015;
+  /** World height above which the air is clear, and how gradually it clears. */
+  ceiling = 6.3;
+  ceilingFade = 0.25;
+  /** Ambient in-scatter colour of the haze (live: change it to restage the room). */
+  readonly haze: THREE.Color;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly sun: THREE.DirectionalLight;
   private readonly depth: THREE.Texture;
@@ -146,6 +153,7 @@ export class VolumetricPass extends Pass {
   constructor(camera: THREE.PerspectiveCamera, sun: THREE.DirectionalLight, depth: THREE.Texture, haze: THREE.Color) {
     super();
     this.camera = camera;
+    this.haze = haze;
     this.sun = sun;
     this.depth = depth;
     this.target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -164,6 +172,8 @@ export class VolumetricPass extends Pass {
         sunColor: { value: new THREE.Color() },
         hazeColor: { value: haze },
         density: { value: this.density },
+        hazeTop: { value: this.ceiling },
+        hazeFade: { value: this.ceilingFade },
         time: { value: 0 },
         glowPosition: { value: Array.from({ length: MAX_GLOWS }, () => new THREE.Vector3(0, -100, 0)) },
         glowColor: { value: Array.from({ length: MAX_GLOWS }, () => new THREE.Color(0, 0, 0)) },
@@ -202,6 +212,8 @@ export class VolumetricPass extends Pass {
     u.sunDirection.value.copy(this.sun.target.position).sub(this.sun.position).normalize();
     u.sunColor.value.copy(this.sun.color).multiplyScalar(shadow ? this.sun.intensity : 0);
     u.density.value = this.density;
+    u.hazeTop.value = this.ceiling;
+    u.hazeFade.value = this.ceilingFade;
     u.time.value = this.elapsed;
     for (let i = 0; i < MAX_GLOWS; i += 1) {
       const glow = this.glows[i];
