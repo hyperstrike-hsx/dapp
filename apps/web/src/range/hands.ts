@@ -51,23 +51,24 @@ export type Arms = {
 };
 
 const FINGERS = [
-  { x: -0.0315, lengths: [0.043, 0.026, 0.022], radius: 0.0102, splay: 0.07 },
-  { x: -0.0105, lengths: [0.047, 0.03, 0.023], radius: 0.0105, splay: 0.02 },
-  { x: 0.0105, lengths: [0.043, 0.027, 0.022], radius: 0.01, splay: -0.03 },
-  { x: 0.0305, lengths: [0.034, 0.02, 0.019], radius: 0.009, splay: -0.09 },
+  { x: -0.0315, lengths: [0.043, 0.026, 0.022], radius: 0.0118, splay: 0.07 },
+  { x: -0.0105, lengths: [0.047, 0.03, 0.023], radius: 0.0122, splay: 0.02 },
+  { x: 0.0105, lengths: [0.043, 0.027, 0.022], radius: 0.0116, splay: -0.03 },
+  { x: 0.0305, lengths: [0.034, 0.02, 0.019], radius: 0.0104, splay: -0.09 },
 ];
 const WRIST = 0.082;
 
 export function createArms(anisotropy: number): Arms {
   const sets = [
-    tile(polymer(anisotropy, [0.05, 0.052, 0.055], 171), 3, 3),
+    tile(polymer(anisotropy, [0.085, 0.082, 0.074], 171), 3, 3),
     tile(polymer(anisotropy, [0.012, 0.012, 0.014], 173), 2, 2),
-    tile(polymer(anisotropy, [0.055, 0.062, 0.05], 177), 5, 9),
+    tile(polymer(anisotropy, [0.07, 0.08, 0.058], 177), 7, 14),
   ];
   const glove = pbrMaterial(sets[0], { envMapIntensity: 0.6 });
   const armour = pbrMaterial(sets[1], { envMapIntensity: 0.9 });
   armour.roughness = 0.7;
-  const sleeve = pbrMaterial(sets[2], { envMapIntensity: 0.5 });
+  const sleeve = pbrMaterial(sets[2], { envMapIntensity: 0.35 });
+  sleeve.normalScale.set(1.6, 1.6);
   const glass = new THREE.MeshStandardMaterial({ color: 0x06100f, emissive: 0x8ef5e3, emissiveIntensity: 0.5, roughness: 0.15, metalness: 0.2 });
   const geometries: THREE.BufferGeometry[] = [];
   const mesh = (geometry: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D) => {
@@ -141,23 +142,25 @@ export function createArms(anisotropy: number): Arms {
       if (index === 0) joint.position.set(-0.034, -0.006, 0.026);
       else joint.position.z = -[0.04, 0.032][index - 1];
       parent.add(joint);
-      mesh(segment(0.0125 - index * 0.001, length), glove, joint);
+      mesh(segment(0.0142 - index * 0.001, length), glove, joint);
       parent = joint;
       thumb.push(joint);
     });
 
     const forearm = new THREE.Group();
-    const sleeveGeometry = new THREE.CylinderGeometry(0.056, 0.037, 0.52, 16, 1);
-    sleeveGeometry.rotateX(Math.PI / 2);
-    sleeveGeometry.translate(0, 0, 0.26);
-    const sleeveMesh = mesh(sleeveGeometry, sleeve, forearm);
-    sleeveMesh.scale.set(1, 0.86, 1);
-    for (const z of [0.05, 0.17, 0.3]) {
-      const fold = mesh(new THREE.TorusGeometry(0.039 + z * 0.037, 0.0045, 6, 18), sleeve, forearm);
-      fold.position.z = z;
-      fold.rotation.set(0.25 - z, 0.2, 0);
-      fold.scale.y = 0.86;
+    // Sleeve: a turned profile with a gathered cuff and cloth folds along its length.
+    const profile: THREE.Vector2[] = [];
+    for (let step = 0; step <= 40; step += 1) {
+      const t = step / 40, z = t * 0.56;
+      const cuff = Math.exp(-((z - 0.012) ** 2) / 0.00012) * 0.007;
+      const folds = (Math.sin(z * 78) * 0.0028 + Math.sin(z * 31 + 1.3) * 0.0034) * Math.min(1, z * 14);
+      profile.push(new THREE.Vector2(0.041 + Math.min(1, t * 1.5) ** 0.7 * 0.03 + cuff + folds, z));
     }
+    const sleeveGeometry = new THREE.LatheGeometry(profile, 22);
+    sleeveGeometry.rotateX(Math.PI / 2);
+    const sleeveMesh = mesh(sleeveGeometry, sleeve, forearm);
+    sleeveMesh.scale.set(1, 0.84, 1);
+    sleeveMesh.rotation.z = mirror ? 0.5 : -0.4;
     sleeves.add(forearm);
 
     updates.push(() => {
@@ -185,8 +188,8 @@ export function createArms(anisotropy: number): Arms {
     };
   };
 
-  const right = build(false, new THREE.Vector3(0.1, -0.34, 0.5));
-  const left = build(true, new THREE.Vector3(-0.36, -0.4, 0.34));
+  const right = build(false, new THREE.Vector3(0.17, -0.3, 0.42));
+  const left = build(true, new THREE.Vector3(-0.4, -0.25, 0.02));
 
   return {
     hands,

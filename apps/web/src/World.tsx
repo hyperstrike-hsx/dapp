@@ -742,8 +742,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     const VIEW_SCALE = 2.5;
     const viewWeapon = new THREE.Group();
     viewWeapon.scale.setScalar(VIEW_SCALE);
-    const shoulder = new THREE.Vector3(0.44, -0.5, -1.6);
-    const weaponRotation = new THREE.Euler(0.035, 0.11, 0.015);
+    const shoulder = new THREE.Vector3(0.41, -0.45, -0.96);
+    const weaponRotation = new THREE.Euler(0.03, 0.065, 0.015);
     viewWeapon.position.copy(shoulder);
     viewWeapon.rotation.copy(weaponRotation);
     viewModelScene.add(viewWeapon);
