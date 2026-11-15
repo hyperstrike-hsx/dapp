@@ -23,7 +23,7 @@ export function RangePerformance({
       <span>{fps} FPS</span>
       <button
         onClick={() => onQuality(quality === "HIGH" ? "PERFORMANCE" : "HIGH")}
-        title="High: contact occlusion and up to 2.8 MP. Performance: no contact occlusion, up to 1.3 MP. Only changes when clicked."
+        title="High: floor reflections, volumetric sun shafts, contact occlusion, 4K sun shadows, up to 2.8 MP. Performance: none of those, 2K shadows, up to 1.3 MP. Only changes when clicked."
       >
         {quality} ↻
       </button>

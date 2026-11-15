@@ -9,6 +9,11 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { createBallistics } from "./range/ballistics";
+import { buildRange, displayMaterial, projectUv } from "./range/environment";
+import { VolumetricPass } from "./range/volumetric";
+import { surfaceWeapon, type WeaponSurfacing } from "./range/weapon";
 import { withOpaqueOccluders } from "./opaqueOcclusion";
 import { drawHsxChart, subscribeHsxChart } from "./hsxChart";
 import type { PortfolioDisplayEntry, IndexMarket, VoteCount, VoteSide } from "./types";
@@ -30,12 +35,6 @@ type Props = {
   onChart: () => void;
   onChartProximity: (nearby: boolean) => void;
   onReady: () => void;
-};
-
-type TimedEffect = {
-  object: THREE.Object3D;
-  expires: number;
-  velocity?: THREE.Vector3;
 };
 
 const BRAND = 0x8ef5e3;
@@ -125,7 +124,7 @@ const BODYCAM_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     time: { value: 0 },
-    distortion: { value: 0.025 },
+    distortion: { value: 0.018 },
     aberration: { value: 0.00012 },
   },
   vertexShader: /* glsl */`
@@ -149,11 +148,8 @@ const BODYCAM_SHADER = {
     void main() {
       vec2 p = vUv * 2.0 - 1.0;
       float r2 = dot(p, p);
-      vec2 uv = (p * (1.0 + distortion * r2)) * 0.5 + 0.5;
-      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-        gl_FragColor = vec4(0.006, 0.009, 0.012, 1.0);
-        return;
-      }
+      // Normalised so the warped image always fills the frame (no dark border).
+      vec2 uv = (p * (1.0 + distortion * r2) / (1.0 + distortion * 2.0)) * 0.5 + 0.5;
       vec2 split = normalize(p + vec2(0.0001)) * aberration * (0.3 + r2);
       float red = texture2D(tDiffuse, uv + split).r;
       float green = texture2D(tDiffuse, uv).g;
@@ -165,8 +161,8 @@ const BODYCAM_SHADER = {
       color = (color - 0.5) * 1.08 + 0.5;
       color += vec3(-0.012, 0.018, 0.022) * (1.0 - smoothstep(0.18, 0.72, luminance));
       color += vec3(0.024, 0.009, -0.012) * smoothstep(0.56, 1.0, luminance);
-      color += grain * 0.005;
-      color *= 1.0 - smoothstep(0.55, 1.5, r2) * 0.34;
+      color += grain * 0.012 * (1.0 - luminance * 0.6);
+      color *= 1.0 - smoothstep(0.5, 1.7, r2) * 0.3;
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -345,170 +341,6 @@ function environmentSignTexture(title: string, subtitle: string) {
   return texture;
 }
 
-function skyTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0, "#167ec8");
-  gradient.addColorStop(.48, "#58b9ed");
-  gradient.addColorStop(1, "#b9e9ff");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 512, 256);
-  const glow = ctx.createRadialGradient(370, 44, 4, 370, 44, 125);
-  glow.addColorStop(0, "rgba(255,248,218,.82)");
-  glow.addColorStop(.22, "rgba(255,234,183,.28)");
-  glow.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, 512, 256);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function sunTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createRadialGradient(128, 128, 3, 128, 128, 126);
-  gradient.addColorStop(0, "rgba(255,255,244,1)");
-  gradient.addColorStop(.08, "rgba(255,235,180,.98)");
-  gradient.addColorStop(.28, "rgba(255,191,95,.45)");
-  gradient.addColorStop(1, "rgba(255,153,55,0)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 256, 256);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function puddleGeometry(seed: number) {
-  const shape = new THREE.Shape();
-  const points = 28;
-  for (let index = 0; index < points; index += 1) {
-    const angle = (index / points) * Math.PI * 2;
-    const radius = 0.84 + Math.sin(index * 2.17 + seed) * 0.09 + Math.cos(index * 4.31 + seed * 0.7) * 0.055;
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
-    if (index === 0) shape.moveTo(x, y);
-    else shape.lineTo(x, y);
-  }
-  shape.closePath();
-  return new THREE.ShapeGeometry(shape, 4);
-}
-
-function bakedGridTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 1024;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(2, 2);
-  ctx.fillStyle = "#505c5b";
-  ctx.fillRect(0, 0, 512, 512);
-  let seed = 4187;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let i = 0; i < 5200; i += 1) {
-    const shade = Math.floor(48 + random() * 74);
-    ctx.fillStyle = `rgba(${shade},${shade + 8},${shade + 7},${0.05 + random() * 0.12})`;
-    const size = 0.5 + random() * 2.8;
-    ctx.fillRect(random() * 512, random() * 512, size, size);
-  }
-  ctx.strokeStyle = "rgba(27,38,38,.42)";
-  ctx.lineWidth = 3;
-  for (let i = 0; i <= 512; i += 128) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-  }
-  ctx.strokeStyle = "rgba(217,226,219,.13)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 512; i += 32) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-  }
-  ctx.save();
-  ctx.translate(256, 256);
-  ctx.rotate(-0.18);
-  ctx.fillStyle = "rgba(232,154,66,.68)";
-  ctx.fillRect(-18, -390, 36, 780);
-  ctx.fillStyle = "rgba(142,245,227,.58)";
-  ctx.fillRect(55, -390, 6, 780);
-  ctx.restore();
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(5, 8);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function industrialTexture(kind: "concrete" | "metal" | "wood") {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 1024;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(2, 2);
-  const palette = kind === "concrete"
-    ? { base: "#66706d", dark: "#263332", light: "#a5aca4" }
-    : kind === "metal"
-      ? { base: "#26383c", dark: "#0d171a", light: "#648084" }
-      : { base: "#79563a", dark: "#2f2119", light: "#b3865d" };
-  ctx.fillStyle = palette.base;
-  ctx.fillRect(0, 0, 512, 512);
-  let seed = kind === "concrete" ? 90210 : kind === "metal" ? 1138 : 2049;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let i = 0; i < 3600; i += 1) {
-    ctx.globalAlpha = 0.025 + random() * 0.11;
-    ctx.fillStyle = random() > 0.45 ? palette.light : palette.dark;
-    const length = kind === "metal" ? 6 + random() * 38 : 1 + random() * 8;
-    ctx.fillRect(random() * 512, random() * 512, length, 0.5 + random() * 2.2);
-  }
-  ctx.globalAlpha = 1;
-  if (kind === "concrete") {
-    ctx.strokeStyle = "rgba(24,34,33,.42)";
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 13; i += 1) {
-      const x = random() * 512;
-      const y = random() * 512;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + random() * 42 - 21, y + 18 + random() * 44);
-      ctx.lineTo(x + random() * 58 - 29, y + 50 + random() * 50);
-      ctx.stroke();
-    }
-  } else if (kind === "metal") {
-    ctx.strokeStyle = "rgba(155,184,185,.24)";
-    ctx.lineWidth = 2;
-    for (let y = 0; y <= 512; y += 64) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-    }
-    for (let x = 24; x <= 512; x += 96) {
-      ctx.fillStyle = "rgba(8,14,16,.68)";
-      ctx.beginPath(); ctx.arc(x, 24, 4, 0, Math.PI * 2); ctx.fill();
-    }
-  } else {
-    ctx.strokeStyle = "rgba(38,23,15,.68)";
-    ctx.lineWidth = 5;
-    for (let x = 0; x <= 512; x += 128) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 512); ctx.stroke();
-    }
-    ctx.strokeStyle = "rgba(222,170,112,.18)";
-    ctx.lineWidth = 2;
-    for (let x = 18; x <= 512; x += 32) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 9, 512); ctx.stroke();
-    }
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
 function rangeDecalTexture(label: string, detail: string, orange = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
@@ -546,23 +378,6 @@ function rangeDecalTexture(label: string, detail: string, orange = false) {
 function smooth01(value: number) {
   const clamped = THREE.MathUtils.clamp(value, 0, 1);
   return clamped * clamped * (3 - 2 * clamped);
-}
-
-function box(size: [number, number, number], color: number, metalness = 0.7, roughness = 0.3) {
-  return new THREE.Mesh(
-    new THREE.BoxGeometry(...size),
-    new THREE.MeshStandardMaterial({ color, metalness, roughness }),
-  );
-}
-
-function disposeEffect(effect: TimedEffect) {
-  effect.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
-    object.geometry.dispose();
-    const materials = Array.isArray(object.material) ? object.material : [object.material];
-    materials.forEach((material) => material.dispose());
-  });
-  effect.object.removeFromParent();
 }
 
 export function World({ quality="HIGH", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
@@ -607,8 +422,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     loadingManager.itemStart("hyperstrike-world-bootstrap");
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111b1b);
-    scene.fog = new THREE.FogExp2(0x1a2421, 0.012);
+    scene.background = new THREE.Color(0x6f8fa8);
+    scene.fog = new THREE.FogExp2(0x16201f, quality === "HIGH" ? 0.0045 : 0.011);
 
     const camera = new THREE.PerspectiveCamera(76, mount.clientWidth / mount.clientHeight, 0.08, 110);
     camera.position.set(0, 1.62, 7.2);
@@ -617,7 +432,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     const viewModelCamera = new THREE.PerspectiveCamera(54, mount.clientWidth / mount.clientHeight, 0.01, 12);
     viewModelCamera.position.set(0, 0, 0);
     viewModelScene.add(viewModelCamera);
-    viewModelScene.add(new THREE.HemisphereLight(0xfff2dd, 0x333537, 1.15));
+    viewModelScene.add(new THREE.HemisphereLight(0xd9ecec, 0x2a2622, 0.22));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", stencil: false });
     // Stable resolution from the first frame: no delayed quality drop/rebuild.
@@ -627,13 +442,21 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.94;
+    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.autoClear = false;
     renderer.debug.checkShaderErrors = import.meta.env.DEV;
     mount.appendChild(renderer.domElement);
+
+    const range = buildRange({ scene, renderer, quality, loadingManager });
+    const ballistics = createBallistics(scene);
+    range.mirrorHidden.push(...ballistics.transient);
+    const shootableObjects = range.shootable;
+    const furnaceMeshes = range.furnaceMeshes;
+    const environmentTextures: THREE.Texture[] = [];
+    const textureLoader = new THREE.TextureLoader(loadingManager);
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
@@ -643,472 +466,88 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     aoPass.render = (...args: Parameters<typeof aoPass.render>) =>
       withOpaqueOccluders(scene, () => renderAO(...args));
     aoPass.enabled = quality === "HIGH";
-    aoPass.updateGtaoMaterial({ radius: 0.48, samples: 8, distanceExponent: 1.5, thickness: 0.5, distanceFallOff: 1 });
+    aoPass.updateGtaoMaterial({ radius: 0.55, samples: 8, distanceExponent: 1.4, thickness: 0.6, distanceFallOff: 1 });
     aoPass.updatePdMaterial({ samples: 8, rings: 2, radius: 4 });
-    aoPass.blendIntensity = 0.48;
+    aoPass.blendIntensity = 0.82;
     // Keep contact occlusion at half resolution independently of the sharp scene.
     const sizeAO = aoPass.setSize.bind(aoPass);
     aoPass.setSize = (w: number, h: number) => sizeAO(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
     composer.addPass(aoPass);
+    // Sun shafts are marched against the opaque depth the occlusion pass already produced.
+    const volumetricPass = new VolumetricPass(camera, range.sun, aoPass.depthTexture, new THREE.Color(0.022, 0.038, 0.042));
+    volumetricPass.enabled = quality === "HIGH";
+    volumetricPass.glows.push(...range.glows);
+    composer.addPass(volumetricPass);
     const weaponPass = new RenderPass(viewModelScene, viewModelCamera);
     weaponPass.clear = false;
     weaponPass.clearDepth = true;
+    const renderWeapon = weaponPass.render.bind(weaponPass);
+    weaponPass.render = (...args: Parameters<typeof weaponPass.render>) => {
+      // World shadows are static; only the rifle's own shadow map refreshes each frame.
+      if (quality === "HIGH") renderer.shadowMap.needsUpdate = true;
+      renderWeapon(...args);
+    };
     composer.addPass(weaponPass);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.19, 0.16, 1.2);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.26, 0.42, 1.15);
     composer.addPass(bloomPass);
     const bodycamPass = new ShaderPass(BODYCAM_SHADER);
     composer.addPass(bodycamPass);
+    composer.addPass(new OutputPass());
+    // Anti-alias the display-referred image: edge detection is unreliable on HDR values.
     const fxaaPass = new ShaderPass(FXAAShader);
     fxaaPass.uniforms.resolution.value.set(
       1 / (mount.clientWidth * initialPixelRatio),
       1 / (mount.clientHeight * initialPixelRatio),
     );
     composer.addPass(fxaaPass);
-    composer.addPass(new OutputPass());
+    range.reflection.setSize(mount.clientWidth * initialPixelRatio * 0.6, mount.clientHeight * initialPixelRatio * 0.6);
 
+    // The HDR sky is only what the roof lights look out on; the room is lit by its own probe.
     const pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    let environmentMap: THREE.Texture | null = null;
+    let roomProbe: THREE.WebGLRenderTarget | null = null;
+    let skyMap: THREE.Texture | null = null;
     new HDRLoader(loadingManager).load("/environment/bonzai-sky.hdr", (hdr) => {
       if (disposed) { hdr.dispose(); return; }
-      environmentMap = pmrem.fromEquirectangular(hdr).texture;
-      scene.environment = environmentMap;
-      scene.environmentIntensity = 0.42;
-      viewModelScene.environment = environmentMap;
-      viewModelScene.environmentIntensity = 0.45;
-      hdr.dispose();
-      pmrem.dispose();
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      skyMap = hdr;
+      scene.background = hdr;
+      scene.backgroundIntensity = 1.0;
     });
-
-    scene.add(new THREE.AmbientLight(0x172b34, 0.1));
-    scene.add(new THREE.HemisphereLight(0xe9e2d2, 0x454039, 1.25));
-    const key = new THREE.DirectionalLight(0xffedd0, 2.6);
-    key.position.set(-9, 12, 8);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.left = -18;
-    key.shadow.camera.right = 18;
-    key.shadow.camera.top = 16;
-    key.shadow.camera.bottom = -16;
-    key.shadow.camera.near = 1;
-    key.shadow.camera.far = 58;
-    key.shadow.bias = -0.00035;
-    key.shadow.normalBias = 0.025;
-    key.shadow.radius = 2;
-    scene.add(key);
-    const coolFill = new THREE.DirectionalLight(0xadd7cc, 0.65);
-    coolFill.position.set(12, 6, 5);
-    scene.add(coolFill);
-    const rim = new THREE.DirectionalLight(0xe8fffb, 0.24);
-    rim.position.set(0, 7, -24);
-    scene.add(rim);
-    const orangeBounce = new THREE.PointLight(0xff7a22, 18, 15, 2);
-    orangeBounce.position.set(-7, 2.4, -10);
-    scene.add(orangeBounce);
-    const cyberCyan = new THREE.SpotLight(0x9af5df, 24, 30, 0.38, 0.68, 1.4);
-    cyberCyan.position.set(-8, 5.6, 5);
-    cyberCyan.target.position.set(1, 1.2, -18);
-    const cyberOrange = new THREE.SpotLight(0xff6a1a, 44, 30, 0.4, 0.68, 1.4);
-    cyberOrange.position.set(8, 5.4, -4);
-    cyberOrange.target.position.set(-1, 1.1, -23);
-    scene.add(cyberCyan, cyberCyan.target, cyberOrange, cyberOrange.target);
 
     const emergencyMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2c50).multiplyScalar(4.8), toneMapped: false });
     for (const z of [3.5, -8.5, -20.5]) {
       const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.15), emergencyMaterial);
-      fixture.position.set(-9.54, 3.25, z);
+      fixture.position.set(-9.54, 3.62, z);
       scene.add(fixture);
-      // Emissive emergency fixtures share the architectural fill; avoid three extra lights.
     }
 
-    const shootableObjects: THREE.Object3D[] = [];
-    const furnaceMeshes: THREE.Mesh[] = [];
-    const environmentTextures: THREE.Texture[] = [];
-    const textureLoader = new THREE.TextureLoader(loadingManager);
-    const concreteRoot = "/textures/concrete_floor_worn_001-2k";
-    const floorDiffuse = textureLoader.load(`${concreteRoot}/diffuse.jpg`);
-    const floorNormal = textureLoader.load(`${concreteRoot}/normal-gl.jpg`);
-    const floorRoughness = textureLoader.load(`${concreteRoot}/roughness.jpg`);
-    const floorAo = textureLoader.load(`${concreteRoot}/ao.jpg`);
-    floorDiffuse.colorSpace = THREE.SRGBColorSpace;
-    const floorTextures = [floorDiffuse, floorNormal, floorRoughness, floorAo];
-    floorTextures.forEach((texture) => {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(7, 10);
+    const signFrame = new THREE.MeshStandardMaterial({ color: 0x0c1416, metalness: 0.85, roughness: 0.38 });
+    const mountSign = (texture: THREE.Texture, width: number, height: number, position: [number, number, number], rotation: number, parent: THREE.Object3D = scene) => {
       texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-    });
-    const wallRoot = "/textures/brick_wall_001-2k";
-    const wallDiffuse = textureLoader.load(`${wallRoot}/diffuse.jpg`);
-    wallDiffuse.colorSpace = THREE.SRGBColorSpace;
-    const wallNormal = textureLoader.load(`${wallRoot}/normal-gl.jpg`);
-    const wallRoughness = textureLoader.load(`${wallRoot}/roughness.jpg`);
-    const wallAo = textureLoader.load(`${wallRoot}/ao.jpg`);
-    const wallTextures = [wallDiffuse, wallNormal, wallRoughness, wallAo];
-    wallTextures.forEach((texture) => {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(12, 1.5);
-      texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-    });
-    const metalTexture = industrialTexture("metal");
-    const woodTexture = industrialTexture("wood");
-    const weaponMetalTexture = industrialTexture("metal");
-    const weaponWoodTexture = industrialTexture("wood");
-    metalTexture.repeat.set(2, 8);
-    woodTexture.repeat.set(2, 2);
-    weaponMetalTexture.repeat.set(1, 1);
-    weaponWoodTexture.repeat.set(1, 1);
-    environmentTextures.push(...floorTextures, ...wallTextures, metalTexture, woodTexture, weaponMetalTexture, weaponWoodTexture);
-    [metalTexture, woodTexture, weaponMetalTexture, weaponWoodTexture].forEach((texture) => {
-      texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-    });
-    const floorGeometry = new THREE.PlaneGeometry(38, 52);
-    floorGeometry.setAttribute("uv1", floorGeometry.attributes.uv.clone());
-    const floor = new THREE.Mesh(floorGeometry, new THREE.MeshStandardMaterial({
-      map: floorDiffuse,
-      normalMap: floorNormal,
-      normalScale: new THREE.Vector2(1.35, 1.35),
-      roughnessMap: floorRoughness,
-      aoMap: floorAo,
-      aoMapIntensity: 0.78,
-      color: 0xb8c0ba,
-      roughness: 0.92,
-      metalness: 0.02,
-      envMapIntensity: 0.42,
-    }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.z = -8;
-    floor.receiveShadow = true;
-    scene.add(floor);
-    shootableObjects.push(floor);
-
-    const puddleSpecs = [
-      { x: -4.9, z: 2.4, sx: 2.15, sz: 0.72, rotation: -0.16 },
-      { x: 4.6, z: -12.6, sx: 1.7, sz: 0.58, rotation: 0.28 },
-    ];
-    puddleSpecs.forEach((spec, index) => {
-      const geometry = puddleGeometry(index + 2);
-      const wetEdge = new THREE.Mesh(
-        geometry.clone(),
-        new THREE.MeshPhysicalMaterial({ color: 0x233f41, roughness: 0.14, metalness: 0.03, transparent: true, opacity: 0.3, depthWrite: false }),
-      );
-      wetEdge.rotation.x = -Math.PI / 2;
-      wetEdge.rotation.z = spec.rotation;
-      wetEdge.position.set(spec.x, 0.029, spec.z);
-      wetEdge.scale.set(spec.sx * 1.06, spec.sz * 1.12, 1);
-      scene.add(wetEdge);
-      const puddle = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial({
-        color: 0x424e48,
-        roughness: 0.19,
-        metalness: 0,
-        clearcoat: 1,
-        clearcoatRoughness: 0.04,
-        envMapIntensity: 0.55,
-        transparent: true,
-        opacity: 0.36,
-      }));
-      puddle.rotation.x = -Math.PI / 2;
-      puddle.rotation.z = spec.rotation;
-      puddle.position.set(spec.x, 0.032, spec.z);
-      puddle.scale.set(spec.sx, spec.sz, 1);
-      scene.add(puddle);
-    });
-
-    for (const x of [-8.6, 8.6]) {
-      const color = x < 0 ? STRIKE_ORANGE : BRAND;
-      const stripeMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, metalness: 0.22, roughness: 0.48 });
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.018, 40), stripeMat);
-      stripe.position.set(x, 0.025, -8);
-      scene.add(stripe);
-    }
-    const centerLane = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.016, 42),
-      new THREE.MeshStandardMaterial({ color: STRIKE_ORANGE, roughness: 0.68, metalness: 0.03 }),
-    );
-    centerLane.position.set(0, 0.024, -9);
-    scene.add(centerLane);
-
-    const architecture = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0xb6c3c1, roughness: 0.48, metalness: 0.62, envMapIntensity: 1.05 });
-    const wallInset = new THREE.MeshStandardMaterial({ map: wallDiffuse, normalMap: wallNormal, normalScale: new THREE.Vector2(0.45, 0.45), roughnessMap: wallRoughness, aoMap: wallAo, aoMapIntensity: 0.4, color: 0xe4d6c8, roughness: 0.93, metalness: 0 });
-    for (const x of [-10, 10]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 8, 48), architecture);
-      wall.position.set(x, 4, -9);
-      wall.receiveShadow = true;
-      scene.add(wall);
-      shootableObjects.push(wall);
-      const inset = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.2, 42), wallInset);
-      inset.position.set(x * 0.96, 2.3, -9);
-      inset.geometry.setAttribute("uv1", inset.geometry.attributes.uv.clone());
-      inset.receiveShadow = true;
-      scene.add(inset);
-      shootableObjects.push(inset);
-    }
-
-    const instance = (
-      size: [number, number, number],
-      material: THREE.Material,
-      transforms: Array<{ position: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }>,
-    ) => {
-      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(...size), material, transforms.length);
-      const dummy = new THREE.Object3D();
-      transforms.forEach((transform, index) => {
-        dummy.position.set(...transform.position);
-        dummy.rotation.set(...(transform.rotation ?? [0, 0, 0]));
-        dummy.scale.set(...(transform.scale ?? [1, 1, 1]));
-        dummy.updateMatrix();
-        mesh.setMatrixAt(index, dummy.matrix);
-      });
-      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-      mesh.computeBoundingSphere();
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-      shootableObjects.push(mesh);
-      return mesh;
+      environmentTextures.push(texture);
+      const housing = new THREE.Mesh(new RoundedBoxGeometry(width + 0.14, height + 0.14, 0.09, 2, 0.02), signFrame);
+      housing.position.set(...position);
+      housing.rotation.y = rotation;
+      housing.castShadow = true;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(width, height), displayMaterial(texture));
+      face.position.z = 0.047;
+      housing.add(face);
+      parent.add(housing);
+      return face;
     };
-
-    const structural = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0x8fa1a2, metalness: 0.72, roughness: 0.42, envMapIntensity: 1.1 });
-    const concrete = new THREE.MeshStandardMaterial({ map: floorDiffuse, normalMap: floorNormal, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: floorRoughness, color: 0xc3c1aa, metalness: 0.02, roughness: 0.94 });
-    const crateMaterial = new THREE.MeshStandardMaterial({ map: woodTexture, bumpMap: woodTexture, bumpScale: 0.025, color: 0xc49a6c, metalness: 0.04, roughness: 0.78 });
-    const bayZ = [4, -2, -8, -14, -20, -26];
-    instance([0.42, 5.3, 0.6], structural, bayZ.flatMap((z) => [-9.45, 9.45].map((x) => ({ position: [x, 2.65, z] as [number, number, number] }))));
-    instance([2.2, 0.24, 5.3], concrete, bayZ.flatMap((z) => [-8.55, 8.55].map((x) => ({ position: [x, 3.78, z - 2.7] as [number, number, number] }))));
-    instance([0.08, 0.08, 5.25], structural, bayZ.flatMap((z) => [-7.62, 7.62].map((x) => ({ position: [x, 4.55, z - 2.7] as [number, number, number] }))));
-    instance(
-      [0.08, 1.08, 0.08],
-      structural,
-      bayZ.flatMap((z) => [-7.62, 7.62].flatMap((x) =>
-        [z - 5.1, z - 2.7, z - 0.3].map((railZ) => ({ position: [x, 4.05, railZ] as [number, number, number] })),
-      )),
-    );
-    const wallStripeOrange = new THREE.MeshStandardMaterial({ color: STRIKE_ORANGE, emissive: 0x6c3210, emissiveIntensity: 0.35, roughness: 0.52 });
-    const wallStripeMint = new THREE.MeshStandardMaterial({ color: BRAND, emissive: 0x245f58, emissiveIntensity: 0.45, roughness: 0.45 });
-    instance([0.08, 0.18, 41], wallStripeOrange, [{ position: [-9.57, 0.72, -9] }]);
-    instance([0.08, 0.18, 41], wallStripeMint, [{ position: [9.57, 0.72, -9] }]);
-
-    const crateTransforms = [
-      [-7.7, 0.55, 2.5], [-7.62, 0.55, 1.25], [-7.66, 1.66, 1.85],
-      [7.7, 0.55, -2.1], [7.62, 0.55, -3.35], [7.66, 1.66, -2.75],
-      [-7.7, 0.55, -14.8], [-7.62, 1.66, -14.8], [7.7, 0.55, -19.5], [7.62, 0.55, -20.75],
-    ] as Array<[number, number, number]>;
-    instance([1.08, 1.08, 1.08], crateMaterial, crateTransforms.map((position, index) => ({ position, rotation: [0, (index % 3 - 1) * 0.12, 0] as [number, number, number] })));
-
-    const barrierTransforms = [
-      [-6.5, 0.52, 5], [-8.35, 0.52, -10.5], [-6.5, 0.52, -18],
-      [6.5, 0.52, 0], [6.5, 0.52, -11.5], [6.5, 0.52, -23],
-    ] as Array<[number, number, number]>;
-    instance([2.4, 1.04, 0.48], concrete, barrierTransforms.map((position, index) => ({ position, rotation: [0, index % 2 ? -0.08 : 0.08, 0] })));
-    const hazardMaterial = new THREE.MeshStandardMaterial({ color: STRIKE_ORANGE, emissive: 0x6c3210, emissiveIntensity: 0.45, roughness: 0.5, metalness: 0.18 });
-    instance([2.15, 0.14, 0.5], hazardMaterial, barrierTransforms.map((position) => ({ position: [position[0], 0.7, position[2] - 0.01] })));
-
-    const doorMaterial = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0x78898a, roughness: 0.5, metalness: 0.6 });
-    instance([0.16, 2.8, 1.8], doorMaterial, [
-      { position: [-9.56, 1.42, -4.6], rotation: [0, 0, 0] },
-      { position: [9.56, 1.42, -15.6], rotation: [0, 0, 0] },
-    ]);
-
-    const decalSpecs = [
-      // Keep signs centered in clear six-metre bays so structural columns never crop the copy.
-      { label: "RANGE A  →", detail: "CS2 INDEX MARKETS", x: -9.505, z: -11, rotation: Math.PI / 2, orange: true },
-      { label: "←  CONTROL", detail: "PORTFOLIO / INDEX INTELLIGENCE", x: 9.505, z: -23, rotation: -Math.PI / 2, orange: false },
-    ];
-    decalSpecs.forEach((decal) => {
-      const texture = rangeDecalTexture(decal.label, decal.detail, decal.orange);
-      environmentTextures.push(texture);
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(4.8, 2.1),
-        new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
-      );
-      mesh.position.set(decal.x, 2.45, decal.z);
-      mesh.rotation.y = decal.rotation;
-      scene.add(mesh);
-    });
-
-    const ductGeometry = new THREE.CylinderGeometry(0.23, 0.23, 39, 10);
-    const ductMaterial = new THREE.MeshStandardMaterial({ color: 0x263c43, metalness: 0.92, roughness: 0.3, envMapIntensity: 1.3 });
-    for (const x of [-7.2, 7.2]) {
-      const duct = new THREE.Mesh(ductGeometry, ductMaterial);
-      duct.rotation.x = Math.PI / 2;
-      duct.position.set(x, 5.34, -10.5);
-      scene.add(duct);
-    }
-    for (const x of [-5.2, 0, 5.2]) {
-      const cable = new THREE.Mesh(
-        new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-          new THREE.Vector3(x - 1.2, 5.8, 6),
-          new THREE.Vector3(x, 5.2 - Math.abs(x) * 0.025, -4),
-          new THREE.Vector3(x + 0.8, 5.55, -15),
-          new THREE.Vector3(x - 0.4, 5.1, -27),
-        ]), 56, 0.025, 5, false),
-        new THREE.MeshBasicMaterial({ color: 0x0b1316 }),
-      );
-      scene.add(cable);
-    }
-
-    const rangeSigns = [
-      { title: "1 HIT = 1 CONTRACT", subtitle: "AIM YES / NO · E TO REVIEW · CONFIRM TO SUBMIT", position: [-9.35, 2.6, -17] as [number, number, number], rotation: Math.PI / 2 },
-      { title: "HSX → STRIKE", subtitle: "MINT CAPACITY · CREATE MARKETS", position: [9.35, 2.6, -17] as [number, number, number], rotation: -Math.PI / 2 },
-    ];
-    rangeSigns.forEach((sign) => {
-      const texture = environmentSignTexture(sign.title, sign.subtitle);
-      environmentTextures.push(texture);
-      const panel = new THREE.Mesh(
-        new THREE.PlaneGeometry(4.6, 1.15),
-        new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }),
-      );
-      panel.position.set(...sign.position);
-      panel.rotation.y = sign.rotation;
-      scene.add(panel);
-    });
-
-    const furnace = new THREE.Group();
-    furnace.position.set(9.18, 0, -11.6);
-    furnace.rotation.y = -Math.PI / 2;
-    const furnaceSteel = new THREE.MeshStandardMaterial({ color: 0x27383a, metalness: 0.9, roughness: 0.28, envMapIntensity: 1.35 });
-    const furnaceBody = new THREE.Mesh(new THREE.BoxGeometry(3.3, 3.5, 1.15), furnaceSteel);
-    furnaceBody.position.y = 1.75;
-    furnaceBody.castShadow = true;
-    furnace.add(furnaceBody);
-    const furnaceCoreMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff5d12).multiplyScalar(4.4), toneMapped: false });
-    const furnaceCore = new THREE.Mesh(new THREE.PlaneGeometry(2.42, 1.86), furnaceCoreMaterial);
-    furnaceCore.position.set(0, 1.68, 0.59);
-    furnaceCore.userData.utility = "furnace";
-    furnace.add(furnaceCore);
-    furnaceMeshes.push(furnaceCore);
-    const furnaceDoor = new THREE.Mesh(new THREE.BoxGeometry(2.85, 2.35, 0.2), new THREE.MeshStandardMaterial({ color: 0x172427, metalness: 0.86, roughness: 0.34 }));
-    furnaceDoor.position.set(0, 1.68, 0.71);
-    furnaceDoor.userData.utility = "furnace";
-    furnace.add(furnaceDoor);
-    furnaceMeshes.push(furnaceDoor);
-    const furnaceWindow = new THREE.Mesh(new THREE.PlaneGeometry(2.25, 1.62), furnaceCoreMaterial);
-    furnaceWindow.position.set(0, 1.68, 0.825);
-    furnaceWindow.userData.utility = "furnace";
-    furnace.add(furnaceWindow);
-    furnaceMeshes.push(furnaceWindow);
-    for (const x of [-0.82, -0.41, 0, 0.41, 0.82]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.075, 1.72, 0.08), furnaceSteel);
-      bar.position.set(x, 1.68, 0.87);
-      furnace.add(bar);
-    }
-    const furnaceFireMap = muzzleFireTexture();
-    environmentTextures.push(furnaceFireMap);
-    const furnaceFlames: THREE.Sprite[] = [];
-    for (let index = 0; index < 5; index += 1) {
-      const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: furnaceFireMap, color: index % 2 ? 0xff6a17 : 0xffba45, transparent: true, opacity: 0.72, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-      flame.position.set(-0.8 + index * 0.4, 1.48 + (index % 2) * 0.18, 0.92);
-      flame.scale.set(0.72, 1.15 + index % 2 * 0.28, 1);
-      furnace.add(flame);
-      furnaceFlames.push(flame);
-    }
-    const furnaceLight = new THREE.PointLight(0xff6817, 34, 10, 2);
-    furnaceLight.position.set(0, 1.7, 1.8);
-    furnace.add(furnaceLight);
-    const furnaceSignTexture = environmentSignTexture("STRIKE FOUNDRY", "E · EXPLORE MARKET CAPACITY");
-    environmentTextures.push(furnaceSignTexture);
-    const furnaceSign = new THREE.Mesh(new THREE.PlaneGeometry(3.25, 0.82), new THREE.MeshBasicMaterial({ map: furnaceSignTexture, toneMapped: false }));
-    furnaceSign.position.set(0, 4.15, 0.66);
+    // Keep signs centered in clear six-metre bays so structural columns never crop the copy.
+    mountSign(rangeDecalTexture("RANGE A  →", "CS2 INDEX MARKETS", true), 4.8, 2.1, [-9.45, 2.45, -11], Math.PI / 2);
+    mountSign(rangeDecalTexture("←  CONTROL", "PORTFOLIO / INDEX INTELLIGENCE", false), 4.8, 2.1, [9.45, 2.45, -23], -Math.PI / 2);
+    mountSign(environmentSignTexture("1 HIT = 1 CONTRACT", "AIM YES / NO · E TO REVIEW · CONFIRM TO SUBMIT"), 4.6, 1.15, [-9.45, 2.6, -17], Math.PI / 2);
+    mountSign(environmentSignTexture("HSX → STRIKE", "MINT CAPACITY · CREATE MARKETS"), 4.6, 1.15, [9.45, 2.6, -17], -Math.PI / 2);
+    const furnaceSign = mountSign(environmentSignTexture("STRIKE FOUNDRY", "E · EXPLORE MARKET CAPACITY"), 3.25, 0.82, [0, 4.15, 0.62], 0, range.furnace);
     furnaceSign.userData.utility = "furnace";
-    furnace.add(furnaceSign);
     furnaceMeshes.push(furnaceSign);
-    scene.add(furnace);
 
-    const laneMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(BRAND).multiplyScalar(1.8), transparent: true, opacity: 0.68, toneMapped: false });
-    instance([0.045, 0.012, 16], laneMaterial, [-3.2, 0, 3.2].map((x) => ({ position: [x, 0.022, -17] as [number, number, number] })));
-
-    for (let z = 8; z >= -29; z -= 6.2) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(20.8, 0.3, 0.52), architecture);
-      beam.position.set(0, 6.2, z);
-      beam.castShadow = true;
-      scene.add(beam);
-      for (const x of [-5, 0, 5]) {
-        const lamp = new THREE.Mesh(
-          new THREE.BoxGeometry(2.7, 0.045, 0.12),
-          new THREE.MeshBasicMaterial({ color: new THREE.Color(z === 8 ? 0xd8fff8 : BRAND).multiplyScalar(3.6), toneMapped: false }),
-        );
-        lamp.position.set(x, 5.98, z - 0.05);
-        scene.add(lamp);
-      }
-    }
-    const skylightGlass = new THREE.MeshStandardMaterial({
-      color: 0xc5e9e7,
-      transparent: true,
-      opacity: 0.24,
-      roughness: 0.16,
-      metalness: 0.18,
-      envMapIntensity: 1.3,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const skyMap = skyTexture();
-    const sunlightMap = sunTexture();
-    environmentTextures.push(skyMap, sunlightMap);
-    [2.1, -10.3, -22.7].forEach((z, index) => {
-      const centerX = 0;
-      const frameBars = [
-        { size: [7.8, 0.26, 0.34] as [number, number, number], position: [centerX, 6.31, z - 1.98] as [number, number, number] },
-        { size: [7.8, 0.26, 0.34] as [number, number, number], position: [centerX, 6.31, z + 1.98] as [number, number, number] },
-        { size: [0.34, 0.26, 3.62] as [number, number, number], position: [centerX - 3.73, 6.31, z] as [number, number, number] },
-        { size: [0.34, 0.26, 3.62] as [number, number, number], position: [centerX + 3.73, 6.31, z] as [number, number, number] },
-      ];
-      frameBars.forEach((bar) => {
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(...bar.size), structural);
-        frame.position.set(...bar.position);
-        scene.add(frame);
-      });
-      const opening = new THREE.Mesh(new THREE.PlaneGeometry(6.9, 3.45), skylightGlass);
-      opening.rotation.x = -Math.PI / 2;
-      opening.position.set(centerX, 6.17, z);
-      scene.add(opening);
-      const sky = new THREE.Mesh(
-        new THREE.PlaneGeometry(10, 5),
-        new THREE.MeshBasicMaterial({ map: skyMap, side: THREE.DoubleSide, toneMapped: false }),
-      );
-      sky.rotation.x = -Math.PI / 2;
-      sky.position.set(0, 9.5 + index * 0.3, z - 0.8);
-      scene.add(sky);
-    });
-    const ceilingMaterial = new THREE.MeshStandardMaterial({ map: metalTexture, color: 0x50666a, metalness: 0.74, roughness: 0.4, envMapIntensity: 0.95 });
-    [
-      { size: [6.3, 0.18, 44] as [number, number, number], position: [-6.85, 6.32, -9.5] as [number, number, number] },
-      { size: [6.3, 0.18, 44] as [number, number, number], position: [6.85, 6.32, -9.5] as [number, number, number] },
-      { size: [7.4, 0.18, 4.1] as [number, number, number], position: [0, 6.32, 6] as [number, number, number] },
-      { size: [7.4, 0.18, 7.2] as [number, number, number], position: [0, 6.32, -4.1] as [number, number, number] },
-      { size: [7.4, 0.18, 7.2] as [number, number, number], position: [0, 6.32, -16.5] as [number, number, number] },
-      { size: [7.4, 0.18, 3.8] as [number, number, number], position: [0, 6.32, -27] as [number, number, number] },
-    ].forEach((panel) => {
-      const ceiling = new THREE.Mesh(new THREE.BoxGeometry(...panel.size), ceilingMaterial);
-      ceiling.position.set(...panel.position);
-      ceiling.receiveShadow = true;
-      scene.add(ceiling);
-    });
-    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunlightMap, color: new THREE.Color(3.6, 2.55, 1.55), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    sun.position.set(1.5, 11.8, -10.3);
-    sun.scale.set(2.2, 2.2, 1);
-    scene.add(sun);
-    const sunShaft = new THREE.SpotLight(0xffd7a1, 86, 28, 0.34, 0.68, 1.35);
-    sunShaft.position.copy(sun.position);
-    sunShaft.target.position.set(1.5, 0, -10.3);
-    sunShaft.castShadow = true;
-    sunShaft.shadow.mapSize.set(1024, 1024);
-    scene.add(sunShaft, sunShaft.target);
-    [2, -10.4, -22.8].forEach((z, index) => {
-      const practical = new THREE.PointLight(index === 1 ? 0xffe0af : 0xe1eee2, 60, 16, 2);
-      practical.position.set(index === 1 ? -2.8 : 2.8, 5.35, z);
-      scene.add(practical);
-    });
-
-    // Real spotlights + atmospheric fog; no camera-facing rectangular "shafts".
-
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(20, 7, 0.6), architecture);
-    backWall.position.set(0, 3.5, -29);
-    scene.add(backWall);
-    shootableObjects.push(backWall);
-    // The previously blank entrance end of the room is a physical market-tape wall.
-    const frontWall = new THREE.Mesh(new THREE.BoxGeometry(20, 8, 0.6), architecture);
-    frontWall.position.set(0, 4, 10);
-    scene.add(frontWall);
-    shootableObjects.push(frontWall);
-    const chartFrame = new THREE.Mesh(new THREE.BoxGeometry(12.4, 6.4, 0.16), new THREE.MeshStandardMaterial({ color: 0x132a29, metalness: 0.7, roughness: 0.35 }));
+    // The entrance end of the room is a physical market-tape wall.
+    const chartFrame = new THREE.Mesh(new RoundedBoxGeometry(12.5, 6.5, 0.18, 2, 0.04), signFrame);
     chartFrame.position.set(0, 3.8, 9.62);
+    chartFrame.castShadow = true;
     scene.add(chartFrame);
     const chartCanvas = document.createElement("canvas");
     drawHsxChart(chartCanvas, null);
@@ -1116,7 +555,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     chartTexture.colorSpace = THREE.SRGBColorSpace;
     chartTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     environmentTextures.push(chartTexture);
-    const chartScreen = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), new THREE.MeshBasicMaterial({ map: chartTexture, toneMapped: false }));
+    const chartScreen = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), displayMaterial(chartTexture));
     chartScreen.position.set(0, 3.8, 9.52);
     chartScreen.rotation.y = Math.PI;
     scene.add(chartScreen);
@@ -1146,7 +585,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
 
     const marketPositions = markets.map((market) => new THREE.Vector3(...market.position));
     const exhibitGroups: THREE.Group[] = [];
-    const screenMaterials: THREE.MeshBasicMaterial[] = [];
+    const screenMaterials: THREE.MeshPhysicalMaterial[] = [];
     const stationLights: THREE.PointLight[] = [];
     const stationRingMaterials: THREE.MeshBasicMaterial[] = [];
     const stationMajorities: string[] = [];
@@ -1154,43 +593,60 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     const voteMeshes: THREE.Mesh[] = [];
     const skinTextures: THREE.Texture[] = [];
     const voteTextures: THREE.Texture[] = [];
+    const { darkMetal, machine, structural, brushed } = range.materials;
+    const solid = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+    // Turned-steel plinth: stepped foot, waist and a chamfered deck.
+    const plinthGeometry = new THREE.LatheGeometry([
+      [0, 0], [1.96, 0], [1.98, 0.03], [1.98, 0.1], [1.9, 0.13], [1.72, 0.17], [1.66, 0.3],
+      [1.64, 0.36], [1.6, 0.4], [1.5, 0.42], [1.46, 0.42], [1.42, 0.4], [0, 0.4],
+    ].map(([x, y]) => new THREE.Vector2(x, y)), 56);
+    projectUv(plinthGeometry, 1.3);
+    const postGeometry = new THREE.CylinderGeometry(0.045, 0.055, 1.62, 12);
+    const screenShell = new RoundedBoxGeometry(3.56, 2.19, 0.2, 3, 0.035);
+    const exhibitShell = new RoundedBoxGeometry(3.12, 1.62, 0.07, 2, 0.02);
+    const voteShell = new RoundedBoxGeometry(1.5, 0.61, 0.06, 2, 0.015);
+    const braceGeometry = new THREE.BoxGeometry(0.035, 0.035, 0.74);
 
     markets.forEach((market, index) => {
       const group = new THREE.Group();
       group.position.copy(marketPositions[index]);
       const initialVoteCount = votesRef.current[market.id];
       const initialLightColor = marketLightColor(market, initialVoteCount);
-      const stationLight = new THREE.PointLight(initialLightColor, 9, 6, 2);
+      const stationLight = new THREE.PointLight(initialLightColor, 7, 6, 2);
       stationLight.position.set(0, 2.2, 1.1);
       group.add(stationLight);
       stationLights.push(stationLight);
       stationMajorities.push(initialVoteCount?.YES === initialVoteCount?.NO ? "TIE" : initialVoteCount?.YES > initialVoteCount?.NO ? "YES" : "NO");
-      const base = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.62, 1.95, 0.42, 10),
-        new THREE.MeshStandardMaterial({ color: 0x17343a, roughness: 0.24, metalness: 0.84 }),
-      );
-      base.position.y = 0.21;
-      base.castShadow = true;
+      const base = solid(plinthGeometry, darkMetal, 0, 0, 0, group);
       base.userData.marketIndex = index;
-      group.add(base);
       interactiveMeshes.push(base);
       const ringMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(initialLightColor).multiplyScalar(3.2), toneMapped: false });
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(1.52, 0.035, 8, 64),
+        new THREE.TorusGeometry(1.52, 0.028, 8, 96),
         ringMaterial,
       );
       ring.rotation.x = Math.PI / 2;
-      ring.position.y = 0.46;
+      ring.position.y = 0.425;
       group.add(ring);
       stationRingMaterials.push(ringMaterial);
 
-      const screenFrame = box([3.52, 2.15, 0.18], 0x17343a, 0.86, 0.16);
-      screenFrame.position.set(0, 2.72, -0.42);
-      screenFrame.castShadow = true;
+      // Twin masts and rear stays carry the display instead of leaving it floating.
+      for (const x of [-1.42, 1.42]) {
+        solid(postGeometry, brushed, x, 1.21, -0.42, group);
+        const stay = solid(braceGeometry, structural, x, 0.74, -0.74, group);
+        stay.rotation.x = -0.72;
+      }
+      const screenFrame = solid(screenShell, machine, 0, 2.72, -0.42, group);
       screenFrame.userData.marketIndex = index;
-      group.add(screenFrame);
       interactiveMeshes.push(screenFrame);
-      const screenMaterial = new THREE.MeshBasicMaterial({ map: labelTexture(market), toneMapped: false });
+      const screenMaterial = displayMaterial(labelTexture(market));
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(3.28, 1.78), screenMaterial);
       screen.position.set(0, 2.72, -0.315);
       screen.userData.marketIndex = index;
@@ -1202,13 +658,9 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       skinTexture.colorSpace = THREE.SRGBColorSpace;
       skinTexture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       skinTextures.push(skinTexture);
-      const officialSkin = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.0, 1.5),
-        new THREE.MeshBasicMaterial({
-          map: skinTexture,
-          toneMapped: false,
-        }),
-      );
+      solid(exhibitShell, machine, 0, 1.3, 0.16, group);
+      for (const x of [-1.2, 1.2]) solid(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 10), brushed, x, 0.5, 0.16, group);
+      const officialSkin = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.5), displayMaterial(skinTexture));
       officialSkin.position.set(0, 1.3, 0.2);
       officialSkin.userData.marketIndex = index;
       group.add(officialSkin);
@@ -1217,9 +669,10 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       (["YES", "NO"] as VoteSide[]).forEach((side, sideIndex) => {
         const texture = outcomeTexture(side);
         voteTextures.push(texture);
-        const voteMaterial = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
-        const target = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.53), voteMaterial);
-        target.position.set(sideIndex === 0 ? -0.88 : 0.88, 0.73, 0.52);
+        const x = sideIndex === 0 ? -0.88 : 0.88;
+        solid(voteShell, darkMetal, x, 0.73, 0.485, group);
+        const target = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.53), displayMaterial(texture));
+        target.position.set(x, 0.73, 0.52);
         target.userData.marketIndex = index;
         target.userData.voteSide = side;
         target.userData.hitAt = -1000;
@@ -1233,53 +686,36 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
 
     const targetMeshes: THREE.Mesh[] = [];
     const committedExposure = portfolio.reduce((sum, entry) => sum + entry.amount, 0);
-    const lcdMaterials: THREE.MeshBasicMaterial[] = [];
+    const lcdMaterials: THREE.MeshPhysicalMaterial[] = [];
     const controlCenter = new THREE.Group();
     controlCenter.position.set(0, 0, -25.7);
-    const controlShell = new THREE.MeshStandardMaterial({ color: 0x0b2429, metalness: 0.82, roughness: 0.26, envMapIntensity: 1.2 });
-    const controlRack = new THREE.Mesh(new THREE.BoxGeometry(17.2, 5.2, 0.62), controlShell);
-    controlRack.position.set(0, 2.7, -0.7);
-    controlRack.castShadow = true;
-    controlRack.receiveShadow = true;
-    controlCenter.add(controlRack);
-    const consoleDesk = new THREE.Mesh(new THREE.BoxGeometry(16.4, 1.05, 2.25), controlShell);
-    consoleDesk.position.set(0, 0.55, 0.2);
-    consoleDesk.castShadow = true;
-    controlCenter.add(consoleDesk);
+    const controlRack = solid(new RoundedBoxGeometry(17.2, 5.2, 0.62, 3, 0.05), machine, 0, 2.7, -0.7, controlCenter);
+    const consoleDesk = solid(new RoundedBoxGeometry(16.4, 1.05, 2.25, 3, 0.06), machine, 0, 0.55, 0.2, controlCenter);
+    solid(new RoundedBoxGeometry(16.6, 0.07, 2.4, 2, 0.02), darkMetal, 0, 1.09, 0.2, controlCenter);
+    solid(new THREE.BoxGeometry(16.5, 0.12, 2.3), darkMetal, 0, 0.06, 0.2, controlCenter);
     shootableObjects.push(controlRack, consoleDesk);
     const lcdLayouts = [
       [-5.75, 3.65], [-2.88, 3.65], [0, 3.65], [2.88, 3.65], [5.75, 3.65],
       [-4.35, 1.85], [-1.45, 1.85], [1.45, 1.85], [4.35, 1.85],
     ] as Array<[number, number]>;
+    const lcdShell = new RoundedBoxGeometry(2.72, 1.58, 0.22, 3, 0.03);
     lcdLayouts.forEach(([x, y], index) => {
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(2.72, 1.58, 0.22), controlShell);
-      frame.position.set(x, y, -0.28);
-      frame.castShadow = true;
-      controlCenter.add(frame);
+      solid(lcdShell, darkMetal, x, y, -0.28, controlCenter);
       const entry = index === 0 ? null : portfolio[index - 1] ?? null;
       const lcdTexture = controlCenterTexture(entry, index, portfolio.length, committedExposure);
-      environmentTextures.push(lcdTexture);
-      const screen = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.5, 1.36),
-        new THREE.MeshBasicMaterial({ map: lcdTexture, color: new THREE.Color(1.12, 1.12, 1.12), toneMapped: false }),
-      );
-      screen.position.set(x, y, -0.155);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 1.36), displayMaterial(lcdTexture, 1.12));
+      screen.position.set(x, y, -0.165);
       controlCenter.add(screen);
       lcdMaterials.push(screen.material);
     });
     lcdRefreshRef.current = () => {
       const entries = portfolioRef.current;
       lcdMaterials.forEach((material, index) => {
-        material.map?.dispose();
-        material.map = controlCenterTexture(index === 0 ? null : entries[index - 1] ?? null, index, entries.length, entries.reduce((sum, e) => sum + e.amount, 0));
+        material.emissiveMap?.dispose();
+        material.emissiveMap = controlCenterTexture(index === 0 ? null : entries[index - 1] ?? null, index, entries.length, entries.reduce((sum, e) => sum + e.amount, 0));
         material.needsUpdate = true;
       });
     };
-    [0].forEach((x, index) => {
-      const keyLight = new THREE.PointLight(index % 2 ? STRIKE_ORANGE : BRAND, 6, 4.5, 2);
-      keyLight.position.set(x, 3.7, 0.25);
-      controlCenter.add(keyLight);
-    });
     const consoleStrip = new THREE.Mesh(
       new THREE.BoxGeometry(15.6, 0.045, 0.12),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(BRAND).multiplyScalar(3.4), toneMapped: false }),
@@ -1287,21 +723,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     consoleStrip.position.set(0, 1.12, 1.15);
     controlCenter.add(consoleStrip);
     scene.add(controlCenter);
-
-    const dustCount = 280;
-    const dustPositions = new Float32Array(dustCount * 3);
-    for (let i = 0; i < dustCount; i += 1) {
-      dustPositions[i * 3] = (Math.random() - 0.5) * 20;
-      dustPositions[i * 3 + 1] = Math.random() * 6;
-      dustPositions[i * 3 + 2] = 8 - Math.random() * 38;
-    }
-    const dustGeometry = new THREE.BufferGeometry();
-    dustGeometry.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
-    const dust = new THREE.Points(
-      dustGeometry,
-      new THREE.PointsMaterial({ color: 0xd5fff8, size: 0.026, transparent: true, opacity: 0.64, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
-    scene.add(dust);
 
     const scanningLine = new THREE.Mesh(
       new THREE.BoxGeometry(18, 0.014, 0.025),
@@ -1320,31 +741,18 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     muzzleAnchor.position.set(-0.4, 0.42, -0.45);
     viewWeapon.add(muzzleAnchor);
     let weaponMagazine: THREE.Object3D | null = null;
-    let weaponBolt: THREE.Object3D | null = null;
+    let weaponSurfacing: WeaponSurfacing | null = null;
     const magazineBasePosition = new THREE.Vector3();
     const magazineBaseQuaternion = new THREE.Quaternion();
-    const boltBasePosition = new THREE.Vector3();
     new GLTFLoader(loadingManager).load("/models/ak-platform.glb", ({ scene: object }) => {
       if (disposed) return;
       const bounds = new THREE.Box3().setFromObject(object);
       const size = bounds.getSize(new THREE.Vector3());
       const center = bounds.getCenter(new THREE.Vector3());
       object.position.sub(center);
-      object.traverse((child) => {
-        if (!(child instanceof THREE.Mesh)) return;
-        child.frustumCulled = true;
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((material) => {
-          if (!(material instanceof THREE.MeshStandardMaterial)) return;
-          const wood = material.name.includes("Material_2");
-          material.metalness = wood ? 0 : 0.7;
-          material.roughness = wood ? 0.76 : 0.52;
-          material.envMapIntensity = wood ? 0.3 : 0.7;
-          material.map = wood ? weaponWoodTexture : weaponMetalTexture;
-          material.color.set(wood ? 0xa16a43 : 0x90928c);
-          material.needsUpdate = true;
-        });
-      });
+      weaponSurfacing = surfaceWeapon(object, Math.min(16, renderer.capabilities.getMaxAnisotropy()));
+      // GLTFLoader may sanitise node names, so accept both spellings.
+      const part = (name: string) => object.getObjectByName(name) ?? object.getObjectByName(name.replace(/\s/g, "_"));
       const model = new THREE.Group();
       model.add(object);
       model.scale.setScalar(2.04 / Math.max(size.x, size.y, size.z));
@@ -1353,45 +761,40 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       viewWeapon.add(model);
       viewWeapon.updateMatrixWorld(true);
       model.updateMatrixWorld(true);
-      const cleaningRod = object.getObjectByName("AK-47 2 Cleaning Rod 1");
-      const rearSight = object.getObjectByName("AK-47 2 Rearsight 1");
-      if (cleaningRod && rearSight) {
-        const rear = rearSight.getWorldPosition(new THREE.Vector3());
-        const rodBounds = new THREE.Box3().setFromObject(cleaningRod);
-        const rodCenter = rodBounds.getCenter(new THREE.Vector3());
-        const boreDirection = rodCenter.clone().sub(rear).normalize();
-        let muzzleWorld = rodCenter.clone();
-        for (const x of [rodBounds.min.x, rodBounds.max.x]) {
-          for (const y of [rodBounds.min.y, rodBounds.max.y]) {
-            for (const z of [rodBounds.min.z, rodBounds.max.z]) {
-              const corner = new THREE.Vector3(x, y, z);
-              if (corner.clone().sub(rear).dot(boreDirection) > muzzleWorld.clone().sub(rear).dot(boreDirection)) muzzleWorld = corner;
-            }
-          }
-        }
-        muzzleWorld.addScaledVector(boreDirection, 0.055);
-        const localOrigin = viewWeapon.worldToLocal(muzzleWorld.clone());
-        muzzleAnchor.position.copy(localOrigin);
-        const localDirection = viewWeapon.worldToLocal(muzzleWorld.clone().add(boreDirection)).sub(localOrigin).normalize();
-        muzzleAnchor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), localDirection);
-        const convergence = new THREE.Vector3(0, 0, -16).sub(muzzleWorld).normalize();
-        viewWeapon.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(boreDirection, convergence));
-        weaponRotation.copy(viewWeapon.rotation);
-      }
-      const magazine = object.getObjectByName("AK-47 2 Mag 1");
+      // Flash, light and tracers originate from the real muzzle crown.
+      const crown = viewWeapon.worldToLocal(object.localToWorld(weaponSurfacing.muzzle.clone()));
+      const ahead = viewWeapon.worldToLocal(object.localToWorld(weaponSurfacing.muzzle.clone().add(weaponSurfacing.bore)));
+      muzzleAnchor.position.copy(crown);
+      muzzleAnchor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), ahead.sub(crown).normalize());
+      const magazine = part("AK-47 2 Mag 1");
       if (magazine) {
         model.attach(magazine);
         weaponMagazine = magazine;
         magazineBasePosition.copy(magazine.position);
         magazineBaseQuaternion.copy(magazine.quaternion);
       }
-      weaponBolt = object.getObjectByName("AK-47 2 Bolt Carrier 1") ?? null;
-      if (weaponBolt) boltBasePosition.copy(weaponBolt.position);
+      
     });
 
-    const weaponLight = new THREE.PointLight(0xffe9ca, 1.6, 4, 2);
-    weaponLight.position.set(-0.6, 0.8, -0.4);
-    viewModelScene.add(weaponLight);
+    // The rifle is lit by the room: an overhead key that stays world-anchored as the
+    // player looks around, plus direct sun whenever they stand in a sun patch.
+    const weaponKey = new THREE.DirectionalLight(0xdff3ef, 1.5);
+    weaponKey.castShadow = quality === "HIGH";
+    weaponKey.shadow.mapSize.set(1024, 1024);
+    weaponKey.shadow.camera.left = -1.3; weaponKey.shadow.camera.right = 1.3;
+    weaponKey.shadow.camera.top = 1.3; weaponKey.shadow.camera.bottom = -1.3;
+    weaponKey.shadow.camera.near = 0.5; weaponKey.shadow.camera.far = 9;
+    weaponKey.shadow.bias = -0.0015;
+    weaponKey.shadow.normalBias = 0.012;
+    weaponKey.target.position.set(0.25, -0.35, -1.25);
+    const weaponSun = new THREE.DirectionalLight(0xfff0d8, 0);
+    weaponSun.target.position.copy(weaponKey.target.position);
+    const weaponRim = new THREE.DirectionalLight(0xffc89a, 0.55);
+    weaponRim.position.set(2.4, 0.4, 1.2);
+    weaponRim.target.position.copy(weaponKey.target.position);
+    viewModelScene.add(weaponKey, weaponKey.target, weaponSun, weaponSun.target, weaponRim, weaponRim.target);
+    const overhead = new THREE.Vector3(), sunward = new THREE.Vector3(), inverseView = new THREE.Quaternion();
+    let weaponSunAmount = 0;
     const muzzle = new THREE.PointLight(0xff9c43, 0, 5, 2);
     muzzleAnchor.add(muzzle);
     const muzzleFireMap = muzzleFireTexture();
@@ -1445,7 +848,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     let lastShot = -fireInterval;
     let firing = false;
     let audioContext: AudioContext | null = null;
-    const effects: TimedEffect[] = [];
     const moveDirection = new THREE.Vector3();
     ammoRef.current(magazine, reserve, reloading);
 
@@ -1494,30 +896,12 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       tracerRaycaster.setFromCamera(new THREE.Vector2(muzzleNdc.x, muzzleNdc.y), camera);
       const start = tracerRaycaster.ray.origin.clone().addScaledVector(tracerRaycaster.ray.direction, 1.15);
       roomMuzzleLight.position.copy(start);
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([start, endpoint]),
-        new THREE.LineBasicMaterial({ color: 0xaaffee, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+      ballistics.fire(now, start, endpoint, hit);
+      ballistics.eject(
+        now,
+        camera.localToWorld(new THREE.Vector3(0.36, -0.2, -0.75)),
+        new THREE.Vector3(1.5 + Math.random() * 0.9, 1.5 + Math.random() * 0.6, 0.25).applyQuaternion(camera.quaternion),
       );
-      scene.add(line);
-      effects.push({ object: line, expires: now + 115 });
-
-      const impact = new THREE.Mesh(
-        new THREE.SphereGeometry(0.07, 8, 8),
-        new THREE.MeshBasicMaterial({ color: hit ? 0xcffff5 : 0x83dcd3, transparent: true, blending: THREE.AdditiveBlending }),
-      );
-      impact.position.copy(endpoint);
-      scene.add(impact);
-      effects.push({ object: impact, expires: now + 430 });
-
-      const casing = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.018, 0.018, 0.09, 8),
-        new THREE.MeshStandardMaterial({ color: 0xd0a454, metalness: 0.86, roughness: 0.24 }),
-      );
-      casing.position.copy(camera.localToWorld(new THREE.Vector3(0.66, -0.13, -1.14)));
-      const right = new THREE.Vector3(1, 0.8, 0.2).applyQuaternion(camera.quaternion).multiplyScalar(1.8 + Math.random());
-      casing.rotation.set(Math.random(), Math.random(), Math.random());
-      scene.add(casing);
-      effects.push({ object: casing, expires: now + 1250, velocity: right });
     };
 
     const requestLock = () => {
@@ -1537,8 +921,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       lookKickY = THREE.MathUtils.clamp(lookKickY + event.movementY * 0.00026, -0.028, 0.028);
       pitch = THREE.MathUtils.clamp(pitch, -1.28, 1.28);
     };
-    const fireShot = (now: number) => {
-      if (document.pointerLockElement !== renderer.domElement || reloading || now - lastShot < fireInterval) return;
+    const fireShot = (now: number, force = false) => {
+      if ((!force && document.pointerLockElement !== renderer.domElement) || reloading || now - lastShot < fireInterval) return;
       if (magazine <= 0) {
         startReload();
         return;
@@ -1688,13 +1072,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
           weaponMagazine.rotateZ((1 - rise) * 0.42);
         }
       }
-      if (weaponBolt) {
-        weaponBolt.position.copy(boltBasePosition);
-        if (reloading && reloadProgress > 0.76) {
-          const rack = Math.sin(THREE.MathUtils.clamp((reloadProgress - 0.76) / 0.2, 0, 1) * Math.PI);
-          weaponBolt.position.y += rack * 0.055;
-        }
-      }
 
       exhibitGroups.forEach((group, index) => {
         const market = markets[index];
@@ -1707,7 +1084,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
           stationRingMaterials[index].color.setHex(color).multiplyScalar(3.2);
         }
         const targeted = index === lastTargeted;
-        screenMaterials[index].color.setScalar(targeted ? 1.08 : 1);
+        screenMaterials[index].emissiveIntensity = targeted ? 1.1 : 1;
         group.scale.setScalar(THREE.MathUtils.lerp(group.scale.x, targeted ? 1.03 : 1, 0.1));
       });
 
@@ -1722,35 +1099,23 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       voteMeshes.forEach((target) => {
         const elapsed = now - (target.userData.hitAt ?? -1000);
         const pulse = elapsed < 180 ? Math.sin((elapsed / 180) * Math.PI) : 0;
-        (target.material as THREE.MeshBasicMaterial).color.setScalar(1 + pulse * 0.15);
+        (target.material as THREE.MeshStandardMaterial).emissiveIntensity = 1 + pulse * 0.4;
         target.scale.setScalar(1 + pulse * 0.08);
       });
 
-      for (let index = effects.length - 1; index >= 0; index -= 1) {
-        const effect = effects[index];
-        if (effect.velocity) {
-          effect.velocity.y -= 8.8 * dt;
-          effect.object.position.addScaledVector(effect.velocity, dt);
-          effect.object.rotation.x += dt * 11;
-          effect.object.rotation.z += dt * 8;
-        }
-        if (now >= effect.expires) {
-          disposeEffect(effect);
-          effects.splice(index, 1);
-        }
-      }
-
-      dust.rotation.y = now * 0.000015;
-      scanningLine.position.z = 6 - ((now * 0.0018) % 34);
-      furnaceFlames.forEach((flame, index) => {
-        const pulse = 0.82 + Math.sin(now * 0.014 + index * 1.7) * 0.18;
-        flame.scale.set(0.72 * pulse, (1.08 + (index % 2) * 0.3) * pulse, 1);
-        flame.position.y = 1.46 + (index % 2) * 0.18 + Math.sin(now * 0.009 + index) * 0.08;
-      });
-      furnaceLight.intensity = 29 + Math.sin(now * 0.012) * 9;
+      range.update(now);
+      ballistics.update(now, dt);
       bodycamPass.uniforms.time.value = now;
-      renderer.toneMappingExposure = 0.94;
       camera.updateMatrixWorld(true);
+      // Viewmodel space is camera space, so world lighting is rotated into it each frame.
+      inverseView.copy(camera.quaternion).invert();
+      viewModelScene.environmentRotation.setFromQuaternion(inverseView);
+      overhead.set(-0.35, 1, 0.3).normalize().applyQuaternion(inverseView);
+      weaponKey.position.copy(weaponKey.target.position).addScaledVector(overhead, 4);
+      sunward.copy(range.sun.position).sub(range.sun.target.position).normalize().applyQuaternion(inverseView);
+      weaponSun.position.copy(weaponSun.target.position).addScaledVector(sunward, 4);
+      weaponSunAmount = THREE.MathUtils.lerp(weaponSunAmount, range.sunlitAt(camera.position), Math.min(1, dt * 7));
+      weaponSun.intensity = weaponSunAmount * range.sun.intensity * 0.8;
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const aimed = raycaster.intersectObjects(interactiveMeshes, false).find((hit) => hit.distance <= 22);
       let targeted = aimed ? Number(aimed.object.userData.marketIndex) : -1;
@@ -1779,11 +1144,36 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         furnaceProximityRef.current(furnaceTargeted);
       }
 
+      range.reflection.render(scene, camera, range.mirrorHidden);
       renderer.clear();
       composer.render(dt);
     };
+    if (import.meta.env.DEV) {
+      // Dev-only camera hook for automated visual checks (pointer lock is unavailable headless).
+      (window as unknown as Record<string, unknown>).__hsRange = {
+        view: (x: number, z: number, nextYaw: number, nextPitch = 0) => { camera.position.x = x; camera.position.z = z; yaw = nextYaw; pitch = nextPitch; },
+        flash: (energy = 1) => { muzzleEnergy = energy; },
+        shoot: () => fireShot(performance.now(), true),
+        reload: () => startReload(),
+        scene, viewModelScene, camera, renderer, range, composer,
+      };
+    }
     const startRendering = () => {
       if (disposed || frame) return;
+      // Light the room by itself: capture the lit scene, then again so the second
+      // capture includes one bounce of the first.
+      range.update(performance.now());
+      renderer.shadowMap.needsUpdate = true;
+      for (let bounce = 0; bounce < 2; bounce += 1) {
+        const captured = range.captureProbe(pmrem);
+        roomProbe?.dispose();
+        roomProbe = captured;
+        scene.environment = captured.texture;
+        scene.environmentIntensity = 1.2;
+      }
+      viewModelScene.environment = roomProbe!.texture;
+      viewModelScene.environmentIntensity = 1.15;
+      pmrem.dispose();
       renderer.shadowMap.needsUpdate = true;
       frame = requestAnimationFrame(animate);
       readyRef.current();
@@ -1798,6 +1188,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       viewModelCamera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
+      range.reflection.setSize(mount.clientWidth * adaptivePixelRatio * 0.6, mount.clientHeight * adaptivePixelRatio * 0.6);
       fxaaPass.uniforms.resolution.value.set(
         1 / (mount.clientWidth * adaptivePixelRatio),
         1 / (mount.clientHeight * adaptivePixelRatio),
@@ -1820,7 +1211,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       furnaceProximityRef.current(false);
-      effects.forEach(disposeEffect);
       void audioContext?.close();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
@@ -1840,9 +1230,13 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       skinTextures.forEach((texture) => texture.dispose());
       voteTextures.forEach((texture) => texture.dispose());
       environmentTextures.forEach((texture) => texture.dispose());
-      environmentMap?.dispose();
+      roomProbe?.dispose();
+      skyMap?.dispose();
+      range.dispose();
+      ballistics.dispose();
+      weaponSurfacing?.dispose();
       pmrem.dispose();
-      lcdMaterials.forEach(material => material.map?.dispose());
+      lcdMaterials.forEach(material => material.emissiveMap?.dispose());
       composer.passes.forEach(pass => pass.dispose());
       composer.dispose();
       renderer.dispose();
