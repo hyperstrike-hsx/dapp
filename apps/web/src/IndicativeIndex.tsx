@@ -117,7 +117,45 @@ export function PreviewChart({ index }: { index?: IndicativeIndex }) {
       {[15, 60, 105].map((y) => (
         <line key={y} x1="0" x2="600" y1={y} y2={y} stroke="#ffffff12" />
       ))}
+      <path d={`${path} L590 120 L10 120 Z`} className="preview-chart-area" />
       <path d={path} fill="none" stroke="#a7edda" strokeWidth="2" />
+    </svg>
+  );
+}
+export const changeLabel = (index?: IndicativeIndex) =>
+  index?.changeSinceBasePct == null
+    ? "—"
+    : `${index.changeSinceBasePct >= 0 ? "+" : "−"}${Math.abs(index.changeSinceBasePct).toFixed(2)}%`;
+export const trendOf = (index?: IndicativeIndex) =>
+  index?.changeSinceBasePct == null
+    ? "flat"
+    : index.changeSinceBasePct >= 0
+      ? "up"
+      : "down";
+/** Tiny history line for tickers and boards. Decorative: the value sits beside it. */
+export function Spark({ index }: { index?: IndicativeIndex }) {
+  const points = index?.history ?? [];
+  if (points.length < 2) return <svg className="spark" aria-hidden="true" />;
+  const values = points.map((p) => p.value),
+    min = Math.min(...values),
+    max = Math.max(...values);
+  const start = points[0].observedAt,
+    duration = points.at(-1)!.observedAt - start || 1;
+  const path = points
+    .map(
+      (p, i) =>
+        `${i ? "L" : "M"}${(1 + (62 * (p.observedAt - start)) / duration).toFixed(1)} ${(max === min ? 10 : 18 - ((p.value - min) / (max - min)) * 16).toFixed(1)}`,
+    )
+    .join(" ");
+  return (
+    <svg
+      className="spark"
+      data-trend={trendOf(index)}
+      viewBox="0 0 64 20"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path d={path} fill="none" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -136,7 +174,7 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
       </span>
       <strong>{previewValue(index)}</strong>
       <div className="preview-metrics">
-        <span>
+        <span data-trend={trendOf(index)}>
           {change == null
             ? "—"
             : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}{" "}

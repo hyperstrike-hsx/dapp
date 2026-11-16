@@ -161,19 +161,22 @@ export function TradeTicket({
         aria-label="Review index prediction"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          className="ticket-close"
-          onClick={onClose}
-          aria-label="Close trade ticket"
-        >
-          ×
-        </button>
-        <span className="overline">INDEX MARKET / PAPER SANDBOX</span>
-        <IndexBadge ticker={market.name} />
-        <h2>{market.question}</h2>
-        <p className="ticket-expiry">
-          {market.resolves} · Native binary market
-        </p>
+        <header className="ticket-head">
+          <button
+            className="ticket-close"
+            onClick={onClose}
+            aria-label="Close trade ticket"
+          >
+            ×
+          </button>
+          <span className="overline">INDEX MARKET / PAPER SANDBOX</span>
+          <IndexBadge ticker={market.name} />
+          <h2>{market.question}</h2>
+          <p className="ticket-expiry">
+            {market.resolves} · Native binary market
+          </p>
+        </header>
+        <div className="ticket-body">
         <div className="trade-tabs">
           {(["BUY", "SELL"] as const).map((v) => (
             <button
@@ -198,7 +201,7 @@ export function TradeTicket({
                 setReviewAt(0);
               }}
             >
-              {v}{" "}
+              <span>{v}</span>
               <b>
                 {Math.round(
                   (Number(v === "YES" ? tape.no : tape.yes) /
@@ -233,6 +236,40 @@ export function TradeTicket({
               : "20 bps trading fee · No participation burn"}
           </small>
         </label>
+        <div className="amount-chips" aria-label="Quick amounts">
+          {(action === "BUY"
+            ? [10, 25, 100, 500].map((v) => [`$${v}`, String(v)])
+            : [0.25, 0.5, 1].map((v) => [
+                v === 1 ? "MAX" : `${v * 100}%`,
+                String(
+                  Math.floor((held ? money(held.tokens) : 0) * v * 1e6) / 1e6,
+                ),
+              ])
+          ).map(([label, value]) => (
+            <button
+              key={label}
+              aria-pressed={amount === value}
+              disabled={action === "SELL" && !held}
+              onClick={() => {
+                setAmount(value);
+                setReviewAt(0);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {action === "BUY" && quote && (
+          <div className={`ticket-payout ${side.toLowerCase()}`}>
+            <span>IF {side} WINS</span>
+            <strong>${human(money(output))}</strong>
+            <small>
+              Illustrative gross payout ·{" "}
+              {human((money(output) / input - 1) * 100)}% on ${human(input)} ·
+              $0 if it loses
+            </small>
+          </div>
+        )}
         {staged > 0 && (
           <button className="staged-contracts" onClick={useHits}>
             {staged} {side} hits staged · Price these contracts →
@@ -269,20 +306,27 @@ export function TradeTicket({
             canonical oracle settlement.
           </small>
         </div>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
+        </div>
+        <footer className="ticket-foot">
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className={`primary full ${reviewAt ? "confirming" : ""}`}
+            disabled={!quote}
+            onClick={submit}
+          >
+            {reviewAt
+              ? `CONFIRM PAPER ${action} · ${side}`
+              : `REVIEW ${action} →`}
+          </button>
+          <p className="ticket-disclosure">
+            Paper USD. Simulated reserves. No wallet transaction or HSX burn. A
+            target hit stages a contract; confirmation saves the trade.
           </p>
-        )}
-        <button className="primary full" disabled={!quote} onClick={submit}>
-          {reviewAt
-            ? `CONFIRM PAPER ${action} · ${side}`
-            : `REVIEW ${action} →`}
-        </button>
-        <p className="ticket-disclosure">
-          Paper USD. Simulated reserves. No wallet transaction or HSX burn. A
-          target hit stages a contract; confirmation saves the trade.
-        </p>
+        </footer>
       </aside>
     </div>
   );
