@@ -22,14 +22,17 @@ export type WeaponSpec = {
   kick: number;
   climb: number;
   sound: { pitch: number; thump: number; length: number; gain: number };
+  /** Magnification while aiming, and whether that is through an optic (which fills the view) or over the sights. */
+  zoom: number;
+  scope: boolean;
 };
 
 export const ARSENAL: WeaponSpec[] = [
-  { id: "ak47", name: "AK-47", calibre: "7.62×39", modes: ["AUTO", "SEMI"], rpm: 600, burst: 1, magazine: 30, reloadMs: 2500, cycleMs: 0, damage: 36, headshot: 3, kick: 0.115, climb: 0.0075, sound: { pitch: 980, thump: 105, length: 0.1, gain: 0.3 } },
-  { id: "m4", name: "M4A1", calibre: "5.56×45", modes: ["AUTO", "BURST", "SEMI"], rpm: 800, burst: 3, magazine: 30, reloadMs: 2250, cycleMs: 0, damage: 30, headshot: 3, kick: 0.085, climb: 0.005, sound: { pitch: 1450, thump: 135, length: 0.075, gain: 0.26 } },
-  { id: "famas", name: "FAMAS F1", calibre: "5.56×45", modes: ["BURST", "AUTO"], rpm: 1000, burst: 3, magazine: 25, reloadMs: 2600, cycleMs: 0, damage: 28, headshot: 3, kick: 0.075, climb: 0.0045, sound: { pitch: 1650, thump: 150, length: 0.065, gain: 0.25 } },
-  { id: "uzi", name: "UZI", calibre: "9×19", modes: ["AUTO", "SEMI"], rpm: 620, burst: 1, magazine: 32, reloadMs: 2050, cycleMs: 0, damage: 22, headshot: 2.5, kick: 0.06, climb: 0.0032, sound: { pitch: 1900, thump: 170, length: 0.055, gain: 0.2 } },
-  { id: "rifle", name: "BOLT-ACTION 7.62", calibre: "7.62×54R", modes: ["BOLT"], rpm: 50, burst: 1, magazine: 5, reloadMs: 3100, cycleMs: 1150, damage: 190, headshot: 4, kick: 0.2, climb: 0.022, sound: { pitch: 720, thump: 78, length: 0.19, gain: 0.42 } },
+  { id: "ak47", name: "AK-47", calibre: "7.62×39", modes: ["AUTO", "SEMI"], rpm: 600, burst: 1, magazine: 30, reloadMs: 2500, cycleMs: 0, damage: 36, headshot: 3, kick: 0.115, climb: 0.0075, sound: { pitch: 980, thump: 105, length: 0.1, gain: 0.3 }, zoom: 1.35, scope: false },
+  { id: "m4", name: "M4A1", calibre: "5.56×45", modes: ["AUTO", "BURST", "SEMI"], rpm: 800, burst: 3, magazine: 30, reloadMs: 2250, cycleMs: 0, damage: 30, headshot: 3, kick: 0.085, climb: 0.005, sound: { pitch: 1450, thump: 135, length: 0.075, gain: 0.26 }, zoom: 2.5, scope: true },
+  { id: "famas", name: "FAMAS F1", calibre: "5.56×45", modes: ["BURST", "AUTO"], rpm: 1000, burst: 3, magazine: 25, reloadMs: 2600, cycleMs: 0, damage: 28, headshot: 3, kick: 0.075, climb: 0.0045, sound: { pitch: 1650, thump: 150, length: 0.065, gain: 0.25 }, zoom: 1.35, scope: false },
+  { id: "uzi", name: "UZI", calibre: "9×19", modes: ["AUTO", "SEMI"], rpm: 620, burst: 1, magazine: 32, reloadMs: 2050, cycleMs: 0, damage: 22, headshot: 2.5, kick: 0.06, climb: 0.0032, sound: { pitch: 1900, thump: 170, length: 0.055, gain: 0.2 }, zoom: 1.25, scope: false },
+  { id: "rifle", name: "BOLT-ACTION 7.62", calibre: "7.62×54R", modes: ["BOLT"], rpm: 50, burst: 1, magazine: 5, reloadMs: 3100, cycleMs: 1150, damage: 190, headshot: 4, kick: 0.2, climb: 0.022, sound: { pitch: 720, thump: 78, length: 0.19, gain: 0.42 }, zoom: 4, scope: true },
 ];
 
 export function nextMode(spec: WeaponSpec, mode: FireMode): FireMode {

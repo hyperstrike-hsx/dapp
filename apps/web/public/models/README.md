@@ -13,5 +13,12 @@
 - License: Creative Commons Attribution
 
 
-The M4A1, FAMAS and Uzi, the gloved arms and the wave-mode zombies have no model files:
-they are built in code (`src/range/arsenal.ts`, `src/range/hands.ts`, `src/range/horde.ts`).
+`arms/` is **First Person arms** by DJMaesen, the first-person arms and gloved hands.
+Its skeleton is posed in code (`src/range/hands.ts`); the file ships no animations.
+
+- Source: https://sketchfab.com/3d-models/first-person-arms-e3c42c05b22944e5839deb8e003f0987
+- License: CC BY 4.0 (see `arms/license.txt`)
+- glTF with 2K base colour, normal and roughness maps (about 13 MB).
+
+The M4A1, FAMAS and Uzi and the wave-mode zombies have no model files:
+they are built in code (`src/range/arsenal.ts`, `src/range/horde.ts`).

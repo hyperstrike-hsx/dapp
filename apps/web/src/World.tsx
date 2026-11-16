@@ -12,10 +12,12 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { createBallistics } from "./range/ballistics";
 import { buildRange, displayMaterial, projectUv } from "./range/environment";
 import { VolumetricPass } from "./range/volumetric";
-import { createArsenal, type ReloadSound, type RigPose, type Timeline } from "./range/arsenal";
+import { createArsenal, type ReloadSound, type RigPose, type Timeline, type WeaponRig } from "./range/arsenal";
+import { buildContact, type Contact } from "./range/collider";
 import { createTrigger, nextMode, pressTrigger, releaseTrigger, resetTrigger, takeShot, type FireMode, type WeaponSpec } from "./range/arsenalSpec";
 import { createArms, emptyPose } from "./range/hands";
 import { RangeHud, type WeaponHud } from "./RangeHud";
+import { createStrikeFx } from "./range/strikeFx";
 import { createHorde, type HordeHud } from "./range/horde";
 import { createSequenceDetector } from "./range/konami";
 import { withOpaqueOccluders } from "./opaqueOcclusion";
@@ -167,7 +169,8 @@ const BODYCAM_SHADER = {
       color += vec3(0.024, 0.009, -0.012) * smoothstep(0.56, 1.0, luminance);
       color += grain * 0.012 * (1.0 - luminance * 0.6);
       color *= 1.0 - smoothstep(0.5, 1.7, r2) * 0.3;
-      gl_FragColor = vec4(color, 1.0);
+      // The contrast curve pushes near-black below zero, which the tone mapper turns red.
+      gl_FragColor = vec4(max(color, 0.0), 1.0);
     }
   `,
 };
@@ -289,10 +292,8 @@ function wordmarkTexture() {
   return texture;
 }
 
-function outcomeTexture(side: VoteSide) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 192;
+/** A YES / NO target: the side, and under it the contracts staged on it so far and what they cost. */
+function paintOutcome(canvas: HTMLCanvasElement, side: VoteSide, staged: number, cents: number) {
   const ctx = canvas.getContext("2d")!;
   const yes = side === "YES";
   const accent = yes ? "#6df3b6" : "#ff776f";
@@ -304,13 +305,38 @@ function outcomeTexture(side: VoteSide) {
   ctx.strokeStyle = accent;
   ctx.lineWidth = 5;
   ctx.strokeRect(3, 3, 506, 186);
+  ctx.textAlign = "left";
   ctx.fillStyle = accent;
   ctx.font = "900 78px Arial";
+  ctx.letterSpacing = "0px";
   ctx.fillText(side, 28, 112);
-  ctx.fillStyle = "#b6cecf";
   ctx.font = "700 19px monospace";
-  ctx.letterSpacing = "4px";
-  ctx.fillText("SHOOT · +1 VOTE", 29, 153);
+  ctx.letterSpacing = "3px";
+  if (staged > 0) {
+    // Staged: the count is the headline, with the price and the stake it adds up to.
+    ctx.textAlign = "right";
+    ctx.font = "900 78px Arial";
+    ctx.letterSpacing = "0px";
+    ctx.fillStyle = "#f4fffa";
+    ctx.fillText(`×${staged}`, 486, 112);
+    ctx.font = "700 19px monospace";
+    ctx.letterSpacing = "2px";
+    ctx.fillStyle = accent;
+    ctx.fillText(`$${((staged * cents) / 100).toFixed(2)} STAKE`, 484, 153);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#b6cecf";
+    ctx.fillText(`@ ${cents}¢ · SHOOT +1`, 29, 153);
+  } else {
+    ctx.fillStyle = "#b6cecf";
+    ctx.fillText(`SHOOT · +1 @ ${cents}¢`, 29, 153);
+  }
+}
+
+function outcomeTexture(side: VoteSide, staged: number, cents: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 192;
+  paintOutcome(canvas, side, staged, cents);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -386,6 +412,7 @@ function smooth01(value: number) {
 
 export function World({ quality="HIGH", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const scopeRef = useRef<HTMLDivElement>(null);
   const enteredRef = useRef(entered);
   const selectRef = useRef(onSelect);
   const proximityRef = useRef(onProximity);
@@ -403,6 +430,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
   const lcdRefreshRef = useRef<(() => void) | null>(null);
   const [weaponHud, setWeaponHud] = useState<WeaponHud | null>(null);
   const [hordeHud, setHordeHud] = useState<HordeHud | null>(null);
+  /** The last YES / NO target struck: which market and side, and how many in a row. */
+  const [strike, setStrike] = useState<{ id: number; market: number; side: VoteSide; streak: number } | null>(null);
 
   useEffect(() => { enteredRef.current = entered; }, [entered]);
   useEffect(() => { selectRef.current = onSelect; }, [onSelect]);
@@ -431,7 +460,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     scene.background = new THREE.Color(0x6f8fa8);
     scene.fog = new THREE.FogExp2(0x16201f, quality === "HIGH" ? 0.0045 : 0.011);
 
-    const camera = new THREE.PerspectiveCamera(76, mount.clientWidth / mount.clientHeight, 0.08, 110);
+    const BASE_FOV = 76;
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, mount.clientWidth / mount.clientHeight, 0.08, 110);
     camera.position.set(0, 1.62, 7.2);
     camera.rotation.order = "YXZ";
     const viewModelScene = new THREE.Scene();
@@ -459,6 +489,10 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     const range = buildRange({ scene, renderer, quality, loadingManager });
     const ballistics = createBallistics(scene);
     range.mirrorHidden.push(...ballistics.transient);
+    const strikeFx = createStrikeFx(scene);
+    range.mirrorHidden.push(...strikeFx.transient);
+    let strikeId = 0, strikeStreak = 0, lastStrikeAt = -1e6;
+    const strikeNormal = new THREE.Vector3();
     const shootableObjects = range.shootable;
     const furnaceMeshes = range.furnaceMeshes;
     const environmentTextures: THREE.Texture[] = [];
@@ -673,7 +707,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       interactiveMeshes.push(officialSkin);
 
       (["YES", "NO"] as VoteSide[]).forEach((side, sideIndex) => {
-        const texture = outcomeTexture(side);
+        const staged = initialVoteCount?.[side] ?? 0, cents = side === "YES" ? market.yes : 100 - market.yes;
+        const texture = outcomeTexture(side, staged, cents);
         voteTextures.push(texture);
         const x = sideIndex === 0 ? -0.88 : 0.88;
         solid(voteShell, darkMetal, x, 0.73, 0.485, group);
@@ -681,6 +716,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         target.position.set(x, 0.73, 0.52);
         target.userData.marketIndex = index;
         target.userData.voteSide = side;
+        target.userData.staged = staged;
+        target.userData.cents = cents;
         target.userData.hitAt = -1000;
         group.add(target);
         voteMeshes.push(target);
@@ -751,10 +788,11 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     viewWeapon.add(weaponBody);
     const anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
     const arsenal = createArsenal(anisotropy, loadingManager, () => disposed);
-    const arms = createArms(anisotropy);
+    const arms = createArms(anisotropy, loadingManager, () => disposed);
     weaponBody.add(arms.hands);
     viewWeapon.add(arms.sleeves);
     arsenal.rigs.forEach((rig, index) => { rig.root.visible = index === 0; weaponBody.add(rig.root); });
+    const contacts = new Map<WeaponRig, Contact>();
     const rigPose: RigPose = { left: emptyPose(), right: emptyPose(), bodyPosition: new THREE.Vector3(), bodyRotation: new THREE.Euler() };
     const muzzleAnchor = new THREE.Object3D();
     muzzleAnchor.scale.setScalar(1 / VIEW_SCALE);
@@ -840,6 +878,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     let autoReloadAt = -1;
     let climbDebt = 0;
     let forceFire = false;
+    // Aiming: held on Space. `aim` eases 0→1; looking slows by the magnification.
+    let forceScope = false, aim = 0, lookScale = 1, throughScope = false;
     let frozenReload: number | null = null;
 
     // Wave mode (unlocked with the Konami code).
@@ -869,7 +909,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     const reportWeapon = () => {
       const spec = arsenal.rigs[current].spec;
       ammoRef.current(magazines[current], reserve, reloading);
-      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading });
+      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope });
     };
     reportWeapon();
 
@@ -890,6 +930,21 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       volume.gain.value = gain;
       noise.connect(filter).connect(volume).connect(context.destination);
       noise.start(at);
+    };
+    /** A short bright tone: the confirmation that a contract was staged. */
+    const chime = (frequency: number) => {
+      audioContext ??= new AudioContext();
+      const context = audioContext, at = context.currentTime;
+      [1, 2.01].forEach((harmonic, index) => {
+        const oscillator = context.createOscillator(), volume = context.createGain();
+        oscillator.type = index === 0 ? "triangle" : "sine";
+        oscillator.frequency.setValueAtTime(frequency * harmonic, at);
+        volume.gain.setValueAtTime(index === 0 ? 0.09 : 0.035, at);
+        volume.gain.exponentialRampToValueAtTime(0.0001, at + (index === 0 ? 0.34 : 0.2));
+        oscillator.connect(volume).connect(context.destination);
+        oscillator.start(at);
+        oscillator.stop(at + 0.36);
+      });
     };
     const playAction = (kind: ReloadSound | "select" | "draw" | "dry") => {
       if (kind === "magOut") { burst(900, 2, 0.05, 0.3); burst(2600, 4, 0.03, 0.14, 0.04); }
@@ -992,8 +1047,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     };
     const onMouseMove = (event: MouseEvent) => {
       if (document.pointerLockElement !== renderer.domElement) return;
-      yaw -= event.movementX * 0.00165;
-      pitch -= event.movementY * 0.00165;
+      yaw -= event.movementX * 0.00165 * lookScale;
+      pitch -= event.movementY * 0.00165 * lookScale;
       lookKickX = THREE.MathUtils.clamp(lookKickX + event.movementX * 0.00032, -0.035, 0.035);
       lookKickY = THREE.MathUtils.clamp(lookKickY + event.movementY * 0.00026, -0.028, 0.028);
       pitch = THREE.MathUtils.clamp(pitch, -1.28, 1.28);
@@ -1030,6 +1085,14 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         const side = hit.object.userData.voteSide as VoteSide;
         hit.object.userData.hitAt = now;
         voteRef.current(markets[marketIndex], side);
+        // Make it land: effects on the panel, a rising chime for a run of hits, and the live contract readout.
+        strikeStreak = now - lastStrikeAt < 1400 ? strikeStreak + 1 : 1;
+        lastStrikeAt = now;
+        strikeFx.hit(now, hit.point, hit.object.getWorldDirection(strikeNormal), side, strikeStreak);
+        stationLights[marketIndex].userData.hitAt = now;
+        chime((side === "YES" ? 784 : 523) * 2 ** (Math.min(strikeStreak - 1, 7) / 12));
+        strikeId += 1;
+        setStrike({ id: strikeId, market: marketIndex, side, streak: strikeStreak });
       }
       spawnShotEffects(now, endpoint, hit, modes[current] !== "BOLT");
       if (modes[current] === "BOLT" && magazines[current] > 0) { cycleStartedAt = now; cycleCursor = 0; cycleEjected = false; }
@@ -1055,6 +1118,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       }
       if (document.pointerLockElement !== renderer.domElement) return;
       keys.add(event.code);
+      if (event.code === "Space") event.preventDefault();
       if (event.repeat) return;
       if (event.code === "KeyR") startReload();
       if (event.code === "KeyV") cycleMode();
@@ -1203,7 +1267,18 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
 
       recoil = THREE.MathUtils.lerp(recoil, 0, Math.min(1, dt * 14));
       muzzleEnergy = THREE.MathUtils.lerp(muzzleEnergy, 0, Math.min(1, dt * 25));
-      viewWeapon.visible = enteredRef.current;
+      // Aim down the sights while Space is held; an optic takes over the whole view once it is up.
+      const aiming = enteredRef.current && (forceScope || (keys.has("Space") && document.pointerLockElement === renderer.domElement)) && !reloading && switchingTo < 0 && cycleStartedAt < 0;
+      aim += ((aiming ? 1 : 0) - aim) * Math.min(1, dt * 13);
+      if (Math.abs(aim - (aiming ? 1 : 0)) < 0.003) aim = aiming ? 1 : 0;
+      const sighted = smooth01(aim), magnification = THREE.MathUtils.lerp(1, spec.zoom, sighted);
+      const fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / magnification));
+      if (Math.abs(camera.fov - fov) > 0.005) { camera.fov = fov; camera.updateProjectionMatrix(); }
+      lookScale = 1 / magnification;
+      const through = spec.scope && aim > 0.82;
+      if (scopeRef.current) scopeRef.current.style.opacity = spec.scope ? String(THREE.MathUtils.clamp((aim - 0.6) / 0.3, 0, 1)) : "0";
+      if (through !== throughScope) { throughScope = through; document.documentElement.toggleAttribute("data-scoped", through); }
+      viewWeapon.visible = enteredRef.current && !through;
       muzzleFlash.visible = enteredRef.current && muzzleEnergy > 0.12;
       muzzleFlash.scale.setScalar(0.76 + muzzleEnergy * (0.9 + Math.sin(now * 0.071) * 0.14));
       muzzleFlash.rotation.z = Math.sin(now * 0.053) * 0.22;
@@ -1211,6 +1286,15 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       roomMuzzleLight.intensity = muzzleEnergy * 72;
       const walkBob = moving ? Math.sin(now * 0.011) * 0.018 : Math.sin(now * 0.0022) * 0.004;
       const lateralBob = moving ? Math.cos(now * 0.0055) * 0.012 : Math.sin(now * 0.0017) * 0.003;
+      let contact = contacts.get(rig);
+      if (!contact && rig.ready && arms.ready()) {
+        // Once per weapon: build what the hands collide with, and seat the resting grips on it.
+        rig.pose(null, 0, rigPose);
+        contact = buildContact(rig.root, arms.hands, rig.movers());
+        contacts.set(rig, contact);
+        const built = contact;
+        rig.fit((pose, left) => arms.fit(pose, left, built));
+      }
       rig.pose(timeline, progress, rigPose);
       weaponBody.position.copy(rigPose.bodyPosition);
       weaponBody.rotation.copy(rigPose.bodyRotation);
@@ -1218,8 +1302,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       arms.right.apply(rigPose.right);
       muzzleAnchor.position.copy(rig.muzzle.position);
       viewWeapon.position.set(
-        shoulder.x + rig.view.p[0] * VIEW_SCALE + lateralBob - lookKickX * 0.9,
-        shoulder.y + rig.view.p[1] * VIEW_SCALE + walkBob + recoil * 0.35 + lookKickY * 0.7 - lowered * 0.75,
+        (shoulder.x + rig.view.p[0] * VIEW_SCALE) * (1 - 0.82 * sighted) + (lateralBob - lookKickX * 0.9) * (1 - 0.6 * sighted),
+        shoulder.y + rig.view.p[1] * VIEW_SCALE + 0.1 * sighted + walkBob * (1 - 0.6 * sighted) + recoil * 0.35 + lookKickY * 0.7 - lowered * 0.75,
         shoulder.z + rig.view.p[2] * VIEW_SCALE + recoil * 0.9,
       );
       viewWeapon.rotation.set(
@@ -1227,7 +1311,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         weaponRotation.y + rig.view.r[1] + lookKickX * 0.55 + lowered * 0.25,
         weaponRotation.z + rig.view.r[2] - lookKickX * 0.4,
       );
-      arms.update();
+      contact?.update();
+      arms.update(contact);
 
       exhibitGroups.forEach((group, index) => {
         const market = markets[index];
@@ -1239,6 +1324,17 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
           stationLights[index].color.setHex(color);
           stationRingMaterials[index].color.setHex(color).multiplyScalar(3.2);
         }
+        // The targets carry the contracts staged on them, and the station flares when one is added.
+        for (let sideIndex = 0; sideIndex < 2; sideIndex += 1) {
+          const target = voteMeshes[index * 2 + sideIndex], staged = count[sideIndex === 0 ? "YES" : "NO"];
+          if (target.userData.staged === staged) continue;
+          target.userData.staged = staged;
+          const texture = voteTextures[index * 2 + sideIndex];
+          paintOutcome(texture.image as HTMLCanvasElement, target.userData.voteSide as VoteSide, staged, Number(target.userData.cents));
+          texture.needsUpdate = true;
+        }
+        const flare = Math.max(0, 1 - (now - (stationLights[index].userData.hitAt ?? -1e6)) / 420);
+        stationLights[index].intensity = 7 * (1 + flare * flare * 2.6);
         const targeted = index === lastTargeted;
         screenMaterials[index].emissiveIntensity = targeted ? 1.1 : 1;
         group.scale.setScalar(THREE.MathUtils.lerp(group.scale.x, targeted ? 1.03 : 1, 0.1));
@@ -1254,13 +1350,17 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
 
       voteMeshes.forEach((target) => {
         const elapsed = now - (target.userData.hitAt ?? -1000);
-        const pulse = elapsed < 180 ? Math.sin((elapsed / 180) * Math.PI) : 0;
-        (target.material as THREE.MeshStandardMaterial).emissiveIntensity = 1 + pulse * 0.4;
-        target.scale.setScalar(1 + pulse * 0.08);
+        // Struck: the panel flares white-hot, is driven back and springs out again.
+        const flare = elapsed < 520 ? (1 - elapsed / 520) ** 2 : 0;
+        const spring = elapsed < 520 ? Math.exp(-elapsed / 110) * Math.cos(elapsed / 38) : 0;
+        (target.material as THREE.MeshStandardMaterial).emissiveIntensity = 1 + flare * 2.4;
+        target.scale.setScalar(1 + flare * 0.07 - spring * 0.05);
+        target.position.z = 0.52 - spring * 0.07;
       });
 
       range.update(now);
       ballistics.update(now, dt);
+      strikeFx.update(now, dt);
       bodycamPass.uniforms.time.value = now;
       camera.updateMatrixWorld(true);
       // Viewmodel space is camera space, so world lighting is rotated into it each frame.
@@ -1313,8 +1413,9 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         hold: (down: boolean) => { forceFire = down; if (down) pressTrigger(trigger); else releaseTrigger(trigger); },
         weapon: (index: number) => switchWeapon(index),
         mode: () => cycleMode(),
-        arsenal, arms, weaponBody, viewWeapon,
+        arsenal, arms, weaponBody, viewWeapon, contacts,
         freeze: (at: number | null) => { frozenReload = at; },
+        scope: (on: boolean) => { forceScope = on; },
         horde, toggleHorde,
         reload: () => startReload(),
         scene, viewModelScene, camera, renderer, range, composer,
@@ -1371,6 +1472,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       document.removeEventListener("pointerlockchange", onPointerLockChange);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("wheel", onWheel);
+      document.documentElement.removeAttribute("data-scoped");
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       furnaceProximityRef.current(false);
@@ -1397,6 +1499,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       skyMap?.dispose();
       range.dispose();
       ballistics.dispose();
+      strikeFx.dispose();
       arsenal.dispose();
       arms.dispose();
       horde.dispose();
@@ -1413,7 +1516,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
   return (
     <>
       <div className="world-canvas" ref={mountRef} aria-label="HyperStrike first-person ballistic price range" />
-      {entered && <RangeHud weapon={weaponHud} horde={hordeHud} />}
+      <div className="scope-view" ref={scopeRef} aria-hidden="true"><div><i /><i /><i /><i /><b /></div></div>
+      {entered && <RangeHud weapon={weaponHud} horde={hordeHud} strike={strike && markets[strike.market] ? { ...strike, market: markets[strike.market], count: votes[markets[strike.market].id] ?? { YES: 0, NO: 0 } } : null} />}
     </>
   );
 }

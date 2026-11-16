@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { ARSENAL, type WeaponId, type WeaponSpec } from "./arsenalSpec";
+import type { Mover } from "./collider";
 import { blendPose, resolvePose, type HandPose, type ResolvedPose } from "./hands";
 import { createFinishKit, prepareRifle, surfaceBuilt, surfaceWeapon, type FinishKit, type WeaponSurfacing } from "./weapon";
 
@@ -44,6 +45,12 @@ export type WeaponRig = {
   view: { p: V3; r: V3 };
   reload: Timeline;
   cycle?: Timeline;
+  /** True once the weapon's geometry is in `root`. */
+  ready: boolean;
+  /** Runs `apply` once over the two resting grips, which it may move. */
+  fit: (apply: (pose: ResolvedPose, left: boolean) => void) => void;
+  /** Parts that move during a reload, with where each rests. */
+  movers: () => Mover[];
   /** Poses hands and moving parts. `timeline` null rests everything. */
   pose: (timeline: Timeline | null, t: number, out: RigPose) => void;
 };
@@ -559,6 +566,12 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
     const p = new THREE.Vector3(), r = new THREE.Vector3();
     return {
       spec, root, muzzle, port, view: setup.view, reload: setup.reload, cycle: setup.cycle,
+      ready: Boolean(built),
+      fit(apply) {
+        apply(restLeft, true);
+        apply(restRight, false);
+      },
+      movers: () => [...parts.values()].flat(),
       pose(timeline, t, out) {
         const left = timeline ? track(timeline.left) : null, right = timeline ? track(timeline.right) : null;
         if (left) sampleHand(left, restLeft, t, out.left); else blendPose(restLeft, restLeft, 0, out.left);
@@ -597,6 +610,7 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
     disposers.push(surfacing.dispose);
     rig.adopt(mountAuthored(rig.root, object, surfacing, [0, 0.065, -0.656], { mag: /^AK-47[ _]2[ _]Mag[ _]1$/, bolt: /^AK-47[ _]2[ _]Bolt[ _]Carrier[ _]1$/ }));
     rig.muzzle.position.set(0, 0.065, -0.66);
+    rig.ready = true;
     rig.port.set(0.03, 0.07, -0.16);
   });
 
@@ -625,6 +639,7 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
     disposers.push(() => { brass.dispose(); copper.dispose(); caseGeometry.dispose(); bulletGeometry.dispose(); });
     rig.adopt(parts);
     rig.muzzle.position.set(0, 0.07, -0.94);
+    rig.ready = true;
     rig.port.set(0.025, 0.08, -0.09);
   });
 
