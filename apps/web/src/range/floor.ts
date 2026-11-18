@@ -76,7 +76,14 @@ export function createFloorReflection(renderer: THREE.WebGLRenderer, enabled: bo
   };
 }
 
-export type FloorPaint = { lane: THREE.Color; edge: THREE.Color };
+export type FloorPaint = {
+  lane: THREE.Color;
+  edge: THREE.Color;
+  /** 0 leaves the ground unpainted (default 1: range lane and hazard edging). */
+  markings?: number;
+  /** Shifts how much standing water there is: negative dries the ground, positive floods it (default 0). */
+  wet?: number;
+};
 
 /** Adds puddles, mirror reflection and painted markings to a standard material. */
 export function applyWetFloor(material: THREE.MeshStandardMaterial, reflection: FloorReflection, paint: FloorPaint) {
@@ -86,6 +93,8 @@ export function applyWetFloor(material: THREE.MeshStandardMaterial, reflection: 
     shader.uniforms.reflectionStrength = reflection.uniforms.reflectionStrength;
     shader.uniforms.lanePaint = { value: paint.lane };
     shader.uniforms.edgePaint = { value: paint.edge };
+    shader.uniforms.floorMarkings = { value: paint.markings ?? 1 };
+    shader.uniforms.floorWetBias = { value: paint.wet ?? 0 };
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vFloorWorld;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvFloorWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
@@ -97,6 +106,8 @@ export function applyWetFloor(material: THREE.MeshStandardMaterial, reflection: 
         uniform float reflectionStrength;
         uniform vec3 lanePaint;
         uniform vec3 edgePaint;
+        uniform float floorMarkings;
+        uniform float floorWetBias;
         float floorHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float floorNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -121,15 +132,15 @@ export function applyWetFloor(material: THREE.MeshStandardMaterial, reflection: 
           float hazard = step(0.5, fract((slab.x + slab.y) * 1.6)) * (1.0 - smoothstep(0.19, 0.205, abs(abs(slab.x) - 9.02)));
           float firingLine = (1.0 - smoothstep(0.05, 0.065, abs(slab.y - 4.6))) * step(abs(slab.x), 8.4);
           float coverage = smoothstep(0.30, 0.52, chips + (1.0 - wornTexel) * 0.35);
-          float laneMask = lane * coverage;
-          float edgeMask = max(max(edge, hazard), firingLine) * smoothstep(0.24, 0.46, chips + 0.12);
+          float laneMask = lane * coverage * floorMarkings;
+          float edgeMask = max(max(edge, hazard), firingLine) * smoothstep(0.24, 0.46, chips + 0.12) * floorMarkings;
           diffuseColor.rgb = mix(diffuseColor.rgb, lanePaint * (0.72 + chips * 0.4), laneMask * 0.94);
           diffuseColor.rgb = mix(diffuseColor.rgb, edgePaint * (0.72 + chips * 0.4), edgeMask * 0.92);
           float painted = max(laneMask, edgeMask);
           roughnessFactor = mix(roughnessFactor, 0.5, painted * 0.8);
           normal = normalize(mix(normal, nonPerturbedNormal, painted * 0.55));
           // Standing water pools in broad low areas; damp halos surround it.
-          float basin = floorFbm(slab * 0.26 + 3.1) + (floorNoise(slab * 1.9) - 0.5) * 0.06;
+          float basin = floorFbm(slab * 0.26 + 3.1) + (floorNoise(slab * 1.9) - 0.5) * 0.06 + floorWetBias;
           floorWet = smoothstep(0.615, 0.655, basin);
           float damp = smoothstep(0.5, 0.63, basin);
           diffuseColor.rgb *= mix(1.0, 0.56, max(floorWet, damp * 0.7));

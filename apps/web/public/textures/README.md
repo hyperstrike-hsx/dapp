@@ -24,3 +24,17 @@ Rifle furniture:
 - `lacquered_cherry_wood-2k/`: 2K diffuse, OpenGL normal and roughness from
   [Lacquered Cherry Wood](https://polyhaven.com/a/lacquered_cherry_wood), CC0. The AO map is not used and not kept.
   Reproduce with `node scripts/fetch-range-materials.mjs lacquered_cherry_wood`.
+
+Range maps (Dust Court, Piazza, Nightline):
+
+- `sandstone_cracks-2k/`: 2K diffuse, OpenGL normal and roughness from
+  [Sandstone Cracks](https://polyhaven.com/a/sandstone_cracks), CC0. The Dust Court ground.
+- `cobblestone_floor_04-2k/`: 2K diffuse, OpenGL normal and roughness from
+  [Cobblestone Floor 04](https://polyhaven.com/a/cobblestone_floor_04), CC0. The Piazza paving.
+- `painted_plaster_wall-1k/`: 1K diffuse, OpenGL normal and roughness from
+  [Painted Plaster Wall](https://polyhaven.com/a/painted_plaster_wall), CC0. Tinted per building in both towns.
+- `asphalt_02-1k/`: 1K diffuse, OpenGL normal and roughness from
+  [Asphalt 02](https://polyhaven.com/a/asphalt_02), CC0. The Nightline roof deck.
+
+AO maps are not kept for these sets. Reproduce all four, and the map skies, with
+`node scripts/fetch-range-maps.mjs` (MD5-verified, about 37 MB in total).

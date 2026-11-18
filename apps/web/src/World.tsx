@@ -10,7 +10,9 @@ import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createBallistics } from "./range/ballistics";
-import { buildRange, displayMaterial, projectUv } from "./range/environment";
+import { displayMaterial, projectUv } from "./range/environment";
+import { buildMap } from "./range/maps";
+import type { RangeMapId } from "./range/mapList";
 import { VolumetricPass } from "./range/volumetric";
 import { createArsenal, type ReloadSound, type RigPose, type Timeline, type WeaponRig } from "./range/arsenal";
 import { buildContact, type Contact } from "./range/collider";
@@ -26,6 +28,7 @@ import type { PortfolioDisplayEntry, IndexMarket, VoteCount, VoteSide } from "./
 
 type Props = {
   quality?: "HIGH" | "PERFORMANCE";
+  map?: RangeMapId;
   markets: IndexMarket[];
   onSelect: (market: IndexMarket) => void;
   onProximity: (market: IndexMarket | null) => void;
@@ -410,7 +413,7 @@ function smooth01(value: number) {
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-export function World({ quality="HIGH", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
+export function World({ quality="HIGH", map="foundry", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const enteredRef = useRef(entered);
@@ -457,8 +460,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     loadingManager.itemStart("hyperstrike-world-bootstrap");
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x6f8fa8);
-    scene.fog = new THREE.FogExp2(0x16201f, quality === "HIGH" ? 0.0045 : 0.011);
 
     const BASE_FOV = 76;
     const camera = new THREE.PerspectiveCamera(BASE_FOV, mount.clientWidth / mount.clientHeight, 0.08, 110);
@@ -478,7 +479,6 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
@@ -486,7 +486,13 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     renderer.debug.checkShaderErrors = import.meta.env.DEV;
     mount.appendChild(renderer.domElement);
 
-    const range = buildRange({ scene, renderer, quality, loadingManager });
+    const range = buildMap(map, { scene, renderer, quality, loadingManager });
+    const look = range.look;
+    scene.background = new THREE.Color(look.background);
+    scene.fog = new THREE.FogExp2(look.fog, look.fogDensity);
+    renderer.toneMappingExposure = look.exposure;
+    camera.far = look.far;
+    camera.updateProjectionMatrix();
     const ballistics = createBallistics(scene);
     range.mirrorHidden.push(...ballistics.transient);
     const strikeFx = createStrikeFx(scene);
@@ -514,7 +520,10 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     aoPass.setSize = (w: number, h: number) => sizeAO(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
     composer.addPass(aoPass);
     // Sun shafts are marched against the opaque depth the occlusion pass already produced.
-    const volumetricPass = new VolumetricPass(camera, range.sun, aoPass.depthTexture, new THREE.Color(0.022, 0.038, 0.042));
+    const volumetricPass = new VolumetricPass(camera, range.sun, aoPass.depthTexture, look.haze.clone());
+    volumetricPass.density = look.hazeDensity;
+    volumetricPass.ceiling = look.hazeCeiling;
+    volumetricPass.ceilingFade = look.hazeFade;
     volumetricPass.enabled = quality === "HIGH";
     volumetricPass.glows.push(...range.glows);
     composer.addPass(volumetricPass);
@@ -542,16 +551,22 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
     composer.addPass(fxaaPass);
     range.reflection.setSize(mount.clientWidth * initialPixelRatio * 0.6, mount.clientHeight * initialPixelRatio * 0.6);
 
-    // The HDR sky is only what the roof lights look out on; the room is lit by its own probe.
+    // The HDR sky is the backdrop; image-based light comes from a probe of the lit map itself.
     const pmrem = new THREE.PMREMGenerator(renderer);
     let roomProbe: THREE.WebGLRenderTarget | null = null;
     let skyMap: THREE.Texture | null = null;
-    new HDRLoader(loadingManager).load("/environment/bonzai-sky.hdr", (hdr) => {
+    if (look.sky) new HDRLoader(loadingManager).load(look.sky, (hdr) => {
       if (disposed) { hdr.dispose(); return; }
       hdr.mapping = THREE.EquirectangularReflectionMapping;
+      if (look.skyClamp && hdr.image.data instanceof Uint16Array) {
+        // Positive half floats order the same as their bit patterns, so the cap is an integer compare.
+        const data = hdr.image.data, cap = THREE.DataUtils.toHalfFloat(look.skyClamp);
+        for (let i = 0; i < data.length; i += 1) if (i % 4 !== 3 && data[i] > cap && data[i] < 0x8000) data[i] = cap;
+      }
       skyMap = hdr;
       scene.background = hdr;
-      scene.backgroundIntensity = 1.0;
+      scene.backgroundIntensity = look.skyIntensity;
+      scene.backgroundRotation.y = look.skyRotation;
     });
 
     const emergencyMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2c50).multiplyScalar(4.8), toneMapped: false });
@@ -1111,7 +1126,9 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       switchWeapon((current + (event.deltaY > 0 ? 1 : count - 1)) % count);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (enteredRef.current && !event.repeat && konami(event.code)) toggleHorde();
+      // Letters are matched by what the key prints, so B and A work on AZERTY and other layouts.
+      const typed = /^[a-z]$/i.test(event.key) ? `Key${event.key.toUpperCase()}` : event.code;
+      if (enteredRef.current && !event.repeat && konami(typed)) toggleHorde();
       if (horde.phase === "over" && !event.repeat) {
         if (event.code === "Enter") horde.start(performance.now());
         if (event.code === "Backspace") horde.stop();
@@ -1202,8 +1219,8 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         const m = moodApplied, fog = scene.fog as THREE.FogExp2;
         fog.color.copy(calm.fog).lerp(dread.fog, m);
         fog.density = calm.fogDensity * (1 + m * 1.5);
-        scene.environmentIntensity = THREE.MathUtils.lerp(1.2, 0.3, m);
-        scene.backgroundIntensity = THREE.MathUtils.lerp(1, 0.1, m);
+        scene.environmentIntensity = THREE.MathUtils.lerp(look.environmentIntensity, look.environmentIntensity * 0.25, m);
+        scene.backgroundIntensity = look.skyIntensity * THREE.MathUtils.lerp(1, 0.1, m);
         viewModelScene.environmentIntensity = THREE.MathUtils.lerp(1.15, 0.5, m);
         range.sun.color.copy(calm.sun).lerp(dread.sun, m);
         range.sun.intensity = THREE.MathUtils.lerp(calm.sunIntensity, 2.2, m);
@@ -1432,7 +1449,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
         roomProbe?.dispose();
         roomProbe = captured;
         scene.environment = captured.texture;
-        scene.environmentIntensity = 1.2;
+        scene.environmentIntensity = look.environmentIntensity;
       }
       viewModelScene.environment = roomProbe!.texture;
       viewModelScene.environmentIntensity = 1.15;
@@ -1511,7 +1528,7 @@ export function World({ quality="HIGH", markets, onSelect, onProximity, entered,
       renderer.forceContextLoss();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
-  }, [markets, quality]);
+  }, [markets, quality, map]);
 
   return (
     <>

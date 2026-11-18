@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { applyWetFloor, createFloorReflection, type FloorReflection } from "./floor";
-import { brushedMetal, disposePbr, paintedSteel, pbrMaterial, roofDeck, steel, tile, timber, type PbrSet } from "./pbr";
-import type { Glow } from "./volumetric";
+import { brushedMetal, paintedSteel, pbrMaterial, roofDeck, steel, tile, timber } from "./pbr";
+import { BRAND, STRIKE_ORANGE, crateGeometry, createKit, drumGeometry, hazardTexture, iBeam, jerseyBarrier, softBox, worldBox, type RangeEnvironment, type RangeOptions } from "./kit";
+
+export { projectUv } from "./kit";
+export type { RangeEnvironment, RangeQuality } from "./kit";
 
 // The physical range: architecture, structure, fixtures, props and lighting.
 //
@@ -13,35 +13,9 @@ import type { Glow } from "./volumetric";
 // tubes, screens and the furnace — captured once into a local reflection probe
 // that replaces the outdoor sky as the image-based light.
 
-export type RangeQuality = "HIGH" | "PERFORMANCE";
-
-const BRAND = 0x8ef5e3;
-const STRIKE_ORANGE = 0xe89a42;
 const SKYLIGHTS = [2.1, -10.3, -22.7];
 const SKYLIGHT_HALF = { x: 3.45, z: 1.725 };
 const SKYLIGHT_Y = 6.2;
-
-type Transform = { position: [number, number, number]; rotation?: [number, number, number] };
-
-export type RangeEnvironment = {
-  shootable: THREE.Object3D[];
-  furnaceMeshes: THREE.Mesh[];
-  furnace: THREE.Group;
-  materials: { darkMetal: THREE.MeshStandardMaterial; machine: THREE.MeshStandardMaterial; structural: THREE.MeshStandardMaterial; brushed: THREE.MeshStandardMaterial };
-  sun: THREE.DirectionalLight;
-  /** Overhead lamp fill lights, exposed so game modes can restage the room. */
-  fills: THREE.PointLight[];
-  reflection: FloorReflection;
-  /** Objects hidden while the mirrored floor pass renders. */
-  mirrorHidden: THREE.Object3D[];
-  glows: Glow[];
-  /** 0..1 amount of direct sun reaching a point. */
-  sunlitAt: (point: THREE.Vector3) => number;
-  /** Replaces the sky IBL with a probe of the lit room. */
-  captureProbe: (pmrem: THREE.PMREMGenerator) => THREE.WebGLRenderTarget;
-  update: (now: number) => void;
-  dispose: () => void;
-};
 
 /** Emissive display with a glossy face so screens pick up reflections like real panels. */
 export function displayMaterial(texture: THREE.Texture, gain = 1) {
@@ -58,187 +32,11 @@ export function displayMaterial(texture: THREE.Texture, gain = 1) {
   });
 }
 
-/** Rewrites UVs by box projection so one texture tile always spans `metres`. */
-export function projectUv<T extends THREE.BufferGeometry>(geometry: T, metres: number): T {
-  const position = geometry.attributes.position, normal = geometry.attributes.normal, uv = geometry.attributes.uv;
-  for (let i = 0; i < position.count; i += 1) {
-    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
-    const ax = Math.abs(normal.getX(i)), ay = Math.abs(normal.getY(i)), az = Math.abs(normal.getZ(i));
-    if (ax >= ay && ax >= az) uv.setXY(i, z / metres, y / metres);
-    else if (ay >= az) uv.setXY(i, x / metres, z / metres);
-    else uv.setXY(i, x / metres, y / metres);
-  }
-  uv.needsUpdate = true;
-  return geometry;
-}
-
-const worldBox = (w: number, h: number, d: number, metres: number) => projectUv(new THREE.BoxGeometry(w, h, d), metres);
-const softBox = (w: number, h: number, d: number, radius: number, metres: number) => projectUv(new RoundedBoxGeometry(w, h, d, 3, radius), metres);
-
-/** Rolled steel I-section standing on the floor. */
-function iBeam(width: number, depth: number, height: number, flange: number, web: number) {
-  const w = width / 2, d = depth / 2, f = flange, t = web / 2;
-  const shape = new THREE.Shape();
-  shape.moveTo(-w, -d); shape.lineTo(w, -d); shape.lineTo(w, -d + f); shape.lineTo(t, -d + f);
-  shape.lineTo(t, d - f); shape.lineTo(w, d - f); shape.lineTo(w, d); shape.lineTo(-w, d);
-  shape.lineTo(-w, d - f); shape.lineTo(-t, d - f); shape.lineTo(-t, -d + f); shape.lineTo(-w, -d + f);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
-  geometry.rotateX(-Math.PI / 2);
-  return projectUv(geometry, 1.4);
-}
-
-/** Precast "Jersey" traffic barrier, long axis on X. */
-function jerseyBarrier(length: number) {
-  const shape = new THREE.Shape();
-  shape.moveTo(-0.3, 0); shape.lineTo(0.3, 0); shape.lineTo(0.3, 0.09); shape.lineTo(0.165, 0.32);
-  shape.lineTo(0.1, 1.0); shape.lineTo(0.075, 1.04); shape.lineTo(-0.075, 1.04); shape.lineTo(-0.1, 1.0);
-  shape.lineTo(-0.165, 0.32); shape.lineTo(-0.3, 0.09);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: true, bevelSize: 0.018, bevelThickness: 0.018, bevelSegments: 2 });
-  geometry.translate(0, 0, -length / 2);
-  geometry.rotateY(Math.PI / 2);
-  geometry.computeVertexNormals();
-  return projectUv(geometry, 2.2);
-}
-
-/** Shipping crate: boarded core with proud edge battens and a diagonal brace per side. */
-function crateGeometry(size: number) {
-  const half = size / 2, batten = 0.085, proud = 0.022;
-  const parts: THREE.BufferGeometry[] = [worldBox(size - proud * 2, size - proud * 2, size - proud * 2, 1.1)];
-  const add = (w: number, h: number, d: number, x: number, y: number, z: number, rotation?: THREE.Euler) => {
-    const part = new RoundedBoxGeometry(w, h, d, 1, 0.008);
-    if (rotation) part.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rotation));
-    part.translate(x, y, z);
-    parts.push(projectUv(part, 1.1));
-  };
-  const edge = half - batten / 2;
-  for (const a of [-edge, edge]) {
-    for (const b of [-edge, edge]) {
-      add(size, batten, batten, 0, a, b);
-      add(batten, size, batten, a, 0, b);
-      add(batten, batten, size, a, b, 0);
-    }
-  }
-  const brace = Math.hypot(size, size) - batten * 2.6;
-  for (const side of [-1, 1]) {
-    add(brace, batten, proud * 1.6, 0, 0, side * (half - proud * 0.8), new THREE.Euler(0, 0, side * Math.PI / 4));
-    add(proud * 1.6, batten, brace, side * (half - proud * 0.8), 0, 0, new THREE.Euler(side * Math.PI / 4, 0, 0));
-  }
-  const merged = mergeGeometries(parts.map((part) => part.index ? part.toNonIndexed() : part));
-  parts.forEach((part) => part.dispose());
-  return merged;
-}
-
-/** 200-litre steel drum with rolled hoops and a recessed lid. */
-function drumGeometry() {
-  const r = 0.29, h = 0.88;
-  const profile = [
-    [0, 0], [r - 0.02, 0], [r, 0.02], [r, 0.27], [r + 0.016, 0.29], [r + 0.016, 0.31], [r, 0.33],
-    [r, 0.55], [r + 0.016, 0.57], [r + 0.016, 0.59], [r, 0.61], [r, h - 0.03], [r + 0.012, h - 0.02],
-    [r + 0.012, h], [r - 0.02, h], [r - 0.024, h - 0.022], [0, h - 0.022],
-  ].map(([x, y]) => new THREE.Vector2(x, y));
-  const geometry = new THREE.LatheGeometry(profile, 28);
-  const uv = geometry.attributes.uv;
-  for (let i = 0; i < uv.count; i += 1) uv.setXY(i, uv.getX(i) * 1.6, uv.getY(i) * 0.8);
-  return geometry;
-}
-
-function softDiscTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 64;
-  const context = canvas.getContext("2d")!;
-  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.35, "rgba(255,255,255,.45)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(canvas);
-}
-
-function hazardTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256; canvas.height = 64;
-  const context = canvas.getContext("2d")!;
-  context.fillStyle = "#d98a2b";
-  context.fillRect(0, 0, 256, 64);
-  context.fillStyle = "#14110d";
-  for (let x = -64; x < 256; x += 64) {
-    context.beginPath(); context.moveTo(x, 64); context.lineTo(x + 32, 64); context.lineTo(x + 96, 0); context.lineTo(x + 64, 0); context.closePath(); context.fill();
-  }
-  let seed = 77;
-  for (let i = 0; i < 900; i += 1) {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    const x = (seed & 255), y = (seed >> 8) & 63, shade = 40 + ((seed >> 16) & 63);
-    context.fillStyle = `rgba(${shade},${shade},${shade},.35)`;
-    context.fillRect(x, y, 1 + ((seed >> 22) & 3), 1);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-const FIRE_SHADER = {
-  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`
-    uniform float time;
-    varying vec2 vUv;
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float noise(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-    }
-    float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += noise(p) * a; p = p * 2.02 + 11.3; a *= 0.5; } return s; }
-    void main() {
-      vec2 p = vec2(vUv.x * 3.2, vUv.y * 2.1);
-      float rise = time * 1.35;
-      float turbulence = fbm(p * 1.6 + vec2(fbm(p + vec2(0.0, -rise * 0.6)) * 1.4, -rise));
-      float body = turbulence * 1.5 - vUv.y * 1.05 + 0.28;
-      float flame = smoothstep(0.12, 0.95, body);
-      float embers = smoothstep(0.55, 0.0, vUv.y) * (0.6 + 0.4 * noise(p * 5.0 + vec2(0.0, time * 0.4)));
-      float heat = clamp(flame + embers * 0.55, 0.0, 1.4);
-      // Black-body ramp: deep red -> orange -> pale yellow core.
-      vec3 color = vec3(1.0, 0.09, 0.012) * smoothstep(0.0, 0.5, heat) * 2.2
-                 + vec3(1.0, 0.42, 0.04) * smoothstep(0.32, 0.85, heat) * 4.2
-                 + vec3(1.0, 0.86, 0.5) * smoothstep(0.78, 1.25, heat) * 5.0;
-      gl_FragColor = vec4(color + vec3(0.05, 0.008, 0.0), 1.0);
-    }
-  `,
-};
-
-export function buildRange(options: {
-  scene: THREE.Scene;
-  renderer: THREE.WebGLRenderer;
-  quality: RangeQuality;
-  loadingManager: THREE.LoadingManager;
-}): RangeEnvironment {
-  const { scene, renderer, quality, loadingManager } = options;
-  const high = quality === "HIGH";
-  const anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-  const shootable: THREE.Object3D[] = [];
-  const furnaceMeshes: THREE.Mesh[] = [];
-  const mirrorHidden: THREE.Object3D[] = [];
-  const disposables: Array<{ dispose: () => void }> = [];
-  const sets: PbrSet[] = [];
-  const keep = <T extends PbrSet>(set: T) => { sets.push(set); return set; };
+export function buildRange(options: RangeOptions): RangeEnvironment {
+  const kit = createKit(options);
+  const { scene, high, anisotropy, shootable, keep, track, photoSet, place, instances } = kit;
 
   // ---- Materials -----------------------------------------------------------
-  const loader = new THREE.TextureLoader(loadingManager);
-  const photoSet = (root: string, repeatX: number, repeatY: number) => {
-    const maps = ["diffuse", "normal-gl", "roughness", "ao"].map((name) => {
-      const texture = loader.load(`${root}/${name}.jpg`);
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(repeatX, repeatY);
-      texture.anisotropy = anisotropy;
-      disposables.push(texture);
-      return texture;
-    });
-    maps[0].colorSpace = THREE.SRGBColorSpace;
-    return { map: maps[0], normalMap: maps[1], roughnessMap: maps[2], aoMap: maps[3] };
-  };
   const slab = photoSet("/textures/concrete_floor_worn_001-2k", 38 / 4.2, 52 / 4.2);
   const cast = photoSet("/textures/concrete_floor_worn_001-2k", 1, 1);
   const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
@@ -263,34 +61,7 @@ export function buildRange(options: {
   const concrete = new THREE.MeshStandardMaterial({ ...cast, normalScale: new THREE.Vector2(0.9, 0.9), color: 0xb9b6a9, roughness: 0.95, metalness: 0, aoMapIntensity: 0.8, envMapIntensity: 0.5 });
   const brickMaterial = new THREE.MeshStandardMaterial({ ...brick, normalScale: new THREE.Vector2(1.25, 1.25), color: 0xc9b9aa, roughness: 0.96, metalness: 0, aoMapIntensity: 0.9, envMapIntensity: 0.45 });
 
-  const place = (mesh: THREE.Mesh, x: number, y: number, z: number, shadow = true, hit = false) => {
-    mesh.position.set(x, y, z);
-    mesh.castShadow = shadow;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    if (hit) shootable.push(mesh);
-    return mesh;
-  };
-  const instances = (geometry: THREE.BufferGeometry, material: THREE.Material, transforms: Transform[], hit = true, shadow = true) => {
-    const mesh = new THREE.InstancedMesh(geometry, material, transforms.length);
-    const dummy = new THREE.Object3D();
-    transforms.forEach((transform, index) => {
-      dummy.position.set(...transform.position);
-      dummy.rotation.set(...(transform.rotation ?? [0, 0, 0]));
-      dummy.updateMatrix();
-      mesh.setMatrixAt(index, dummy.matrix);
-    });
-    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    mesh.computeBoundingSphere();
-    mesh.castShadow = shadow;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    if (hit) shootable.push(mesh);
-    return mesh;
-  };
-
   // ---- Floor ---------------------------------------------------------------
-  const reflection = createFloorReflection(renderer, high);
   const floorMaterial = new THREE.MeshStandardMaterial({
     ...slab,
     normalScale: new THREE.Vector2(1.15, 1.15),
@@ -300,17 +71,10 @@ export function buildRange(options: {
     aoMapIntensity: 0.85,
     envMapIntensity: 0.4,
   });
-  applyWetFloor(floorMaterial, reflection, {
+  const reflection = kit.floor(floorMaterial, { width: 38, depth: 52, z: -8 }, {
     lane: new THREE.Color(STRIKE_ORANGE).multiplyScalar(0.8),
     edge: new THREE.Color(0.62, 0.6, 0.52),
   });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(38, 52), floorMaterial);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.z = -8;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  shootable.push(floor);
-  mirrorHidden.push(floor);
 
   // ---- Walls ---------------------------------------------------------------
   for (const x of [-10, 10]) {
@@ -427,10 +191,9 @@ export function buildRange(options: {
   instances(crateGeometry(1.08), crateMaterial, crateSpots.map((position, index) => ({ position, rotation: [0, (index % 3 - 1) * 0.12 + (index % 2) * Math.PI / 2, 0] as [number, number, number] })));
   const barrierSpots: Array<[number, number, number]> = [[-6.5, 0, 5], [-8.35, 0, -10.5], [-6.5, 0, -18], [6.5, 0, 0], [6.5, 0, -11.5], [6.5, 0, -23]];
   instances(jerseyBarrier(2.4), concrete, barrierSpots.map((position, index) => ({ position, rotation: [0, index % 2 ? -0.08 : 0.08, 0] as [number, number, number] })));
-  const hazard = hazardTexture();
+  const hazard = track(hazardTexture());
   hazard.repeat.set(3, 1);
   hazard.anisotropy = anisotropy;
-  disposables.push(hazard);
   const hazardMaterial = new THREE.MeshStandardMaterial({ map: hazard, roughness: 0.42, metalness: 0, envMapIntensity: 0.8 });
   for (const side of [-1, 1]) {
     instances(new THREE.BoxGeometry(2.32, 0.16, 0.012), hazardMaterial, barrierSpots.map((position, index) => {
@@ -450,45 +213,7 @@ export function buildRange(options: {
   instances(new THREE.CylinderGeometry(0.016, 0.016, 0.42, 8), ductMaterial, doors.map(([x, z]) => ({ position: [x - Math.sign(x) * 0.12, 1.2, z + 0.62] as [number, number, number] })), false, false);
 
   // ---- Furnace -------------------------------------------------------------
-  const furnace = new THREE.Group();
-  furnace.position.set(9.18, 0, -11.6);
-  furnace.rotation.y = -Math.PI / 2;
-  const furnacePart = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, utility = false) => {
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    if (utility) { mesh.userData.utility = "furnace"; furnaceMeshes.push(mesh); }
-    furnace.add(mesh);
-    return mesh;
-  };
-  furnacePart(softBox(3.3, 3.5, 1.15, 0.05, 1.6), machineMaterial, 0, 1.75, 0);
-  furnacePart(softBox(3.6, 0.22, 1.4, 0.03, 1.6), darkMetal, 0, 0.11, 0.05);
-  furnacePart(softBox(3.5, 0.16, 1.3, 0.03, 1.6), darkMetal, 0, 3.56, 0.02);
-  // Flue rising to the roof with a collar.
-  const flue = new THREE.CylinderGeometry(0.3, 0.3, 2.7, 20);
-  furnacePart(flue, ductMaterial, -1.05, 4.95, -0.1);
-  furnacePart(new THREE.CylinderGeometry(0.36, 0.36, 0.1, 20), structural, -1.05, 3.7, -0.1);
-  const fireMaterial = new THREE.ShaderMaterial({ ...FIRE_SHADER, uniforms: { time: { value: 0 } }, toneMapped: false });
-  furnacePart(new THREE.PlaneGeometry(2.42, 1.86), fireMaterial, 0, 1.68, 0.59, true).castShadow = false;
-  const doorFrame = new THREE.Shape();
-  doorFrame.moveTo(-1.425, -1.175); doorFrame.lineTo(1.425, -1.175); doorFrame.lineTo(1.425, 1.175); doorFrame.lineTo(-1.425, 1.175); doorFrame.closePath();
-  const doorHole = new THREE.Path();
-  doorHole.moveTo(-1.12, -0.81); doorHole.lineTo(-1.12, 0.81); doorHole.lineTo(1.12, 0.81); doorHole.lineTo(1.12, -0.81); doorHole.closePath();
-  doorFrame.holes.push(doorHole);
-  const doorGeometry = new THREE.ExtrudeGeometry(doorFrame, { depth: 0.2, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 });
-  doorGeometry.translate(0, 0, -0.1);
-  furnacePart(projectUv(doorGeometry, 1.2), darkMetal, 0, 1.68, 0.71, true);
-  for (const x of [-0.82, -0.41, 0, 0.41, 0.82]) furnacePart(softBox(0.075, 1.72, 0.08, 0.012, 1), darkMetal, x, 1.68, 0.8);
-  const boltGeometry = new THREE.CylinderGeometry(0.034, 0.034, 0.05, 6);
-  boltGeometry.rotateX(Math.PI / 2);
-  for (const x of [-1.3, -0.65, 0, 0.65, 1.3]) for (const y of [0.62, 2.74]) furnacePart(boltGeometry, structural, x, y, 0.83);
-  for (const y of [1.15, 1.68, 2.21]) for (const x of [-1.3, 1.3]) furnacePart(boltGeometry, structural, x, y, 0.83);
-  const furnaceLight = new THREE.PointLight(0xff6817, 34, 11, 2);
-  furnaceLight.position.set(0, 1.7, 1.25);
-  furnace.add(furnaceLight);
-  scene.add(furnace);
-  shootable.push(...furnace.children.filter((child) => child instanceof THREE.Mesh));
+  const furnace = kit.furnace({ machine: machineMaterial, darkMetal, structural, duct: ductMaterial });
 
   // ---- Light ---------------------------------------------------------------
   scene.add(new THREE.HemisphereLight(0xbcd3d6, 0x2b2620, 0.3));
@@ -514,35 +239,23 @@ export function buildRange(options: {
   });
 
   // ---- Air -----------------------------------------------------------------
-  const moteMap = softDiscTexture();
-  disposables.push(moteMap);
-  const moteCount = high ? 520 : 260;
-  const motePositions = new Float32Array(moteCount * 3);
-  for (let i = 0; i < moteCount; i += 1) {
-    motePositions[i * 3] = (Math.random() - 0.5) * 18;
-    motePositions[i * 3 + 1] = 0.2 + Math.random() * 5.6;
-    motePositions[i * 3 + 2] = 8 - Math.random() * 36;
-  }
-  const moteGeometry = new THREE.BufferGeometry();
-  moteGeometry.setAttribute("position", new THREE.BufferAttribute(motePositions, 3));
-  const motes = new THREE.Points(moteGeometry, new THREE.PointsMaterial({ map: moteMap, color: 0xfff3dc, size: 0.035, sizeAttenuation: true, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
-  scene.add(motes);
-  mirrorHidden.push(motes);
+  kit.motes({ count: 520, x: 18, y: [0.2, 5.8], z: [-28, 8], color: 0xfff3dc });
 
-  const glows: Glow[] = [{ position: new THREE.Vector3(), color: new THREE.Color() }];
   const toSun = sunTravel.clone().negate();
   const probe = new THREE.Vector3();
 
-  return {
-    shootable,
-    furnaceMeshes,
+  return kit.finish({
     furnace,
     materials: { darkMetal, machine: machineMaterial, structural, brushed: ductMaterial },
     sun,
     fills,
     reflection,
-    mirrorHidden,
-    glows,
+    look: {
+      sky: "/environment/bonzai-sky.hdr", skyIntensity: 1, skyRotation: 0,
+      background: 0x6f8fa8, fog: 0x16201f, fogDensity: high ? 0.0045 : 0.011,
+      haze: new THREE.Color(0.022, 0.038, 0.042), hazeDensity: 0.015, hazeCeiling: 6.3, hazeFade: 0.25,
+      environmentIntensity: 1.2, exposure: 1, far: 110,
+    },
     sunlitAt(point) {
       const t = (SKYLIGHT_Y - point.y) / toSun.y;
       if (t <= 0) return 0;
@@ -552,29 +265,5 @@ export function buildRange(options: {
       for (const z of SKYLIGHTS) lit = Math.max(lit, 1 - THREE.MathUtils.smoothstep(Math.abs(probe.z - z), SKYLIGHT_HALF.z - 0.35, SKYLIGHT_HALF.z));
       return lit * edgeX;
     },
-    captureProbe(pmrem) {
-      motes.visible = false;
-      const strength = reflection.uniforms.reflectionStrength.value;
-      reflection.uniforms.reflectionStrength.value = 0;
-      const target = pmrem.fromScene(scene, 0, 0.1, 90, { size: 256, position: new THREE.Vector3(0, 2.3, -9) });
-      reflection.uniforms.reflectionStrength.value = strength;
-      motes.visible = true;
-      return target;
-    },
-    update(now) {
-      const seconds = now / 1000;
-      fireMaterial.uniforms.time.value = seconds;
-      const flicker = 0.78 + Math.sin(seconds * 11.3) * 0.08 + Math.sin(seconds * 23.7 + 1.3) * 0.06 + Math.sin(seconds * 5.1) * 0.08;
-      furnaceLight.intensity = 34 * flicker;
-      furnaceLight.getWorldPosition(glows[0].position);
-      glows[0].color.setRGB(1, 0.36, 0.07).multiplyScalar(2.6 * flicker);
-      motes.rotation.y = now * 0.000012;
-      motes.position.y = Math.sin(now * 0.00021) * 0.12;
-    },
-    dispose() {
-      sets.forEach(disposePbr);
-      disposables.forEach((item) => item.dispose());
-      reflection.dispose();
-    },
-  };
+  });
 }

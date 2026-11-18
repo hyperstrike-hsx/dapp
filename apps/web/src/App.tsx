@@ -27,6 +27,7 @@ import { PaperPortfolio } from "./PaperPortfolio";
 import { LegacyArchive } from "./LegacyArchive";
 import { SportsDemoRecords } from "./SportsDemoRecords";
 import { RangePerformance } from "./RangePerformance";
+import { RANGE_MAPS, storedRangeMap, storeRangeMap, type RangeMapId } from "./range/mapList";
 import {
   CreatorForm,
   IndexDetail,
@@ -137,6 +138,8 @@ export default function App() {
   const [nearFurnace, setNearFurnace] = useState(false);
   const [nearChart, setNearChart] = useState(false);
   const [quality, setQuality] = useState<"HIGH" | "PERFORMANCE">("HIGH");
+  const [rangeMap, setRangeMap] = useState<RangeMapId>(storedRangeMap);
+  const rangeMapInfo = RANGE_MAPS.find((entry) => entry.id === rangeMap) ?? RANGE_MAPS[0];
   const [view, setView] = useState<View>(routeView),
     [range, setRange] = useState(false),
     [entered, setEntered] = useState(false),
@@ -498,6 +501,7 @@ export default function App() {
           >
             <World
               quality={quality}
+              map={rangeMap}
               markets={demoMarkets}
               onSelect={select}
               onProximity={setNearby}
@@ -521,7 +525,7 @@ export default function App() {
             </div>
           )}
           <div className="range-tag">
-            RANGE 01 <span>INDEX MARKET SANDBOX</span>
+            RANGE {rangeMapInfo.code} <span>{rangeMapInfo.name} · INDEX MARKET SANDBOX</span>
           </div>
           <RangePerformance
             quality={quality}
@@ -540,6 +544,28 @@ export default function App() {
                 WASD move · Mouse aim · Hold to fire · E review · R reload
               </small>
             </button>
+          )}
+          {ready && !locked && !rangePanel && !selected && (
+            <div className="range-maps" role="radiogroup" aria-label="Range map">
+              {RANGE_MAPS.map((entry) => (
+                <button
+                  key={entry.id}
+                  role="radio"
+                  aria-checked={entry.id === rangeMap}
+                  className={entry.id === rangeMap ? "active" : ""}
+                  onClick={() => {
+                    if (entry.id === rangeMap) return;
+                    storeRangeMap(entry.id);
+                    setReady(false);
+                    setRangeMap(entry.id);
+                  }}
+                >
+                  <span>RANGE {entry.code}</span>
+                  <strong>{entry.name}</strong>
+                  <small>{entry.line}</small>
+                </button>
+              ))}
+            </div>
           )}
           {ready && !locked && !rangePanel && !selected && (
             <div className="range-utilities">

@@ -20,5 +20,13 @@ Its skeleton is posed in code (`src/range/hands.ts`); the file ships no animatio
 - License: CC BY 4.0 (see `arms/license.txt`)
 - glTF with 2K base colour, normal and roughness maps (about 13 MB).
 
-The M4A1, FAMAS and Uzi and the wave-mode zombies have no model files:
-they are built in code (`src/range/arsenal.ts`, `src/range/horde.ts`).
+`zombies/` is **Free Zombies** (v0.98, glTF) by Denys Almaral, the wave-mode zombies:
+ten bodies on two skeletons, with ten retargeted clips per skeleton, all sharing one
+palette texture. Loaded by `src/range/zombieModels.ts` the first time wave mode starts.
+
+- Source: https://denysalmaral.com/gamedev/free-zombies/
+- License: not stated in the pack's `ReadMe_FreeZombies.txt`; confirm the terms with the
+  author before publishing these files.
+- About 15 MB; each animation file repeats the mesh, which the loader discards.
+
+The M4A1, FAMAS and Uzi have no model files: they are built in code (`src/range/arsenal.ts`).

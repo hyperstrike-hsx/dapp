@@ -2,14 +2,15 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { comboMultiplier, killScore, spawnOrder, wavePlan, zombieStats, type ZombieKind } from "./hordeRules";
 import type { Glow } from "./volumetric";
+import { createZombieModel, loadZombies, type ClipKey, type ZombieLibrary, type ZombieModel } from "./zombieModels";
 
 // Wave mode.
 //
-// The dead climb out of the range floor in escalating waves. Figures are
-// articulated from rigid segments and animated procedurally — shamble, sprint,
-// lunge, stagger, collapse — so there is no skeleton or clip data to ship, and
-// a shot can take a head or an arm clean off. Everything is pooled: no
-// allocation while the mode runs.
+// The dead climb out of the range floor in escalating waves. Bodies are skinned
+// models with clip animation (see zombieModels.ts), loaded the first time the
+// mode starts. Bullets hit unseen shapes that follow the bones, so a shot knows
+// whether it took a head, an arm or a leg; heads and forearms come off by
+// collapsing their bones. Everything is pooled: no allocation while the mode runs.
 
 export type HordePhase = "idle" | "intro" | "wave" | "break" | "over";
 export type HordeHud = {
@@ -65,26 +66,27 @@ const POOL = 20, GORE = 420, STAINS = 36;
 const BOUNDS = { x: 8.3, zMin: -23, zMax: 7.2 };
 const BEST_KEY = "hyperstrike.horde.best";
 
-type Segment = THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
-type Limb = { root: THREE.Group; joint: THREE.Group; upper: Segment; lower: Segment; gone: boolean };
+type Zone = "head" | "body" | "arm0" | "arm1" | "leg";
+/** An unseen shape that follows one bone or a pair of them, for bullets to hit. */
+type Proxy = { mesh: THREE.Mesh; zone: Zone; from: THREE.Bone; to: THREE.Bone | null; radius: number; lower: boolean; live: boolean };
 type Zombie = {
   root: THREE.Group;
-  hips: THREE.Group;
-  spine: THREE.Group;
-  head: THREE.Group;
-  skull: Segment;
-  eyes: Segment;
-  arms: [Limb, Limb];
-  legs: [Limb, Limb];
+  model: ZombieModel;
+  head: THREE.Bone;
+  chest: THREE.Bone;
+  forearms: [THREE.Bone, THREE.Bone];
+  eyes: THREE.Mesh;
+  proxies: Proxy[];
+  actions: Partial<Record<ClipKey, THREE.AnimationAction>>;
+  playing: ClipKey | null;
+  gait: ClipKey;
   blob: THREE.Mesh;
-  meshes: Segment[];
   kind: ZombieKind;
   state: "free" | "rising" | "chasing" | "attacking" | "dying" | "dead";
   health: number;
   speed: number;
   damage: number;
   scale: number;
-  phase: number;
   timer: number;
   stagger: number;
   facing: number;
@@ -93,33 +95,14 @@ type Zombie = {
   groanAt: number;
   quirk: number;
   headless: boolean;
+  armGone: [boolean, boolean];
+  /** The obstacle being walked around (-1 for none) and the side chosen to pass it on. */
+  skirting: number;
+  detour: number;
 };
 
-const SKIN: Array<[number, number, number]> = [[0.36, 0.42, 0.33], [0.44, 0.43, 0.37], [0.3, 0.37, 0.36], [0.47, 0.4, 0.36]];
-const SHIRT: Array<[number, number, number]> = [[0.2, 0.22, 0.26], [0.36, 0.3, 0.2], [0.42, 0.12, 0.1], [0.14, 0.19, 0.15]];
-const TROUSER: Array<[number, number, number]> = [[0.09, 0.1, 0.13], [0.16, 0.13, 0.1], [0.11, 0.12, 0.11], [0.07, 0.07, 0.08]];
-const BLOOD: [number, number, number] = [0.2, 0.012, 0.012];
-
-function tinted(geometry: THREE.BufferGeometry, color: [number, number, number], matrix?: THREE.Matrix4) {
-  const flat = geometry.index ? geometry.toNonIndexed() : geometry;
-  if (flat !== geometry) geometry.dispose();
-  if (matrix) flat.applyMatrix4(matrix);
-  const count = flat.attributes.position.count;
-  const colors = new Float32Array(count * 3);
-  const position = flat.attributes.position;
-  for (let i = 0; i < count; i += 1) {
-    // Mottle so flat colours read as stained cloth and bruised skin.
-    const n = Math.sin(position.getX(i) * 71.3 + position.getY(i) * 37.7 + position.getZ(i) * 53.1) * 0.5 + 0.5;
-    const shade = 0.72 + n * 0.42;
-    colors[i * 3] = color[0] * shade; colors[i * 3 + 1] = color[1] * shade; colors[i * 3 + 2] = color[2] * shade;
-  }
-  flat.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  return flat;
-}
-const move = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)), new THREE.Vector3(sx, sy, sz));
-const fuse = (parts: THREE.BufferGeometry[]) => { const merged = mergeGeometries(parts, false)!; parts.forEach((part) => part.dispose()); return merged; };
-/** Capsule hanging from the origin down -Y. */
-const hanging = (radius: number, length: number) => { const g = new THREE.CapsuleGeometry(radius, length - radius * 2, 3, 8); g.translate(0, -length / 2, 0); return g; };
+/** Seconds an attack lasts, and when in it the blow lands. */
+const ATTACK = 0.95, STRIKE = 0.36;
 
 function softDisc(inner: string, outer: string) {
   const canvas = document.createElement("canvas");
@@ -140,93 +123,119 @@ export function createHorde(options: HordeOptions): Horde {
   const disposables: Array<{ dispose: () => void }> = [];
   const keep = <T extends { dispose: () => void }>(item: T) => { disposables.push(item); return item; };
 
-  // ---- Shared geometry: four outfits, coloured per vertex ---------------------
-  const flesh = keep(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, envMapIntensity: 0.7 }));
+  // ---- Shared pieces --------------------------------------------------------------
   const eyeMaterials = {
     walker: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 3.4, 0.5), toneMapped: false })),
     runner: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(4.2, 1.5, 0.15), toneMapped: false })),
     brute: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.25, 0.15), toneMapped: false })),
   };
-  const eyeGeometry = keep(fuse([-0.042, 0.042].map((x) => { const g = new THREE.SphereGeometry(0.017, 8, 6); g.translate(x, 0.035, 0.094); return g; })));
-  const outfits = SKIN.map((skin, index) => {
-    const shirt = SHIRT[index], trouser = TROUSER[index];
-    const dark: [number, number, number] = [skin[0] * 0.45, skin[1] * 0.4, skin[2] * 0.4];
-    return {
-      pelvis: keep(fuse([tinted(new THREE.SphereGeometry(0.16, 10, 8), trouser, move(0, 0, 0, 1.08, 0.72, 0.8))])),
-      torso: keep(fuse([
-        tinted(new THREE.CapsuleGeometry(0.155, 0.3, 4, 10), shirt, move(0, 0.3, 0, 1.12, 1, 0.74)),
-        tinted(new THREE.SphereGeometry(0.1, 8, 6), shirt, move(-0.19, 0.5, 0, 1, 0.8, 0.9)),
-        tinted(new THREE.SphereGeometry(0.1, 8, 6), shirt, move(0.19, 0.5, 0, 1, 0.8, 0.9)),
-        tinted(new THREE.CylinderGeometry(0.055, 0.07, 0.12, 8), skin, move(0, 0.6, 0.01)),
-        // An open wound keeps the silhouette from reading as a mannequin.
-        tinted(new THREE.SphereGeometry(0.075, 8, 6), BLOOD, move(0.06 - index * 0.04, 0.28, 0.1, 1, 1.3, 0.35)),
-      ])),
-      skull: keep(fuse([
-        tinted(new THREE.SphereGeometry(0.108, 12, 10), skin, move(0, 0.03, 0, 0.92, 1.12, 1)),
-        tinted(new THREE.BoxGeometry(0.12, 0.07, 0.1), skin, move(0, -0.075, 0.03)),
-        tinted(new THREE.BoxGeometry(0.085, 0.025, 0.03), BLOOD, move(0, -0.07, 0.083)),
-        tinted(new THREE.SphereGeometry(0.03, 6, 5), dark, move(-0.042, 0.035, 0.082, 1, 0.8, 0.6)),
-        tinted(new THREE.SphereGeometry(0.03, 6, 5), dark, move(0.042, 0.035, 0.082, 1, 0.8, 0.6)),
-        ...(index % 2 === 0 ? [tinted(new THREE.SphereGeometry(0.112, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), [0.05, 0.04, 0.035], move(0, 0.05, -0.012, 0.95, 1.05, 1.02))] : []),
-      ])),
-      upperArm: keep(fuse([tinted(hanging(0.052, 0.31), index === 2 ? skin : shirt)])),
-      foreArm: keep(fuse([tinted(hanging(0.043, 0.28), skin), tinted(new THREE.SphereGeometry(0.05, 8, 6), dark, move(0, -0.3, 0.01, 0.8, 1.2, 1))])),
-      thigh: keep(fuse([tinted(hanging(0.082, 0.45), trouser)])),
-      shin: keep(fuse([tinted(hanging(0.062, 0.44), trouser), tinted(new THREE.BoxGeometry(0.1, 0.07, 0.24), [0.05, 0.045, 0.04], move(0, -0.44, 0.06))])),
-    };
-  });
+  const eyeGeometry = keep(mergeGeometries([-0.034, 0.034].map((x) => new THREE.SphereGeometry(0.011, 8, 6).translate(x, 0, 0)), false)!);
+  // Bullets test these instead of the skinned mesh: cheap, and each one names the part it covers.
+  const proxyMaterial = keep(new THREE.MeshBasicMaterial({ visible: false }));
+  const limbGeometry = keep(new THREE.CylinderGeometry(1, 1, 1, 8));
+  const headGeometry = keep(new THREE.SphereGeometry(1, 10, 8));
   const blobMap = keep(softDisc("rgba(0,0,0,0.62)", "rgba(0,0,0,0)"));
   const blobMaterial = keep(new THREE.MeshBasicMaterial({ map: blobMap, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
   const blobGeometry = keep(new THREE.PlaneGeometry(1.25, 1.25).rotateX(-Math.PI / 2));
 
   const zombies: Zombie[] = [];
-  const segment = (geometry: THREE.BufferGeometry, zone: string, index: number, parent: THREE.Object3D, list: Segment[]) => {
-    const mesh = new THREE.Mesh(geometry, flesh) as Segment;
-    mesh.userData.zombie = index;
-    mesh.userData.zone = zone;
-    mesh.castShadow = true;
-    parent.add(mesh);
-    list.push(mesh);
-    return mesh;
-  };
-  const buildZombie = (index: number): Zombie => {
-    const outfit = outfits[index % outfits.length];
-    const meshes: Segment[] = [];
+  let library: ZombieLibrary | null = null, loading = false, disposed = false;
+  const PARTS: Array<[Zone, string, string | null, number, boolean]> = [
+    ["head", "bip Head", null, 0.135, false],
+    ["body", "bip Pelvis", "bip Neck", 0.2, false],
+    ["arm0", "bip L UpperArm", "bip L Forearm", 0.075, false],
+    ["arm0", "bip L Forearm", "bip L Hand", 0.065, true],
+    ["arm1", "bip R UpperArm", "bip R Forearm", 0.075, false],
+    ["arm1", "bip R Forearm", "bip R Hand", 0.065, true],
+    ["leg", "bip L Thigh", "bip L Calf", 0.105, false],
+    ["leg", "bip L Calf", "bip L Foot", 0.085, false],
+    ["leg", "bip R Thigh", "bip R Calf", 0.105, false],
+    ["leg", "bip R Calf", "bip R Foot", 0.085, false],
+  ];
+  const buildZombie = (index: number, models: ZombieLibrary): Zombie => {
+    // Step through the bodies so neighbouring slots differ in build and skeleton.
+    const model = createZombieModel(models, index * 3);
     const root = new THREE.Group();
     root.rotation.order = "YXZ";
     root.visible = false;
-    const hips = new THREE.Group();
-    hips.position.y = 0.93;
-    root.add(hips);
-    segment(outfit.pelvis, "body", index, hips, meshes);
-    const spine = new THREE.Group();
-    spine.position.y = 0.06;
-    hips.add(spine);
-    segment(outfit.torso, "body", index, spine, meshes);
-    const head = new THREE.Group();
-    head.position.set(0, 0.72, 0.015);
-    spine.add(head);
-    const skull = segment(outfit.skull, "head", index, head, meshes);
-    const eyes = new THREE.Mesh(eyeGeometry, eyeMaterials.walker) as Segment;
-    head.add(eyes);
-    const limb = (parent: THREE.Object3D, x: number, y: number, upper: THREE.BufferGeometry, lower: THREE.BufferGeometry, length: number, zone: string): Limb => {
-      const limbRoot = new THREE.Group();
-      limbRoot.position.set(x, y, 0);
-      parent.add(limbRoot);
-      const upperMesh = segment(upper, zone, index, limbRoot, meshes);
-      const joint = new THREE.Group();
-      joint.position.y = -length;
-      limbRoot.add(joint);
-      return { root: limbRoot, joint, upper: upperMesh, lower: segment(lower, zone, index, joint, meshes), gone: false };
-    };
-    const arms: [Limb, Limb] = [limb(spine, -0.235, 0.5, outfit.upperArm, outfit.foreArm, 0.3, "arm0"), limb(spine, 0.235, 0.5, outfit.upperArm, outfit.foreArm, 0.3, "arm1")];
-    const legs: [Limb, Limb] = [limb(hips, -0.095, -0.04, outfit.thigh, outfit.shin, 0.44, "leg"), limb(hips, 0.095, -0.04, outfit.thigh, outfit.shin, 0.44, "leg")];
+    root.add(model.object);
+    const head = model.bone("bip Head");
+    // Eyes are placed in the bind pose, then ride the head bone.
+    root.updateMatrixWorld(true);
+    const eyes = new THREE.Mesh(eyeGeometry, eyeMaterials.walker);
+    head.getWorldPosition(eyes.position).add(tmp.set(0, 0.075, 0.098));
+    root.add(eyes);
+    head.attach(eyes);
+    const proxies = PARTS.map(([zone, from, to, radius, lower]): Proxy => {
+      const mesh = new THREE.Mesh(to ? limbGeometry : headGeometry, proxyMaterial);
+      mesh.userData.zombie = index;
+      mesh.userData.zone = zone;
+      mesh.visible = false;
+      group.add(mesh);
+      return { mesh, zone, from: model.bone(from), to: to ? model.bone(to) : null, radius, lower, live: true };
+    });
     const blob = new THREE.Mesh(blobGeometry, blobMaterial);
     blob.position.y = 0.012;
     blob.renderOrder = 2;
     root.add(blob);
     group.add(root);
-    return { root, hips, spine, head, skull, eyes, arms, legs, blob, meshes, kind: "walker", state: "free", health: 0, speed: 0, damage: 0, scale: 1, phase: 0, timer: 0, stagger: 0, facing: 0, fall: 1, struck: false, groanAt: 0, quirk: Math.random(), headless: false };
+    return {
+      root, model, head, chest: model.bone("bip Spine1"), forearms: [model.bone("bip L Forearm"), model.bone("bip R Forearm")], eyes, proxies, actions: {}, playing: null, gait: "walk", blob,
+      kind: "walker", state: "free", health: 0, speed: 0, damage: 0, scale: 1, timer: 0, stagger: 0, facing: 0, fall: 1, struck: false, groanAt: 0, quirk: Math.random(), headless: false, armGone: [false, false], skirting: -1, detour: 0,
+    };
+  };
+  const loadModels = () => {
+    if (library || loading) return;
+    loading = true;
+    loadZombies().then((models) => {
+      if (disposed) { models.dispose(); return; }
+      library = models;
+      for (let i = 0; i < POOL; i += 1) zombies.push(buildZombie(i, models));
+    }).catch((error) => {
+      console.error("Zombie models failed to load", error);
+      if (phase !== "idle") { banner("ZOMBIE MODELS FAILED TO LOAD", "CHECK /models/zombies"); publish(); }
+    }).finally(() => { loading = false; });
+  };
+
+  // Cross-fades to a clip; `once` plays it through a single time and holds the last frame.
+  const play = (z: Zombie, key: ClipKey, fade: number, once = false) => {
+    let action = z.actions[key];
+    if (!action) {
+      action = z.model.mixer.clipAction(library!.clips[z.model.skeleton][key]);
+      z.actions[key] = action;
+    }
+    if (z.playing === key && !once) return action;
+    const previous = z.playing ? z.actions[z.playing] : undefined;
+    action.reset();
+    action.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity);
+    action.clampWhenFinished = once;
+    action.setEffectiveWeight(1);
+    if (!once) action.time = Math.random() * action.getClip().duration;
+    action.play();
+    if (previous && previous !== action) action.crossFadeFrom(previous, fade, false);
+    z.playing = key;
+    return action;
+  };
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  /** Moves the hit shapes onto the bones as they are posed this frame. */
+  const placeProxies = (z: Zombie) => {
+    z.root.updateMatrixWorld(true);
+    const girth = z.scale * (z.kind === "brute" ? 1.15 : 1);
+    for (const proxy of z.proxies) {
+      proxy.from.getWorldPosition(a);
+      if (!proxy.to) {
+        // The head bone sits at the base of the skull.
+        proxy.mesh.position.copy(a).addScaledVector(tmp.setFromMatrixColumn(proxy.from.matrixWorld, 0).normalize(), 0.09 * z.scale);
+        proxy.mesh.scale.setScalar(proxy.radius * z.scale);
+      } else {
+        proxy.to.getWorldPosition(b);
+        const length = a.distanceTo(b) || 0.001;
+        proxy.mesh.position.lerpVectors(a, b, 0.5);
+        proxy.mesh.quaternion.setFromUnitVectors(UP, b.sub(a).divideScalar(length));
+        proxy.mesh.scale.set(proxy.radius * girth, length * 1.15, proxy.radius * girth);
+      }
+      proxy.mesh.updateMatrixWorld();
+    }
   };
 
   // ---- Gore, stains, spawn rifts, pickups -------------------------------------
@@ -399,7 +408,7 @@ export function createHorde(options: HordeOptions): Horde {
   const banner = (text: string, detail = "") => { hud.banner = text; hud.detail = detail; hud.bannerId += 1; };
   const refreshTargets = () => {
     targets.length = 0;
-    zombies.forEach((z) => { if (z.state === "rising" || z.state === "chasing" || z.state === "attacking") z.meshes.forEach((mesh) => { if (mesh.visible) targets.push(mesh); }); });
+    zombies.forEach((z) => { if (z.state === "rising" || z.state === "chasing" || z.state === "attacking") z.proxies.forEach((proxy) => { if (proxy.live) targets.push(proxy.mesh); }); });
   };
 
   const beginWave = (wave: number) => {
@@ -430,16 +439,22 @@ export function createHorde(options: HordeOptions): Horde {
     const stats = zombieStats(kind, hud.wave);
     z.kind = kind; z.health = stats.health; z.speed = stats.speed * (0.88 + Math.random() * 0.24); z.damage = stats.damage; z.scale = stats.scale * (0.95 + Math.random() * 0.1);
     z.state = "rising"; z.timer = 0; z.stagger = 0; z.fall = Math.random() < 0.5 ? 1 : -1; z.struck = false; z.headless = false;
-    z.phase = Math.random() * 6.28; z.quirk = Math.random(); z.groanAt = now + 400 + Math.random() * 2500;
+    z.quirk = Math.random(); z.groanAt = now + 400 + Math.random() * 2500;
     z.root.position.set(x, -1.75 * z.scale, zz);
-    z.root.scale.setScalar(z.scale);
-    if (kind === "brute") z.spine.scale.set(1.32, 1.08, 1.3); else z.spine.scale.setScalar(1);
+    // Brutes are broad as well as tall.
+    z.root.scale.set(z.scale * (kind === "brute" ? 1.15 : 1), z.scale, z.scale * (kind === "brute" ? 1.15 : 1));
     z.facing = Math.atan2(player.x - x, player.z - zz);
     z.root.rotation.set(0, z.facing, 0);
-    z.meshes.forEach((mesh) => { mesh.visible = true; });
-    z.arms.forEach((arm) => { arm.gone = false; });
-    z.eyes.visible = true;
+    z.proxies.forEach((proxy) => { proxy.live = true; });
+    z.armGone = [false, false];
+    z.skirting = -1; z.detour = 0;
+    z.head.scale.setScalar(1);
+    z.forearms.forEach((bone) => bone.scale.setScalar(1));
     z.eyes.material = eyeMaterials[kind];
+    z.gait = chooseGait(z);
+    z.model.mixer.stopAllAction();
+    z.playing = null;
+    animate(z, 0, 0);
     z.blob.visible = true;
     z.root.visible = true;
     const rift = rifts[riftCursor];
@@ -482,8 +497,9 @@ export function createHorde(options: HordeOptions): Horde {
     if (z.health > 0) { sounds.thud(point); return; }
     if (headshot) {
       z.headless = true;
-      z.skull.visible = false; z.eyes.visible = false;
       z.head.getWorldPosition(tmp);
+      // Collapsing the bone takes the head, jaw and eyes with it.
+      z.head.scale.setScalar(0.001);
       spray(tmp, tmp2.set(direction.x * 0.5, 1.1, direction.z * 0.5), 46, 4.6, RED, 1.9);
       sounds.pop(point);
     } else sounds.thud(point);
@@ -510,50 +526,35 @@ export function createHorde(options: HordeOptions): Horde {
 
   const release = (z: Zombie) => { z.state = "free"; z.root.visible = false; };
 
-  const pose = (z: Zombie, dt: number, moving: number) => {
-    const runner = z.kind === "runner", brute = z.kind === "brute";
-    const stride = runner ? 0.95 : brute ? 0.5 : 0.55;
-    const s = Math.sin(z.phase), c = Math.cos(z.phase);
-    const k = Math.min(1, dt * 12);
-    const to = (object: THREE.Object3D, x: number, y: number, zr: number) => {
-      object.rotation.x += (x - object.rotation.x) * k;
-      object.rotation.y += (y - object.rotation.y) * k;
-      object.rotation.z += (zr - object.rotation.z) * k;
-    };
-    const lean = (runner ? 0.5 : brute ? 0.3 : 0.2 + z.quirk * 0.16) - z.stagger * 0.5;
-    to(z.spine, lean, s * 0.12 * moving, c * (brute ? 0.13 : 0.08) * moving + (z.quirk - 0.5) * 0.2);
-    to(z.hips, 0, 0, s * 0.07 * moving);
-    z.hips.position.y = 0.93 - (runner ? 0.06 : 0.02) + Math.abs(c) * 0.035 * moving;
-    to(z.head, (z.headless ? 0 : -lean * 0.6) + Math.sin(z.phase * 0.5) * 0.08, Math.sin(z.phase * 0.37 + z.quirk * 9) * 0.25, (z.quirk - 0.5) * 0.7);
-    z.legs.forEach((leg, i) => {
-      const swing = (i === 0 ? s : -s) * stride * moving;
-      // A dragging leg gives each walker its own gait.
-      const drag = !runner && i === (z.quirk > 0.5 ? 1 : 0) ? 0.45 : 1;
-      to(leg.root, -swing * drag + (runner ? -0.25 : 0), 0, (i === 0 ? -1 : 1) * 0.04);
-      to(leg.joint, Math.max(0, (i === 0 ? -c : c)) * stride * 1.3 * moving * drag + 0.1 + (runner ? 0.3 : 0), 0, 0);
-    });
-    z.arms.forEach((arm, i) => {
-      const side = i === 0 ? -1 : 1;
-      if (z.state === "attacking") {
-        const wind = z.timer < 0.34 ? z.timer / 0.34 : 1 - Math.min(1, (z.timer - 0.34) / 0.16);
-        to(arm.root, -1.2 - wind * 1.5 + (z.timer >= 0.34 ? 1.1 : 0), 0, side * (0.25 - wind * 0.2));
-        to(arm.joint, -0.5 + wind * 0.3, 0, 0);
-      } else if (runner) {
-        to(arm.root, (i === 0 ? -s : s) * 1 * moving - 0.5, 0, side * 0.25);
-        to(arm.joint, -1.1, 0, 0);
-      } else if (brute) {
-        to(arm.root, -0.5 + (i === 0 ? -s : s) * 0.3 * moving, 0, side * 0.5);
-        to(arm.joint, -0.6, 0, 0);
-      } else {
-        const droop = i === (z.quirk > 0.5 ? 0 : 1) ? 0.55 : 0;
-        to(arm.root, -1.32 + droop + (i === 0 ? s : c) * 0.1, 0, side * (0.1 - droop * 0.2));
-        to(arm.joint, -0.28 - droop * 0.5 + c * 0.08, 0, 0);
-      }
-    });
+  /** Picks the gait whose natural speed best suits how fast this zombie moves. */
+  const chooseGait = (z: Zombie): ClipKey => {
+    if (z.kind === "runner") return "run";
+    const pace = library!.pace[z.model.skeleton];
+    const options: ClipKey[] = z.kind === "brute" ? ["aggressive", "walk"] : ["shamble", "limp", "walk", "aggressive"];
+    const fit = (key: ClipKey) => Math.abs(Math.log(z.speed / (pace[key] * z.scale || 1)));
+    const best = Math.min(...options.map(fit));
+    // Anything nearly as good is fair game, so a pack does not march in step.
+    const close = options.filter((key) => fit(key) < best + 0.25);
+    return close[Math.floor(z.quirk * close.length) % close.length];
+  };
+  /** Advances the skeleton: clip for the state, playback matched to ground speed, flinch on a hit. */
+  const animate = (z: Zombie, dt: number, pace: number) => {
+    let rate = 1;
+    if (z.state === "rising") { play(z, "alert", 0.2); rate = 1.6; }
+    else if (z.state === "attacking") rate = z.actions[z.playing!]!.getClip().duration / ATTACK;
+    else if (z.state === "dying" || z.state === "dead") rate = Math.max(0, 0.5 - z.timer * 1.2);
+    else {
+      play(z, z.gait, 0.25);
+      rate = THREE.MathUtils.clamp(pace / (library!.pace[z.model.skeleton][z.gait] * z.scale || 1), 0.35, 2.6);
+    }
+    z.model.mixer.update(dt * rate);
+    // Bullets knock the torso back; the mixer writes the bone again next frame.
+    if (z.stagger > 0) z.chest.rotateZ(-z.stagger * 0.45);
   };
 
   const hordeUpdate = (now: number, dt: number) => {
     let alive = 0;
+    const cover = obstacles.reduce((deepest, o) => Math.max(deepest, o.r + 0.2 - Math.hypot(player.x - o.x, player.z - o.z)), 0);
     for (const z of zombies) {
       if (z.state === "free") continue;
       z.timer += dt;
@@ -563,9 +564,8 @@ export function createHorde(options: HordeOptions): Horde {
         alive += 1;
         const t = Math.min(1, z.timer / 1.35);
         position.y = -1.75 * z.scale * (1 - t * t * (3 - 2 * t));
-        z.phase += dt * 5;
-        pose(z, dt, 0.25);
-        z.arms.forEach((arm, i) => { arm.root.rotation.x = -2.6 + Math.sin(z.phase + i * 2) * 0.35; arm.joint.rotation.x = -0.4; });
+        animate(z, dt, 0);
+        placeProxies(z);
         if (t >= 1) { z.state = "chasing"; z.timer = 0; }
         continue;
       }
@@ -574,8 +574,7 @@ export function createHorde(options: HordeOptions): Horde {
         const fallen = t * t;
         z.root.rotation.x = -z.fall * fallen * (Math.PI / 2 - 0.06);
         position.y = Math.sin(fallen * Math.PI / 2) * 0.13 * z.scale;
-        z.legs.forEach((leg, i) => { leg.root.rotation.x += ((i ? 0.5 : -0.2) - leg.root.rotation.x) * dt * 6; leg.joint.rotation.x += ((i ? 0.9 : 0.3) - leg.joint.rotation.x) * dt * 6; });
-        z.arms.forEach((arm, i) => { arm.root.rotation.x += ((i ? -0.6 : -2.2) - arm.root.rotation.x) * dt * 6; arm.root.rotation.z += ((i ? 0.9 : -0.7) - arm.root.rotation.z) * dt * 6; });
+        animate(z, dt, 0);
         z.blob.visible = false;
         if (t >= 1) {
           z.state = "dead"; z.timer = 0;
@@ -594,30 +593,46 @@ export function createHorde(options: HordeOptions): Horde {
       const dx = player.x - position.x, dz = player.z - position.z;
       const distance = Math.hypot(dx, dz) || 1;
       const over = phase === "over";
-      let moving = 0;
+      let moved = 0;
+      // A player standing on a station is out of arm's reach from its edge, so reach grows by how deep they stand.
+      const reach = cover + (z.kind === "brute" ? 1.55 : 1.25);
       if (z.state === "attacking") {
-        if (!z.struck && z.timer >= 0.36) {
+        if (!z.struck && z.timer >= STRIKE) {
           z.struck = true;
-          if (distance < 1.9 && !over) hurt(z.damage, now);
+          if (distance < reach + 0.65 && !over) hurt(z.damage, now);
         }
-        if (z.timer >= 0.95) { z.state = "chasing"; z.timer = 0; }
-      } else if (distance < (z.kind === "brute" ? 1.55 : 1.25) && !over) {
+        if (z.timer >= ATTACK) { z.state = "chasing"; z.timer = 0; }
+      } else if (distance < reach && !over) {
         z.state = "attacking"; z.timer = 0; z.struck = false;
+        play(z, Math.random() < 0.5 ? "attackLeft" : "attackRight", 0.12, true);
         sounds.groan(position, z.kind === "brute" ? 0.7 : 1.5);
       } else {
         // Steer for the player, around the stations and each other.
         let sx = dx / distance, sz = dz / distance;
         if (over) { sx = Math.sin(z.facing + Math.sin(now * 0.0004 + z.quirk * 20) * 0.02); sz = Math.cos(z.facing); }
-        for (const o of obstacles) {
+        const hx = sx, hz = sz;
+        let skirting = -1;
+        for (let i = 0; i < obstacles.length; i += 1) {
+          const o = obstacles[i];
           const ox = position.x - o.x, oz = position.z - o.z, od = Math.hypot(ox, oz) || 1;
-          const push = 1 - (od - o.r) / 1.1;
-          if (push > 0) {
-            // Slide around the obstacle on whichever side leads to the player.
-            const turn = Math.sign(ox * sz - oz * sx) || 1;
-            sx += (ox / od) * push * 1.6 + (-oz / od) * turn * -push * 1.2;
-            sz += (oz / od) * push * 1.6 + (ox / od) * turn * -push * 1.2;
+          const push = Math.min(1.4, 1 - (od - o.r) / 1.1);
+          // Only an obstacle that lies ahead needs going around.
+          const inward = -(hx * ox + hz * oz) / od;
+          if (push <= 0 || inward <= 0) continue;
+          skirting = i;
+          // Pick a side once and keep it until clear: re-deciding every frame is what left
+          // zombies shuffling on the spot when the player stood straight across a station.
+          if (z.skirting !== i || z.detour === 0) {
+            const lead = -oz * hx + ox * hz;
+            z.detour = Math.abs(lead) > 0.12 ? Math.sign(lead) : z.quirk > 0.5 ? 1 : -1;
           }
+          const tx = (-oz / od) * z.detour, tz = (ox / od) * z.detour;
+          // Drop the part of the heading that runs into the obstacle, then slide along its edge.
+          sx += (ox / od) * inward * push + tx * push * 1.8 + (ox / od) * Math.max(0, push - 0.7);
+          sz += (oz / od) * inward * push + tz * push * 1.8 + (oz / od) * Math.max(0, push - 0.7);
         }
+        z.skirting = skirting;
+        if (skirting < 0) z.detour = 0;
         for (const other of zombies) {
           if (other === z || other.state === "free" || other.state === "dead" || other.state === "dying") continue;
           const ox = position.x - other.root.position.x, oz = position.z - other.root.position.z, od = Math.hypot(ox, oz);
@@ -627,16 +642,21 @@ export function createHorde(options: HordeOptions): Horde {
         const pace = z.speed * (over ? 0.3 : 1) * (1 - z.stagger * 0.75);
         position.x = THREE.MathUtils.clamp(position.x + (sx / length) * pace * dt, -BOUNDS.x - 0.4, BOUNDS.x + 0.4);
         position.z = THREE.MathUtils.clamp(position.z + (sz / length) * pace * dt, BOUNDS.zMin - 2, BOUNDS.zMax + 1);
+        // Steering is a suggestion; this is the wall. Nothing ends a frame inside an obstacle.
+        for (const o of obstacles) {
+          const ox = position.x - o.x, oz = position.z - o.z, od = Math.hypot(ox, oz);
+          if (od < o.r) { const out = od > 0.001 ? o.r / od : 1; position.x = o.x + (od > 0.001 ? ox * out : o.r); position.z = o.z + oz * out; }
+        }
         let turn = Math.atan2(sx, sz) - z.facing;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
         z.facing += turn * Math.min(1, dt * 5);
-        moving = Math.min(1, pace / Math.max(0.4, z.speed));
-        z.phase += dt * pace * (z.kind === "runner" ? 2.5 : z.kind === "brute" ? 2.3 : 3.6);
+        moved = pace;
       }
       if (z.state === "attacking") z.facing = Math.atan2(dx, dz);
       z.root.rotation.set(0, z.facing, 0);
       position.y = 0;
-      pose(z, dt, moving);
+      animate(z, dt, moved);
+      placeProxies(z);
       if (now > z.groanAt) {
         z.groanAt = now + 2600 + Math.random() * 5200;
         sounds.groan(position, z.kind === "brute" ? 0.6 : z.kind === "runner" ? 1.3 : 0.9 + z.quirk * 0.3);
@@ -665,7 +685,7 @@ export function createHorde(options: HordeOptions): Horde {
     glows,
     damageBoost: () => (boostTimer > 0 ? 2 : 1),
     start(now) {
-      if (zombies.length === 0) for (let i = 0; i < POOL; i += 1) zombies.push(buildZombie(i));
+      loadModels();
       reset();
       group.visible = true;
       Object.assign(hud, { wave: 0, score: 0, kills: 0, health: 100, banner: "", detail: "" });
@@ -696,11 +716,12 @@ export function createHorde(options: HordeOptions): Horde {
       else if (zone === "leg") dealt *= 0.7;
       else if (zone.startsWith("arm")) {
         dealt *= 0.6;
-        const arm = z.arms[Number(zone.slice(3))];
+        const side = Number(zone.slice(3));
         // Heavy hits take the forearm off.
-        if (!arm.gone && dealt > 20 && Math.random() < 0.45) {
-          arm.gone = true;
-          arm.lower.visible = false;
+        if (!z.armGone[side] && dealt > 20 && Math.random() < 0.45) {
+          z.armGone[side] = true;
+          z.forearms[side].scale.setScalar(0.001);
+          z.proxies.forEach((proxy) => { if (proxy.zone === zone && proxy.lower) proxy.live = false; });
           spray(point, tmp.copy(direction).setY(0.5), 22, 3.6, RED, 1.6);
           refreshTargets();
         }
@@ -780,7 +801,7 @@ export function createHorde(options: HordeOptions): Horde {
             zombies.forEach((z) => {
               if (z.state !== "chasing" && z.state !== "attacking" && z.state !== "rising") return;
               const d = Math.hypot(z.root.position.x - player.x, z.root.position.z - player.z);
-              if (d < 13) { z.spine.getWorldPosition(tmp); damage(z, z.kind === "brute" ? 450 : 9999, false, tmp.clone(), tmp2.set(z.root.position.x - player.x, 0, z.root.position.z - player.z).normalize().clone(), now); }
+              if (d < 13) { z.chest.getWorldPosition(tmp); damage(z, z.kind === "brute" ? 450 : 9999, false, tmp.clone(), tmp2.set(z.root.position.x - player.x, 0, z.root.position.z - player.z).normalize().clone(), now); }
             });
           }
           sounds.chime();
@@ -819,6 +840,8 @@ export function createHorde(options: HordeOptions): Horde {
       if (hudTimer <= 0) { hudTimer = 0.2; publish(); }
     },
     dispose() {
+      disposed = true;
+      library?.dispose();
       drone?.stop();
       scene.remove(group);
       disposables.forEach((item) => item.dispose());
