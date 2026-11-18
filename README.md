@@ -20,7 +20,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts only Vite on `localhost:5173` (or the next available port). It serves
+This starts only Vite on `localhost:1337`. It serves
 the same checked-in snapshots as production. Open the printed URL in Chrome or
 Firefox for mouse capture. Paper trading and the sports demo require no wallet.
 

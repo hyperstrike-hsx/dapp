@@ -1,4 +1,4 @@
-import { Mesh, Sprite, type Scene, type Object3D } from "three";
+import { Line, Mesh, Points, Sprite, type Scene, type Object3D } from "three";
 
 // GTAO's normal override ignores alpha maps. Glass, decals and sprites must
 // not write solid rectangles into its depth/normal buffer.
@@ -14,6 +14,8 @@ export function withOpaqueOccluders<T>(scene: Scene, render: () => T): T {
         : [];
     if (
       object instanceof Sprite ||
+      object instanceof Points ||
+      object instanceof Line ||
       materials.some((m) => m.transparent || !m.depthWrite || m.alphaTest > 0)
     ) {
       hidden.push(object);

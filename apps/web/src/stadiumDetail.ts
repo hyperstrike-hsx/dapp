@@ -158,6 +158,7 @@ export function addStadiumDetail(
       );
     };
   return {
+    crowd: [chair, bodies, heads, arms] as THREE.Object3D[],
     update: (now: number) => {
       time.value = now * 0.001;
     },

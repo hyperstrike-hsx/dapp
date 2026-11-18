@@ -27,6 +27,7 @@ import { PaperPortfolio } from "./PaperPortfolio";
 import { LegacyArchive } from "./LegacyArchive";
 import { SportsDemoRecords } from "./SportsDemoRecords";
 import { RangePerformance } from "./RangePerformance";
+import { RANGE_MAPS, storedRangeMap, storeRangeMap, type RangeMapId } from "./range/mapList";
 import {
   CreatorForm,
   IndexDetail,
@@ -44,11 +45,15 @@ import {
 } from "./TradeTicket";
 import "./native.css";
 import "./terminal.css";
+import "./ui.css";
 import { API_ENABLED } from "./dataMode";
 import {
   useIndicativeIndexes,
   PreviewSummary,
   previewValue,
+  Spark,
+  changeLabel,
+  trendOf,
 } from "./IndicativeIndex";
 const World = lazy(() => import("./World").then((m) => ({ default: m.World })));
 const SportsDemo = lazy(() => import("./SportsExperience"));
@@ -103,6 +108,17 @@ const routeView = () =>
   (Object.entries(routes).find(
     ([, path]) => path !== "/" && window.location.pathname.startsWith(path),
   )?.[0] ?? "Markets") as View;
+const PRIMARY: View[] = ["Markets", "Indexes", "Portfolio"];
+const SECONDARY: View[] = ["Create", "Creators", "HSX / STRIKE", "Sports demo"];
+/** "3d 14h" until trading closes; minutes once inside the last day. */
+const closesIn = (closeTime: number) => {
+  const left = closeTime - Date.now() / 1000;
+  if (left <= 0) return "CLOSED";
+  const d = Math.floor(left / 86400),
+    h = Math.floor((left % 86400) / 3600),
+    m = Math.floor((left % 3600) / 60);
+  return d ? `${d}D ${h}H` : h ? `${h}H ${m}M` : `${m}M`;
+};
 const probability = (t?: Tape) =>
   Math.round(
     (Number(t?.no ?? 5e9) / (Number(t?.yes ?? 5e9) + Number(t?.no ?? 5e9))) *
@@ -114,12 +130,16 @@ export default function App() {
   >("Paper");
   const [marketFilter, setMarketFilter] = useState("ALL");
   const [managedSide, setManagedSide] = useState<VoteSide | undefined>();
+  const [ticketSide, setTicketSide] = useState<VoteSide | undefined>();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [rangePanel, setRangePanel] = useState<"foundry" | "chart" | null>(
     null,
   );
   const [nearFurnace, setNearFurnace] = useState(false);
   const [nearChart, setNearChart] = useState(false);
   const [quality, setQuality] = useState<"HIGH" | "PERFORMANCE">("HIGH");
+  const [rangeMap, setRangeMap] = useState<RangeMapId>(storedRangeMap);
+  const rangeMapInfo = RANGE_MAPS.find((entry) => entry.id === rangeMap) ?? RANGE_MAPS[0];
   const [view, setView] = useState<View>(routeView),
     [range, setRange] = useState(false),
     [entered, setEntered] = useState(false),
@@ -173,6 +193,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(KEY, JSON.stringify(ledger));
   }, [ledger]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 7000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   useEffect(() => {
     let live = true;
     if (!API_ENABLED) {
@@ -230,6 +255,7 @@ export default function App() {
   const select = useCallback((market: IndexMarket) => {
     document.exitPointerLock?.();
     setManagedSide(undefined);
+    setTicketSide(undefined);
     setSelected(market);
   }, []);
   const onVote = useCallback((market: IndexMarket, side: VoteSide) => {
@@ -256,7 +282,20 @@ export default function App() {
     document.exitPointerLock?.();
     setRangePanel("chart");
   }, []);
+  const toggleRange = () => {
+    setMenuOpen(false);
+    setRangePanel(null);
+    document.exitPointerLock?.();
+    setRange((v) => !v);
+    if (!range) setReady(false);
+  };
+  const openTicket = (market: IndexMarket, side?: VoteSide) => {
+    setManagedSide(undefined);
+    setTicketSide(side);
+    setSelected(market);
+  };
   const nav = (v: View) => {
+    setMenuOpen(false);
     setRangePanel(null);
     window.history.pushState({}, "", routes[v]);
     document.exitPointerLock?.();
@@ -398,75 +437,62 @@ export default function App() {
           </span>
         </button>
         <nav aria-label="Primary">
-          {(
-            [
-              "Markets",
-              "Indexes",
-              "Create",
-              "Portfolio",
-              "Creators",
-              "HSX / STRIKE",
-              "Sports demo",
-            ] as View[]
-          ).map((v) => (
+          {[...PRIMARY, ...SECONDARY].map((v, i) => (
             <button
               key={v}
-              className={!range && view === v ? "active" : ""}
+              className={`${!range && view === v ? "active" : ""} ${i >= PRIMARY.length ? "minor" : ""} ${i === PRIMARY.length ? "minor-first" : ""}`}
+              aria-current={!range && view === v ? "page" : undefined}
               onClick={() =>
                 range && v === "HSX / STRIKE" ? openTokens() : nav(v)
               }
             >
               {v}
+              {v === "Portfolio" && ledger.positions.length > 0 && (
+                <span className="nav-count">{ledger.positions.length}</span>
+              )}
             </button>
           ))}
         </nav>
         <button
           className={`range-toggle ${range ? "active" : ""}`}
-          onClick={() => {
-            setRangePanel(null);
-            document.exitPointerLock?.();
-            setRange((v) => !v);
-            if (!range) setReady(false);
-          }}
+          onClick={toggleRange}
         >
-          ⌖ {range ? "EXIT RANGE" : "ENTER RANGE"}
+          <span className="reticle" aria-hidden="true" />
+          {range ? "EXIT RANGE" : "ENTER RANGE"}
         </button>
-        <button className="native-wallet" onClick={() => void connect()}>
+        <button
+          className={`native-wallet ${wallet ? "connected" : ""}`}
+          onClick={() => void connect()}
+        >
           {wallet ? wallet.slice(0, 6) + "…" + wallet.slice(-4) : "CONNECT"}
         </button>
       </header>
       {!range && view !== "Sports demo" && (
-        <>
-          <div className="protocol-ribbon">
-            <span>
-              <i /> HYPEREVM · INDEX NATIVE
-            </span>
-            <span>
-              INDEX ALPHA <b>/</b> PAPER MARKET SANDBOX
-            </span>
-            <button onClick={() => nav("Indexes")}>
-              ORACLE {oracle?.status ?? "CONNECTING"} ↗
-            </button>
+        <div className="market-bar">
+          <span className="market-bar-mode">
+            <i /> INDEX ALPHA <b>/</b> PAPER SANDBOX
+          </span>
+          <div className="ticker-strip">
+            {INDEXES.map((i) => (
+              <button
+                key={i.ticker}
+                className={indexDetail === i.ticker ? "active" : ""}
+                onClick={() => openIndex(i.ticker)}
+                title={`Indicative · ${indicative[i.indexId]?.status ?? "connecting"} · not for settlement`}
+              >
+                <strong>{i.ticker.replace("HS-", "")}</strong>
+                <span>{previewValue(indicative[i.indexId])}</span>
+                <em data-trend={trendOf(indicative[i.indexId])}>
+                  {changeLabel(indicative[i.indexId])}
+                </em>
+                <Spark index={indicative[i.indexId]} />
+              </button>
+            ))}
           </div>
-          {(view === "Markets" || view === "Indexes") && (
-            <div className="ticker-strip">
-              {INDEXES.map((i) => (
-                <button
-                  key={i.ticker}
-                  onClick={() => {
-                    openIndex(i.ticker);
-                  }}
-                >
-                  <strong>{i.ticker}</strong>
-                  <span>{previewValue(indicative[i.indexId])}</span>
-                  <small>
-                    INDICATIVE · {indicative[i.indexId]?.status ?? "CONNECTING"}
-                  </small>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+          <button className="market-bar-oracle" onClick={() => nav("Indexes")}>
+            ORACLE {oracle?.status ?? "CONNECTING"} ↗
+          </button>
+        </div>
       )}
       {range ? (
         <>
@@ -475,6 +501,7 @@ export default function App() {
           >
             <World
               quality={quality}
+              map={rangeMap}
               markets={demoMarkets}
               onSelect={select}
               onProximity={setNearby}
@@ -498,7 +525,7 @@ export default function App() {
             </div>
           )}
           <div className="range-tag">
-            RANGE 01 <span>INDEX MARKET SANDBOX</span>
+            RANGE {rangeMapInfo.code} <span>{rangeMapInfo.name} · INDEX MARKET SANDBOX</span>
           </div>
           <RangePerformance
             quality={quality}
@@ -517,6 +544,28 @@ export default function App() {
                 WASD move · Mouse aim · Hold to fire · E review · R reload
               </small>
             </button>
+          )}
+          {ready && !locked && !rangePanel && !selected && (
+            <div className="range-maps" role="radiogroup" aria-label="Range map">
+              {RANGE_MAPS.map((entry) => (
+                <button
+                  key={entry.id}
+                  role="radio"
+                  aria-checked={entry.id === rangeMap}
+                  className={entry.id === rangeMap ? "active" : ""}
+                  onClick={() => {
+                    if (entry.id === rangeMap) return;
+                    storeRangeMap(entry.id);
+                    setReady(false);
+                    setRangeMap(entry.id);
+                  }}
+                >
+                  <span>RANGE {entry.code}</span>
+                  <strong>{entry.name}</strong>
+                  <small>{entry.line}</small>
+                </button>
+              ))}
+            </div>
           )}
           {ready && !locked && !rangePanel && !selected && (
             <div className="range-utilities">
@@ -617,6 +666,11 @@ export default function App() {
                 </section>
               )}
               <section className="native-hero">
+                <img
+                  className="hero-backdrop"
+                  src="/brand/hyperstrike-world.jpg"
+                  alt=""
+                />
                 <div className="hero-copy">
                   <div className="overline">
                     THE BALLISTIC PREDICTION MARKET
@@ -631,14 +685,9 @@ export default function App() {
                     skins, knives and cases—or put your conviction downrange.
                   </p>
                   <div className="hero-ctas">
-                    <button
-                      className="primary"
-                      onClick={() => {
-                        setRange(true);
-                        setReady(false);
-                      }}
-                    >
-                      ENTER THE RANGE <span>↗</span>
+                    <button className="primary" onClick={toggleRange}>
+                      <span className="reticle" aria-hidden="true" />
+                      ENTER THE RANGE
                     </button>
                     <button
                       className="secondary"
@@ -659,24 +708,31 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-                <div className="hero-art">
-                  <img
-                    src="/brand/hyperstrike-world.jpg"
-                    alt="HyperStrike skin-economy concept art"
-                  />
-                  <div className="art-grid" />
-                  <div className="art-label">
-                    <span>THE BENCHMARK COMES FIRST.</span>
-                    <b>
-                      01 / INDEX
-                      <br />
-                      02 / POSITION
-                      <br />
-                      03 / RESOLUTION
-                    </b>
-                  </div>
-                  <div className="art-corner">HS / 003</div>
-                </div>
+                <aside className="hero-board" aria-label="Index board">
+                  <header>
+                    <span>
+                      <i /> INDEX BOARD
+                    </span>
+                    <small>INDICATIVE · BASE 1,000</small>
+                  </header>
+                  {INDEXES.map((i) => (
+                    <button key={i.ticker} onClick={() => openIndex(i.ticker)}>
+                      <IndexBadge ticker={i.ticker} />
+                      <span className="board-name">{i.name}</span>
+                      <Spark index={indicative[i.indexId]} />
+                      <strong>{previewValue(indicative[i.indexId])}</strong>
+                      <em data-trend={trendOf(indicative[i.indexId])}>
+                        {changeLabel(indicative[i.indexId])}
+                      </em>
+                    </button>
+                  ))}
+                  <footer>
+                    <span>SKINPORT USD ASKS · NOT FOR SETTLEMENT</span>
+                    <button onClick={() => nav("Indexes")}>
+                      ALL INDEXES →
+                    </button>
+                  </footer>
+                </aside>
               </section>
               <div className="section-heading">
                 <div>
@@ -703,67 +759,128 @@ export default function App() {
                 </div>
                 <span>WEEKLY EXPIRY · SIMULATED PRICES</span>
               </div>
-              <div className="native-market-grid">
+              <div
+                className="market-cards"
+                data-count={marketFilter === "ALL" ? demoMarkets.length : 1}
+              >
                 {demoMarkets
                   .filter(
                     (m) => marketFilter === "ALL" || m.name === marketFilter,
                   )
-                  .map((m) => (
-                    <button
-                      key={m.id}
-                      className="native-market"
-                      onClick={() => {
-                        setManagedSide(undefined);
-                        setSelected(m);
-                      }}
-                    >
-                      <div className="market-heading">
-                        <IndexBadge ticker={m.name} />
-                        <span>LEVEL / WEEKLY</span>
-                        <b>↗</b>
-                      </div>
-                      <IndexArtwork ticker={m.name} />
-                      <h3>{m.question}</h3>
-                      <p>{m.condition.toLowerCase()}</p>
-                      <div
-                        className="market-conviction"
-                        aria-label={`Paper YES price ${probability(ledger.reserves[m.id])} cents`}
-                      >
-                        <i
-                          style={{
-                            width: `${probability(ledger.reserves[m.id])}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="market-price">
-                        <span>
-                          YES <b>{probability(ledger.reserves[m.id])}¢</b>
-                        </span>
-                        <span>
-                          NO <b>{100 - probability(ledger.reserves[m.id])}¢</b>
-                        </span>
-                      </div>
-                      <div className="market-meta">
-                        <span>{m.resolves}</span>
-                        <span>TAKE A POSITION ↗</span>
-                      </div>
-                    </button>
-                  ))}
+                  .map((m) => {
+                    const yes = probability(ledger.reserves[m.id]);
+                    const strike = Number(m.definition.thresholdE8) / 1e8;
+                    const level = indicative[m.definition.indexId]?.value;
+                    const gap =
+                      level == null ? null : (strike / level - 1) * 100;
+                    // Where the level and the strike sit on a track spanning both, with margin.
+                    const lo = Math.min(level ?? strike, strike) * 0.985,
+                      hi = Math.max(level ?? strike, strike) * 1.015;
+                    const at = (v: number) => ((v - lo) / (hi - lo)) * 100;
+                    return (
+                      <article key={m.id} className="market-card">
+                        <button
+                          className="market-open"
+                          onClick={() => openTicket(m)}
+                        >
+                          <IndexArtwork ticker={m.name} />
+                          <div className="market-heading">
+                            <IndexBadge ticker={m.name} />
+                            <span>LEVEL · WEEKLY</span>
+                            <span className="market-closes">
+                              CLOSES IN {closesIn(m.definition.tradeCloseTime)}
+                            </span>
+                          </div>
+                          <h3>{m.question}</h3>
+                          <div className="market-gap">
+                            <div className="gap-track" aria-hidden="true">
+                              {level != null && (
+                                <i
+                                  className="gap-now"
+                                  style={{ left: `${at(level)}%` }}
+                                />
+                              )}
+                              <i
+                                className="gap-strike"
+                                style={{ left: `${at(strike)}%` }}
+                              />
+                            </div>
+                            <p>
+                              {level == null ? (
+                                "Indicative level unavailable"
+                              ) : (
+                                <>
+                                  Indicative <b>{previewValue(indicative[m.definition.indexId])}</b>{" "}
+                                  ·{" "}
+                                  {gap! > 0
+                                    ? `needs +${gap!.toFixed(2)}% to reach`
+                                    : `${Math.abs(gap!).toFixed(2)}% above`}{" "}
+                                  <b>{human(strike)}</b>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </button>
+                        <div
+                          className="market-conviction"
+                          aria-label={`Paper YES price ${yes} cents`}
+                        >
+                          <i style={{ width: `${yes}%` }} />
+                        </div>
+                        <div className="market-sides">
+                          <button
+                            className="yes"
+                            onClick={() => openTicket(m, "YES")}
+                            aria-label={`Buy YES at ${yes} cents`}
+                          >
+                            <span>BUY YES</span>
+                            <b>{yes}¢</b>
+                          </button>
+                          <button
+                            className="no"
+                            onClick={() => openTicket(m, "NO")}
+                            aria-label={`Buy NO at ${100 - yes} cents`}
+                          >
+                            <span>BUY NO</span>
+                            <b>{100 - yes}¢</b>
+                          </button>
+                        </div>
+                        <div className="market-meta">
+                          <span>RESOLVES {m.resolves}</span>
+                          <span>PAPER · SIMULATED</span>
+                        </div>
+                      </article>
+                    );
+                  })}
               </div>
               <section className="methodology-banner">
-                <span>01 → 02 → 03 → 04</span>
-                <h3>
-                  Real observations.
-                  <br />A benchmark you can verify.
-                </h3>
-                <p>
-                  Venue quotes feed constituent reference prices. Reference
-                  prices build canonical indexes. Markets settle only against
-                  those indexes.
-                </p>
-                <button onClick={() => nav("Indexes")}>
-                  READ THE METHODOLOGY ↗
-                </button>
+                <div>
+                  <span>HOW A MARKET SETTLES</span>
+                  <h3>
+                    Real observations.
+                    <br />A benchmark you can verify.
+                  </h3>
+                  <button onClick={() => nav("Indexes")}>
+                    READ THE METHODOLOGY ↗
+                  </button>
+                </div>
+                <ol>
+                  {[
+                    ["Venue quotes", "Listings observed across venues."],
+                    [
+                      "Reference prices",
+                      "One robust price per constituent.",
+                    ],
+                    ["Canonical index", "Weighted, signed and published."],
+                    ["Settlement", "Markets resolve only against the index."],
+                  ].map(([title, text], i) => (
+                    <li key={title}>
+                      <b>0{i + 1}</b>
+                      <strong>{title}</strong>
+                      <p>{text}</p>
+                    </li>
+                  ))}
+                </ol>
               </section>
               <div className="dashboard-bottom">
                 <section>
@@ -966,20 +1083,83 @@ export default function App() {
             </>
           )}
           {view === "HSX / STRIKE" && <StrikePanel />}
-          <div className="native-footer">
+          <footer className="native-footer">
             <span>
               HYPERSTRIKE <b>© {new Date().getFullYear()}</b>
             </span>
+            <nav aria-label="Footer">
+              {[...PRIMARY, ...SECONDARY].map((v) => (
+                <button key={v} onClick={() => nav(v)}>
+                  {v}
+                </button>
+              ))}
+            </nav>
             <span>HYPEREVM / NATIVE MARKETS / INDEX ALPHA</span>
             <span>BUILT FOR THE CS2 ECONOMY.</span>
-          </div>
+          </footer>
         </div>
+      )}
+      {!range && (
+        <>
+          {menuOpen && (
+            <div className="more-sheet" onClick={() => setMenuOpen(false)}>
+              <div
+                role="dialog"
+                aria-label="More"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {SECONDARY.map((v) => (
+                  <button
+                    key={v}
+                    className={view === v ? "active" : ""}
+                    onClick={() => nav(v)}
+                  >
+                    {v} <span>→</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <nav className="tab-bar" aria-label="Sections">
+            {PRIMARY.slice(0, 2).map((v) => (
+              <button
+                key={v}
+                className={!menuOpen && view === v ? "active" : ""}
+                onClick={() => nav(v)}
+              >
+                <i className={`tab-icon tab-${v.toLowerCase()}`} />
+                {v}
+              </button>
+            ))}
+            <button className="tab-range" onClick={toggleRange}>
+              <span className="reticle" aria-hidden="true" />
+              Range
+            </button>
+            <button
+              className={!menuOpen && view === "Portfolio" ? "active" : ""}
+              onClick={() => nav("Portfolio")}
+            >
+              <i className="tab-icon tab-portfolio" />
+              Portfolio
+            </button>
+            <button
+              className={
+                menuOpen || SECONDARY.includes(view) ? "active" : ""
+              }
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              <i className="tab-icon tab-more" />
+              More
+            </button>
+          </nav>
+        </>
       )}
       {selected && (
         <TradeTicket
           key={selected.id}
           market={selected}
-          initialSide={managedSide}
+          initialSide={managedSide ?? ticketSide}
           initialAction={managedSide ? "SELL" : "BUY"}
           votes={votes[selected.id] ?? zero}
           tape={
