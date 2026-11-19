@@ -13,6 +13,8 @@ export type WeaponHud = {
   reloading: boolean;
   /** Aiming is through an optic rather than over the sights. */
   scope: boolean;
+  /** A knife: nothing to load. */
+  blade: boolean;
 };
 
 const SLOTS = ["AK-47", "M4A1", "FAMAS", "UZI", "BOLT", "KNIFE"];

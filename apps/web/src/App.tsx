@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { INDEXES, demoMarkets } from "./markets";
@@ -27,6 +28,7 @@ import { PaperPortfolio } from "./PaperPortfolio";
 import { LegacyArchive } from "./LegacyArchive";
 import { SportsDemoRecords } from "./SportsDemoRecords";
 import { RangeLobby } from "./RangeLobby";
+import { touchControls, type RangeControl } from "./range/touch";
 import { RangePerformance } from "./RangePerformance";
 import { RANGE_MAPS, storedRangeMap, storeRangeMap, type RangeMapId } from "./range/mapList";
 import {
@@ -138,7 +140,10 @@ export default function App() {
   );
   const [nearFurnace, setNearFurnace] = useState(false);
   const [nearChart, setNearChart] = useState(false);
-  const [quality, setQuality] = useState<"HIGH" | "PERFORMANCE">("HIGH");
+  // A touch screen is a phone or a tablet: it plays with on-screen controls and starts on the lighter renderer.
+  const [touch] = useState(touchControls);
+  const worldControl = useRef<RangeControl | null>(null);
+  const [quality, setQuality] = useState<"HIGH" | "PERFORMANCE">(touch ? "PERFORMANCE" : "HIGH");
   const [rangeMap, setRangeMap] = useState<RangeMapId>(storedRangeMap);
   const rangeMapInfo = RANGE_MAPS.find((entry) => entry.id === rangeMap) ?? RANGE_MAPS[0];
   const [view, setView] = useState<View>(routeView),
@@ -253,12 +258,21 @@ export default function App() {
       })),
     [ledger.positions],
   );
-  const select = useCallback((market: IndexMarket) => {
+  /** Stops play: gives the mouse back, or takes the touch controls down. */
+  const freePointer = useCallback(() => {
     document.exitPointerLock?.();
+    worldControl.current?.pause();
+  }, []);
+  // Leaving the range ends play, whichever way it was left.
+  useEffect(() => {
+    if (!range) setLocked(false);
+  }, [range]);
+  const select = useCallback((market: IndexMarket) => {
+    freePointer();
     setManagedSide(undefined);
     setTicketSide(undefined);
     setSelected(market);
-  }, []);
+  }, [freePointer]);
   const onVote = useCallback((market: IndexMarket, side: VoteSide) => {
     setVotes((v) => ({
       ...v,
@@ -273,20 +287,27 @@ export default function App() {
       setAmmo({ magazine, reloading }),
     [],
   );
+  const onContextLost = useCallback(
+    () =>
+      setNotice(
+        "This device ran out of graphics memory for the range. Close other tabs or apps, then leave the range and enter it again.",
+      ),
+    [],
+  );
   const onReady = useCallback(() => setReady(true), []),
     onEntered = useCallback(() => setEntered(true), []);
   const openTokens = useCallback(() => {
-    document.exitPointerLock?.();
+    freePointer();
     setRangePanel("foundry");
-  }, []);
+  }, [freePointer]);
   const openChart = useCallback(() => {
-    document.exitPointerLock?.();
+    freePointer();
     setRangePanel("chart");
-  }, []);
+  }, [freePointer]);
   const toggleRange = () => {
     setMenuOpen(false);
     setRangePanel(null);
-    document.exitPointerLock?.();
+    freePointer();
     setRange((v) => !v);
     if (!range) setReady(false);
   };
@@ -299,7 +320,7 @@ export default function App() {
     setMenuOpen(false);
     setRangePanel(null);
     window.history.pushState({}, "", routes[v]);
-    document.exitPointerLock?.();
+    freePointer();
     setRange(false);
     setSelected(null);
     setView(v);
@@ -317,18 +338,20 @@ export default function App() {
       ticker ? `/indexes/${ticker}` : "/indexes",
     );
   };
-  const capture = () => {
+  /**
+   * Starts or resumes play: the range captures the mouse or, on a touch screen, puts up its
+   * controls. It has to be called from a click or a tap, which is what a browser asks for.
+   * `quiet` is for a range picked from the briefing: if the mouse cannot be taken just then
+   * (a browser refuses for a moment after Escape), the briefing simply comes back with RESUME.
+   */
+  const capture = (quiet = false) => {
     setEntered(true);
-    const canvas = document.querySelector<HTMLCanvasElement>(
-      ".world-canvas canvas",
-    );
-    void canvas
-      ?.requestPointerLock()
-      ?.catch(() =>
+    void worldControl.current?.engage().catch(() => {
+      if (!quiet)
         setNotice(
           "This browser could not capture the mouse. Open the range in a regular browser window to use first-person controls.",
-        ),
-      );
+        );
+    });
   };
   /**
    * A click that dismisses a ticket or panel goes straight back to play once the player has
@@ -442,7 +465,9 @@ export default function App() {
     />
   );
   return (
-    <main className={`native-app ${range ? "in-range" : ""}`}>
+    <main
+      className={`native-app ${range ? "in-range" : ""} ${range && touch ? "touch-range" : ""} ${range && ready && locked ? "is-playing" : ""}`}
+    >
       <header className="native-header">
         <button
           className="native-brand"
@@ -535,6 +560,8 @@ export default function App() {
               onChart={openChart}
               onChartProximity={setNearChart}
               onReady={onReady}
+              control={worldControl}
+              onContextLost={onContextLost}
             />
           </Suspense>
           {!ready && (
@@ -549,8 +576,12 @@ export default function App() {
             <RangeLobby
               current={rangeMap}
               entered={entered}
-              onDeploy={capture}
+              touch={touch}
+              onDeploy={() => capture()}
               onLoad={(id) => {
+                // The click that picks a range is the one that takes the pointer, so the new range
+                // opens straight into play instead of coming back to this screen.
+                capture(true);
                 storeRangeMap(id);
                 setReady(false);
                 setRangeMap(id);
@@ -580,29 +611,44 @@ export default function App() {
               {rangePanel === "foundry" ? <StrikePanel /> : <HsxChartPanel />}
             </RangeOverlay>
           )}
-          {locked && !selected && (
+          {ready && locked && !selected && (
             <>
               <div className="native-crosshair">
                 <i />
                 <i />
               </div>
-              <div className="range-interact">
-                {nearFurnace ? (
-                  <>
-                    <kbd>E</kbd> OPEN STRIKE FOUNDRY
-                  </>
-                ) : nearChart ? (
-                  <>
-                    <kbd>E</kbd> EXPAND HSX CHART
-                  </>
-                ) : nearby ? (
-                  <>
-                    <kbd>E</kbd> REVIEW {nearby.name}
-                  </>
-                ) : (
-                  "Aim at YES or NO. One hit stages one contract."
-                )}
-              </div>
+              {touch && (nearFurnace || nearChart || nearby) ? (
+                // On a touch screen the prompt is the button.
+                <button
+                  className="range-interact is-touch"
+                  onPointerDown={() => worldControl.current?.use()}
+                >
+                  <kbd>TAP</kbd>{" "}
+                  {nearFurnace
+                    ? "OPEN STRIKE FOUNDRY"
+                    : nearChart
+                      ? "EXPAND HSX CHART"
+                      : `REVIEW ${nearby?.name}`}
+                </button>
+              ) : (
+                <div className="range-interact">
+                  {nearFurnace ? (
+                    <>
+                      <kbd>E</kbd> OPEN STRIKE FOUNDRY
+                    </>
+                  ) : nearChart ? (
+                    <>
+                      <kbd>E</kbd> EXPAND HSX CHART
+                    </>
+                  ) : nearby ? (
+                    <>
+                      <kbd>E</kbd> REVIEW {nearby.name}
+                    </>
+                  ) : (
+                    "Aim at YES or NO. One hit stages one contract."
+                  )}
+                </div>
+              )}
             </>
           )}
           <div className="range-bottom">

@@ -1879,3 +1879,251 @@ html {
     animation: none;
   }
 }
+
+/* ---- Range briefing on a phone ------------------------------------------------
+   The ranges come first, so picking one needs no scrolling, and the one action is docked to the
+   bottom edge where the thumb is. */
+.lobby-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 0 -14px;
+  padding: 18px 14px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #050d0f00 0%, #050d0ff5 34%);
+}
+.lobby-dock .range-load strong,
+.lobby-dock .range-enter strong {
+  font-size: 21px;
+}
+.lobby-dock .range-enter,
+.lobby-dock .range-load {
+  padding: 14px 16px;
+}
+.lobby-dock .lobby-back {
+  max-width: 116px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+/* Wider than a phone held upright: the cards stay card-sized instead of filling the strip. */
+.range-lobby.docked .lobby-maps {
+  grid-auto-columns: min(46%, 210px);
+}
+.range-lobby.docked {
+  padding-bottom: 0;
+  align-content: start;
+}
+.range-lobby.docked .lobby-maps-head {
+  order: 1;
+  margin-top: 0;
+}
+.range-lobby.docked .lobby-maps-head span {
+  display: none;
+}
+.range-lobby.docked .lobby-maps {
+  order: 2;
+}
+.range-lobby.docked .lobby-brief {
+  order: 3;
+}
+.range-lobby.docked .lobby-dock {
+  order: 4;
+}
+
+/* ---- Range touch controls -----------------------------------------------------
+   Shown only where the range is played with thumbs (see range/touch.ts). The layer takes every
+   touch below the header: the lower left is the movement stick, the rest turns the view. */
+.range-touch {
+  position: absolute;
+  inset: var(--hh) 0 0;
+  z-index: 16;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.range-touch button {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #e2fff166;
+  border-radius: 50%;
+  background: #0917198c;
+  color: #e2fff1;
+  font: 700 10px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.range-touch .touch-fire {
+  right: calc(20px + env(safe-area-inset-right));
+  bottom: calc(40px + env(safe-area-inset-bottom));
+  width: 86px;
+  height: 86px;
+  border: 2px solid var(--orange);
+  background: #2413048c;
+  color: var(--orange);
+  font-size: 12px;
+}
+.range-touch .touch-fire.is-on {
+  background: var(--orange);
+  color: #241304;
+}
+.range-touch .touch-aim,
+.range-touch .touch-reload {
+  width: 60px;
+  height: 60px;
+}
+.range-touch .touch-aim {
+  right: calc(122px + env(safe-area-inset-right));
+  bottom: calc(30px + env(safe-area-inset-bottom));
+}
+.range-touch .touch-aim.is-on {
+  border-color: var(--mint);
+  background: var(--mint);
+  color: #06201c;
+}
+.range-touch .touch-reload {
+  right: calc(34px + env(safe-area-inset-right));
+  bottom: calc(142px + env(safe-area-inset-bottom));
+  font-size: 9px;
+}
+.range-touch .touch-pause {
+  left: calc(12px + env(safe-area-inset-left));
+  top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 11px 13px;
+  border-radius: 3px;
+}
+.range-touch .touch-pause i {
+  width: 9px;
+  height: 11px;
+  border: solid #e2fff1;
+  border-width: 0 3px;
+}
+.touch-weapon {
+  position: absolute;
+  right: calc(12px + env(safe-area-inset-right));
+  top: 12px;
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+.range-touch .touch-weapon button {
+  position: static;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  padding: 8px 11px;
+  border-radius: 3px;
+  text-align: right;
+}
+.touch-weapon strong {
+  font: 800 20px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.03em;
+}
+.touch-weapon span {
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.06em;
+}
+.touch-weapon em {
+  font: 700 9px/1 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.12em;
+  color: var(--mint);
+}
+.touch-stick {
+  position: absolute;
+  left: calc(78px + env(safe-area-inset-left));
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border: 1px solid #e2fff14d;
+  border-radius: 50%;
+  background: #09171940;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+/* At rest the ring marks where the thumb goes; `bottom` places it, so the centring margin is dropped. */
+.touch-stick:not(.is-on) {
+  margin: 0 0 0 -56px;
+}
+.touch-stick.is-on {
+  opacity: 1;
+}
+.touch-stick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: #e2fff173;
+}
+.touch-stick span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  text-align: center;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.16em;
+  color: #e2fff1b3;
+  text-shadow: 0 1px 3px #000c;
+}
+.touch-stick.is-on span {
+  display: none;
+}
+/* In play on a touch screen the thumbs own the corners: the desk furniture makes way. */
+.touch-range.is-playing .range-tag,
+.touch-range.is-playing .range-performance,
+.touch-range.is-playing .range-bottom,
+.touch-range.is-playing .weapon-hud,
+.touch-range .range-hud kbd,
+.touch-range .strike-card footer {
+  display: none;
+}
+.range-interact.is-touch {
+  z-index: 17;
+  pointer-events: auto;
+  border: 1px solid var(--mint);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.range-interact.is-touch kbd {
+  margin-right: 6px;
+  padding: 2px 6px;
+  background: var(--mint);
+  color: #06201c;
+  font: inherit;
+  font-weight: 700;
+}
+/* A phone on its side is short: RELOAD moves beside FIRE and the weapon chips sit in a row. */
+@media (max-height: 480px) {
+  .range-touch .touch-reload {
+    right: calc(118px + env(safe-area-inset-right));
+    bottom: calc(104px + env(safe-area-inset-bottom));
+  }
+  .touch-weapon {
+    grid-auto-flow: column;
+    align-items: start;
+  }
+  .touch-stick {
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+}
+/* The crosshair marks the middle of the view, which starts below the header. */
+.native-crosshair {
+  top: calc(50% + var(--hh) / 2);
+}
+.range-interact {
+  top: calc(50% + var(--hh) / 2 + 42px);
+}

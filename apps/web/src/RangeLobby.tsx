@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 import { RANGE_MAPS, type RangeMapId } from "./range/mapList";
 
 type Props = {
@@ -6,7 +6,10 @@ type Props = {
   current: RangeMapId;
   /** True once the visitor has been in the range: this is then a pause screen. */
   entered: boolean;
+  /** Played with on-screen controls rather than a mouse and keys. */
+  touch: boolean;
   onDeploy: () => void;
+  /** Loads another range and goes straight into it. */
   onLoad: (id: RangeMapId) => void;
   onFoundry: () => void;
   onChart: () => void;
@@ -23,14 +26,30 @@ const CONTROLS: Array<[string, string]> = [
   ["1–6", "weapons"],
   ["M", "mute"],
 ];
+const TOUCH_CONTROLS: Array<[string, string]> = [
+  ["LEFT THUMB", "move"],
+  ["DRAG", "aim"],
+  ["FIRE", "hold"],
+  ["TAP PROMPT", "review"],
+];
+
+// On a narrow screen the briefing is one long column, so its one action is docked to the bottom edge.
+const NARROW = "(max-width: 900px)";
+const watchNarrow = (changed: () => void) => {
+  const query = window.matchMedia(NARROW);
+  query.addEventListener("change", changed);
+  return () => query.removeEventListener("change", changed);
+};
+const isNarrow = () => window.matchMedia(NARROW).matches;
 
 /**
  * The briefing shown whenever the pointer is free: before deploying and while paused. It covers
  * the live scene with a blurred, darkened sheet so the text reads against any map, says what the
  * loaded range is, and lets the visitor look at the others (picture, description, conditions)
- * before deciding to load one. Looking is free; only LOAD swaps the scene.
+ * before deciding on one. Looking is free; DEPLOY TO swaps the scene and goes straight into it.
  */
-export function RangeLobby({ current, entered, onDeploy, onLoad, onFoundry, onChart, tools }: Props) {
+export function RangeLobby({ current, entered, touch, onDeploy, onLoad, onFoundry, onChart, tools }: Props) {
+  const docked = useSyncExternalStore(watchNarrow, isNarrow, () => false);
   const [shown, setShown] = useState<RangeMapId>(current);
   const [missing, setMissing] = useState<Record<string, boolean>>({});
   const cards = useRef<Array<HTMLButtonElement | null>>([]);
@@ -63,8 +82,23 @@ export function RangeLobby({ current, entered, onDeploy, onLoad, onFoundry, onCh
     cards.current[next]?.focus();
   };
 
+  const action = loaded ? (
+    <button className="range-enter" onClick={onDeploy}>
+      <strong>{entered ? "RESUME OPERATION" : "DEPLOY TO THE RANGE"}{"\u00a0"}↗</strong>
+    </button>
+  ) : (
+    <div className="lobby-switch">
+      <button className="range-load" onClick={() => onLoad(shown)}>
+        <strong>DEPLOY TO {info.name}{"\u00a0"}↗</strong>
+      </button>
+      <button className="lobby-back" onClick={() => setShown(current)}>
+        Back to {RANGE_MAPS.find((entry) => entry.id === current)?.name}
+      </button>
+    </div>
+  );
+
   return (
-    <section className={`range-lobby ${entered ? "paused" : ""}`} aria-label="Range briefing">
+    <section className={`range-lobby ${entered ? "paused" : ""} ${docked ? "docked" : ""}`} aria-label="Range briefing">
       <div className="lobby-shell">
         <header className="lobby-top">
           <strong>{entered ? "PAUSED" : "RANGE BRIEFING"}</strong>
@@ -97,27 +131,14 @@ export function RangeLobby({ current, entered, onDeploy, onLoad, onFoundry, onCh
               <div><dt>AIR</dt><dd>{info.air}</dd></div>
               <div><dt>SOUND</dt><dd>{info.sound}</dd></div>
             </dl>
-            {loaded ? (
-              <button className="range-enter" onClick={onDeploy}>
-                <strong>{entered ? "RESUME OPERATION" : "DEPLOY TO THE RANGE"} ↗</strong>
-              </button>
-            ) : (
-              <div className="lobby-switch">
-                <button className="range-load" onClick={() => onLoad(shown)}>
-                  <strong>LOAD {info.name} ↗</strong>
-                </button>
-                <button className="lobby-back" onClick={() => setShown(current)}>
-                  Back to {RANGE_MAPS.find((entry) => entry.id === current)?.name}
-                </button>
-              </div>
-            )}
+            {!docked && action}
             <p className="lobby-hint">
               {loaded
-                ? CONTROLS.map(([key, action]) => (
-                    <span key={key}><kbd>{key}</kbd>{action}</span>
+                ? (touch ? TOUCH_CONTROLS : CONTROLS).map(([key, does]) => (
+                    <span key={key}><kbd>{key}</kbd>{does}</span>
                   ))
                 : entered
-                  ? "Loading another range ends the session in progress."
+                  ? "Deploying to another range ends the session in progress."
                   : "Loading takes a few seconds. Your staged orders are kept."}
             </p>
           </div>
@@ -156,6 +177,7 @@ export function RangeLobby({ current, entered, onDeploy, onLoad, onFoundry, onCh
           ))}
         </div>
 
+        {docked && <div className="lobby-dock">{action}</div>}
       </div>
     </section>
   );

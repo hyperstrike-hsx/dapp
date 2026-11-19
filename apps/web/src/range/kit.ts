@@ -5,6 +5,7 @@ import { applyWetFloor, createFloorReflection, type FloorPaint, type FloorReflec
 import { brushedMetal, disposePbr, paintedSteel, pbrMaterial, steel, tile, timber, type PbrSet } from "./pbr";
 import type { Glow } from "./volumetric";
 import type { Cue } from "./cues";
+import { photoRoot } from "./touch";
 
 // Shared parts every range map is built from: the contract a map fulfils, the
 // geometry and texture helpers, the furnace, the sun and the floor.
@@ -328,8 +329,9 @@ export function createKit(options: RangeOptions) {
 
   /** Photographed PBR maps from `public/textures`; `ao` is optional because newer sets leave it out. */
   const photoSet = (root: string, repeatX: number, repeatY: number, ao = true) => {
+    const folder = photoRoot(root);
     const maps = ["diffuse", "normal-gl", "roughness", ...(ao ? ["ao"] : [])].map((name) => {
-      const texture = loader.load(`${root}/${name}.jpg`);
+      const texture = loader.load(`${folder}/${name}.jpg`);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(repeatX, repeatY);
       texture.anisotropy = anisotropy;

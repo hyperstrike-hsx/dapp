@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { polymer, steel, timber, type PbrSet } from "./pbr";
+import { photoRoot } from "./touch";
 
 // Weapon surfacing.
 //
@@ -237,7 +238,7 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
   const furniture = materials.get("Material_2");
   if (furniture) {
     const loader = new THREE.TextureLoader(manager);
-    const load = (file: string, srgb: boolean, apply: (texture: THREE.Texture) => void) => loader.load(`/textures/lacquered_cherry_wood-2k/${file}.jpg`, (texture) => {
+    const load = (file: string, srgb: boolean, apply: (texture: THREE.Texture) => void) => loader.load(`${photoRoot("/textures/lacquered_cherry_wood-2k")}/${file}.jpg`, (texture) => {
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.center.set(0.5, 0.5);
       texture.rotation = Math.PI / 2;

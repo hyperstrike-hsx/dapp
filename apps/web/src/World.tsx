@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -25,6 +25,8 @@ import { buildContact, type Contact } from "./range/collider";
 import { createTrigger, nextMode, pressTrigger, releaseTrigger, resetTrigger, takeShot, type FireMode, type WeaponSpec } from "./range/arsenalSpec";
 import { createArms, emptyPose } from "./range/hands";
 import { RangeHud, type WeaponHud } from "./RangeHud";
+import { RangeTouch } from "./RangeTouch";
+import { leanAssets, leanTextureSize, touchControls, type RangeControl, type TouchApi } from "./range/touch";
 import { createStrikeFx } from "./range/strikeFx";
 import { createHorde, type HordeHud } from "./range/horde";
 import { createSequenceDetector } from "./range/konami";
@@ -50,6 +52,10 @@ type Props = {
   onChart: () => void;
   onChartProximity: (nearby: boolean) => void;
   onReady: () => void;
+  /** Filled in with what the app shell may ask of the range: start play, pause, use. */
+  control?: MutableRefObject<RangeControl | null>;
+  /** The browser took the graphics context away, which on a phone means it ran out of memory. */
+  onContextLost?: () => void;
 };
 
 const BRAND = 0x8ef5e3;
@@ -419,7 +425,7 @@ function smooth01(value: number) {
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-export function World({ quality="HIGH", map="foundry", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady }: Props) {
+export function World({ quality="HIGH", map="foundry", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady, control, onContextLost }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const enteredRef = useRef(entered);
@@ -435,8 +441,20 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
   const chartRef = useRef(onChart);
   const chartProximityRef = useRef(onChartProximity);
   const readyRef = useRef(onReady);
+  const lostRef = useRef(onContextLost);
   const portfolioRef = useRef(portfolio);
   const lcdRefreshRef = useRef<(() => void) | null>(null);
+  // Play is either a captured mouse or, on a touch screen, the on-screen controls being up. The
+  // capture is held by the mount rather than the canvas, and the touch state lives here rather than
+  // in the scene, so both survive a change of map: a range picked in play opens straight into play.
+  const [touch] = useState(touchControls);
+  const touchPlayRef = useRef(false);
+  const touchApiRef = useRef<TouchApi | null>(null);
+  const syncPlayRef = useRef<() => void>(() => {});
+  const useActionRef = useRef<() => void>(() => {});
+  /** The scene is built and drawing (false while a map loads). */
+  const [live, setLive] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [weaponHud, setWeaponHud] = useState<WeaponHud | null>(null);
   const [hordeHud, setHordeHud] = useState<HordeHud | null>(null);
   /** The last YES / NO target struck: which market and side, and how many in a row. */
@@ -455,12 +473,37 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
   useEffect(() => { chartRef.current = onChart; }, [onChart]);
   useEffect(() => { chartProximityRef.current = onChartProximity; }, [onChartProximity]);
   useEffect(() => { readyRef.current = onReady; }, [onReady]);
+  useEffect(() => { lostRef.current = onContextLost; }, [onContextLost]);
   useEffect(() => { portfolioRef.current = portfolio; lcdRefreshRef.current?.(); }, [portfolio]);
+  useEffect(() => {
+    if (!control) return;
+    control.current = {
+      engage: () => {
+        const mount = mountRef.current;
+        if (touch) { touchPlayRef.current = true; syncPlayRef.current(); return Promise.resolve(); }
+        if (!mount || document.pointerLockElement === mount) return Promise.resolve();
+        try { return Promise.resolve(mount.requestPointerLock()); } catch (error) { return Promise.reject(error); }
+      },
+      pause: () => {
+        if (touch) { touchPlayRef.current = false; syncPlayRef.current(); }
+        else if (document.pointerLockElement === mountRef.current) document.exitPointerLock();
+      },
+      use: () => useActionRef.current(),
+    };
+    return () => { control.current = null; };
+  }, [control, touch]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
     let disposed = false;
+    let live = false;
+    setLive(false);
+    setPlaying(false);
+    /** The player means to be playing: the mouse is captured, or the touch controls are up. */
+    const wanted = () => (touch ? touchPlayRef.current : document.pointerLockElement === mount);
+    /** ...and the map is there to play in. */
+    const playing = () => live && wanted();
 
     const loadingManager = new THREE.LoadingManager();
     loadingManager.itemStart("hyperstrike-world-bootstrap");
@@ -491,7 +534,14 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     renderer.shadowMap.autoUpdate = false;
     renderer.autoClear = false;
     renderer.debug.checkShaderErrors = import.meta.env.DEV;
+    // A phone's browser closes a page that holds a desktop's worth of textures. three.js scales any
+    // image or canvas down to this limit as it uploads it, so one number caps the whole range.
+    // (Shadow maps read the real limit when the renderer was made and are not affected.)
+    if (leanAssets()) renderer.capabilities.maxTextureSize = Math.min(renderer.capabilities.maxTextureSize, leanTextureSize());
     mount.appendChild(renderer.domElement);
+    // Say so rather than leave a black view. (Unloading a map drops its own context; that is not this.)
+    const onLost = (event: Event) => { event.preventDefault(); if (!disposed) lostRef.current?.(); };
+    renderer.domElement.addEventListener("webglcontextlost", onLost);
 
     const sound = createRangeSound(map);
     sound.setVolume(rangeVolume());
@@ -1005,7 +1055,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const reportWeapon = () => {
       const spec = arsenal.rigs[current].spec;
       ammoRef.current(spec.reach ? -1 : magazines[current], reserve, reloading);
-      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope });
+      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope, blade: Boolean(spec.reach) });
     };
     reportWeapon();
 
@@ -1102,19 +1152,33 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     };
 
     const requestLock = () => {
+      if (touch) return;
       if (!enteredRef.current) enteredEventRef.current();
-      if (document.pointerLockElement !== renderer.domElement) void renderer.domElement.requestPointerLock()?.catch(() => { releaseTrigger(trigger); });
+      if (document.pointerLockElement !== mount) void mount.requestPointerLock()?.catch(() => { releaseTrigger(trigger); });
     };
-    const onPointerLockChange = () => {
-      const locked = document.pointerLockElement === renderer.domElement;
-      if (!locked) { releaseTrigger(trigger); resetTrigger(trigger); }
-      // Taking the pointer follows a click, which is what lets a browser start audio.
-      if (locked) ambience.start();
-      ambience.setActive(locked);
-      lockRef.current(locked);
+    // Thumbs: the movement stick and whether AIM is latched.
+    const stick = { x: 0, y: 0 };
+    let touchAim = false;
+    /** Brings the scene, the sound and the app shell in line with whether the player is playing. */
+    const syncPlay = () => {
+      const on = wanted();
+      if (!on) { releaseTrigger(trigger); resetTrigger(trigger); stick.x = stick.y = 0; touchAim = false; }
+      // Taking the pointer follows a click or a tap, which is what lets a browser start audio.
+      if (on && live) ambience.start();
+      ambience.setActive(on && live);
+      lockRef.current(on);
+      if (!disposed) setPlaying(on && live);
     };
+    syncPlayRef.current = syncPlay;
+    /** A context made while a map loaded may still be waiting for a gesture; any input in play is one. */
+    const wake = () => { if (playing()) ambience.start(); };
+    const release = () => {
+      if (touch) { touchPlayRef.current = false; syncPlay(); }
+      else if (document.pointerLockElement === mount) document.exitPointerLock();
+    };
+    const onHidden = () => { if (touch && document.hidden && touchPlayRef.current) release(); };
     const onMouseMove = (event: MouseEvent) => {
-      if (document.pointerLockElement !== renderer.domElement) return;
+      if (touch || !playing()) return;
       yaw -= event.movementX * 0.00165 * lookScale;
       pitch -= event.movementY * 0.00165 * lookScale;
       lookKickX = THREE.MathUtils.clamp(lookKickX + event.movementX * 0.00032, -0.035, 0.035);
@@ -1206,14 +1270,15 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (magazines[current] === 0) { autoReloadAt = now + (modes[current] === "BOLT" ? 420 : 160); resetTrigger(trigger); }
     };
     const onMouseDown = (event: MouseEvent) => {
-      if (event.button !== 0 || document.pointerLockElement !== renderer.domElement) return;
+      if (event.button !== 0 || touch || !playing()) return;
+      wake();
       pressTrigger(trigger);
     };
     const onMouseUp = (event: MouseEvent) => {
       if (event.button === 0) releaseTrigger(trigger);
     };
     const onWheel = (event: WheelEvent) => {
-      if (document.pointerLockElement !== renderer.domElement || event.deltaY === 0) return;
+      if (!playing() || event.deltaY === 0) return;
       const count = arsenal.rigs.length;
       switchWeapon((current + (event.deltaY > 0 ? 1 : count - 1)) % count);
     };
@@ -1225,7 +1290,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         if (event.code === "Enter") horde.start(performance.now());
         if (event.code === "Backspace") horde.stop();
       }
-      if (document.pointerLockElement !== renderer.domElement) return;
+      if (!playing()) return;
       keys.add(event.code);
       if (event.code === "Space") event.preventDefault();
       if (event.repeat) return;
@@ -1234,23 +1299,49 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (typed === "KeyM") toggleRangeMute();
       if (event.code === "KeyQ") switchWeapon(previous);
       if (/^Digit[1-6]$/.test(event.code)) switchWeapon(Number(event.code.slice(5)) - 1);
-      if (event.code === "KeyE" && furnaceTargeted) {
-        furnaceRef.current();
-        document.exitPointerLock();
-      } else if (event.code === "KeyE" && chartTargeted) {
-        chartRef.current();
-        document.exitPointerLock();
-      } else if (event.code === "KeyE" && lastTargeted >= 0) {
-        selectRef.current(markets[lastTargeted]);
-        document.exitPointerLock();
-      }
+      if (event.code === "KeyE") use();
     };
     const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
+    /** Opens what the player is standing at, and frees the pointer for it. */
+    const use = () => {
+      if (!playing()) return;
+      if (furnaceTargeted) furnaceRef.current();
+      else if (chartTargeted) chartRef.current();
+      else if (lastTargeted >= 0) selectRef.current(markets[lastTargeted]);
+      else return;
+      release();
+    };
+    useActionRef.current = use;
+    // Radians per CSS pixel of drag: a thumb's sweep of about 150 pixels turns the view some 50 degrees,
+    // whichever way up the phone is held.
+    const TOUCH_LOOK = 0.006;
+    touchApiRef.current = {
+      move: (x, y) => { stick.x = x; stick.y = y; },
+      look: (dx, dy) => {
+        if (!playing()) return;
+        const rate = TOUCH_LOOK * lookScale;
+        yaw -= dx * rate;
+        pitch = THREE.MathUtils.clamp(pitch - dy * rate, -1.28, 1.28);
+        lookKickX = THREE.MathUtils.clamp(lookKickX + dx * 0.0008, -0.035, 0.035);
+        lookKickY = THREE.MathUtils.clamp(lookKickY + dy * 0.00065, -0.028, 0.028);
+      },
+      fire: (down) => {
+        if (down && playing()) { wake(); pressTrigger(trigger); } else releaseTrigger(trigger);
+      },
+      aim: (on) => { touchAim = on; },
+      reload: () => { if (playing()) startReload(); },
+      nextWeapon: () => { if (playing()) switchWeapon((current + 1) % arsenal.rigs.length); },
+      mode: () => { if (playing()) cycleMode(); },
+      pause: release,
+      wake,
+    };
 
-    renderer.domElement.addEventListener("click", requestLock);
-    renderer.domElement.addEventListener("mousedown", onMouseDown);
+    // The capture belongs to the mount, so that is where a captured mouse reports its buttons.
+    mount.addEventListener("click", requestLock);
+    mount.addEventListener("mousedown", onMouseDown);
     document.addEventListener("mouseup", onMouseUp);
-    document.addEventListener("pointerlockchange", onPointerLockChange);
+    document.addEventListener("pointerlockchange", syncPlay);
+    document.addEventListener("visibilitychange", onHidden);
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("wheel", onWheel, { passive: true });
     document.addEventListener("keydown", onKeyDown);
@@ -1287,17 +1378,19 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       const dt = Math.min((now - lastFrameTime) / 1000, 0.033);
       lastFrameTime = now;
       let moving = false;
-      if (document.pointerLockElement === renderer.domElement) {
-        moveDirection.set(0, 0, 0);
+      if (playing()) {
+        moveDirection.set(stick.x, 0, stick.y);
         if (keys.has("KeyW")) moveDirection.z -= 1;
         if (keys.has("KeyS")) moveDirection.z += 1;
         if (keys.has("KeyA")) moveDirection.x -= 1;
         if (keys.has("KeyD")) moveDirection.x += 1;
         moving = moveDirection.lengthSq() > 0;
         if (moving) {
+          // Keys are all or nothing; a stick pushed part of the way walks slower.
+          const pace = Math.min(1, moveDirection.length());
           moveDirection.normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
           const fromX = camera.position.x, fromZ = camera.position.z;
-          camera.position.addScaledVector(moveDirection, (keys.has("ShiftLeft") ? 7.4 : 5.1) * dt);
+          camera.position.addScaledVector(moveDirection, (keys.has("ShiftLeft") ? 7.4 : 5.1) * pace * dt);
           camera.position.x = THREE.MathUtils.clamp(camera.position.x, -8.6, 8.6);
           // The far limit stops short of the control desk, whose front edge is at z = -24.4.
           camera.position.z = THREE.MathUtils.clamp(camera.position.z, -24.4 - BODY, 8);
@@ -1394,7 +1487,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       }
       if (slashLandsAt >= 0 && now >= slashLandsAt) { slashLandsAt = -1; if (spec.reach && switchingTo < 0) landSlash(now, spec); }
       if (autoReloadAt >= 0 && now >= autoReloadAt) startReload();
-      const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || document.pointerLockElement === renderer.domElement);
+      const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || playing());
       if (armed && takeShot(spec, modes[current], trigger, now)) {
         if (magazines[current] > 0) fireShot(now);
         else { playAction("dry"); resetTrigger(trigger); startReload(); }
@@ -1406,7 +1499,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       recoil = THREE.MathUtils.lerp(recoil, 0, Math.min(1, dt * 14));
       muzzleEnergy = THREE.MathUtils.lerp(muzzleEnergy, 0, Math.min(1, dt * 25));
       // Aim down the sights while Space is held; an optic takes over the whole view once it is up.
-      const aiming = enteredRef.current && (forceScope || (keys.has("Space") && document.pointerLockElement === renderer.domElement)) && !reloading && switchingTo < 0 && cycleStartedAt < 0;
+      const aiming = enteredRef.current && (forceScope || ((keys.has("Space") || touchAim) && playing())) && !reloading && switchingTo < 0 && cycleStartedAt < 0;
       aim += ((aiming ? 1 : 0) - aim) * Math.min(1, dt * 13);
       if (Math.abs(aim - (aiming ? 1 : 0)) < 0.003) aim = aiming ? 1 : 0;
       const sighted = smooth01(aim), magnification = THREE.MathUtils.lerp(1, spec.zoom, sighted);
@@ -1589,6 +1682,10 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       );
       if (!solids && import.meta.env.DEV) console.warn("Range floor plan rejected: a station or the furnace would be cut off. Props are not solid on this map.");
       frame = requestAnimationFrame(animate);
+      live = true;
+      setLive(true);
+      // The pointer may already be held: a range picked from the briefing takes it with that click.
+      syncPlay();
       readyRef.current();
     };
     loadingManager.onLoad = startRendering;
@@ -1616,10 +1713,14 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       cancelAnimationFrame(frame);
       loadingManager.onLoad = () => {};
       window.removeEventListener("resize", onResize);
-      renderer.domElement.removeEventListener("click", requestLock);
-      renderer.domElement.removeEventListener("mousedown", onMouseDown);
+      mount.removeEventListener("click", requestLock);
+      mount.removeEventListener("mousedown", onMouseDown);
       document.removeEventListener("mouseup", onMouseUp);
-      document.removeEventListener("pointerlockchange", onPointerLockChange);
+      document.removeEventListener("pointerlockchange", syncPlay);
+      document.removeEventListener("visibilitychange", onHidden);
+      syncPlayRef.current = () => {};
+      useActionRef.current = () => {};
+      touchApiRef.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("wheel", onWheel);
       document.documentElement.removeAttribute("data-scoped");
@@ -1660,6 +1761,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       lcdMaterials.forEach(material => material.emissiveMap?.dispose());
       composer.passes.forEach(pass => pass.dispose());
       composer.dispose();
+      renderer.domElement.removeEventListener("webglcontextlost", onLost);
       renderer.dispose();
       renderer.forceContextLoss();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
@@ -1670,7 +1772,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     <>
       <div className="world-canvas" ref={mountRef} aria-label="HyperStrike first-person ballistic price range" />
       <div className="scope-view" ref={scopeRef} aria-hidden="true"><div><i /><i /><i /><i /><b /></div></div>
-      {entered && <RangeHud weapon={weaponHud} horde={hordeHud} strike={strike && markets[strike.market] ? { ...strike, market: markets[strike.market], count: votes[markets[strike.market].id] ?? { YES: 0, NO: 0 } } : null} />}
+      {touch && playing && <RangeTouch api={touchApiRef} weapon={weaponHud} />}
+      {entered && live && <RangeHud weapon={weaponHud} horde={hordeHud} strike={strike && markets[strike.market] ? { ...strike, market: markets[strike.market], count: votes[markets[strike.market].id] ?? { YES: 0, NO: 0 } } : null} />}
     </>
   );
 }

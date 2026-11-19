@@ -45,3 +45,9 @@ Range maps (all 2K: diffuse, OpenGL normal and roughness; AO maps are not kept; 
 
 Reproduce all of them, and the map skies, with `node scripts/fetch-range-maps.mjs`
 (MD5-verified against the Poly Haven API; files already present are skipped).
+
+Phones and tablets:
+
+- Every `*-1k/` folder is its `*-2k/` neighbour resized to 1024 pixels (`sips -Z 1024 -s formatOptions 82`), same files, same licence.
+  The range loads these on touch devices, where a browser closes a page that holds a desktop's worth of textures
+  (see `leanAssets` in `src/range/touch.ts`). Regenerate a set after replacing its 2K source.
