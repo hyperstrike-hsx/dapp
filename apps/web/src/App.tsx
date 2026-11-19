@@ -26,6 +26,7 @@ import { NativePortfolio } from "./NativePortfolio";
 import { PaperPortfolio } from "./PaperPortfolio";
 import { LegacyArchive } from "./LegacyArchive";
 import { SportsDemoRecords } from "./SportsDemoRecords";
+import { RangeLobby } from "./RangeLobby";
 import { RangePerformance } from "./RangePerformance";
 import { RANGE_MAPS, storedRangeMap, storeRangeMap, type RangeMapId } from "./range/mapList";
 import {
@@ -329,6 +330,14 @@ export default function App() {
         ),
       );
   };
+  /**
+   * A click that dismisses a ticket or panel goes straight back to play once the player has
+   * deployed, instead of stopping at the pause screen: the click is the gesture the browser needs
+   * to hand the pointer back. (Escape is not such a gesture, so that still lands on the pause screen.)
+   */
+  const resumeRange = () => {
+    if (range && entered) capture();
+  };
   const connect = async () => {
     try {
       setWallet(await (await signer()).getAddress());
@@ -423,6 +432,15 @@ export default function App() {
     }));
     setNotice("Paper trade saved to your portfolio.");
   };
+  const rangePerformance = (
+    <RangePerformance
+      quality={quality}
+      onQuality={(q) => {
+        setReady(false);
+        setQuality(q);
+      }}
+    />
+  );
   return (
     <main className={`native-app ${range ? "in-range" : ""}`}>
       <header className="native-header">
@@ -527,51 +545,22 @@ export default function App() {
           <div className="range-tag">
             RANGE {rangeMapInfo.code} <span>{rangeMapInfo.name} · INDEX MARKET SANDBOX</span>
           </div>
-          <RangePerformance
-            quality={quality}
-            onQuality={(q) => {
-              setReady(false);
-              setQuality(q);
-            }}
-          />
-          {ready && !locked && !selected && !rangePanel && (
-            <button className="range-enter" onClick={capture}>
-              <span>THE ECONOMY IS YOUR TARGET.</span>
-              <strong>
-                {entered ? "RESUME OPERATION" : "DEPLOY TO THE RANGE"} ↗
-              </strong>
-              <small>
-                WASD move · Mouse aim · Hold to fire · E review · R reload
-              </small>
-            </button>
-          )}
-          {ready && !locked && !rangePanel && !selected && (
-            <div className="range-maps" role="radiogroup" aria-label="Range map">
-              {RANGE_MAPS.map((entry) => (
-                <button
-                  key={entry.id}
-                  role="radio"
-                  aria-checked={entry.id === rangeMap}
-                  className={entry.id === rangeMap ? "active" : ""}
-                  onClick={() => {
-                    if (entry.id === rangeMap) return;
-                    storeRangeMap(entry.id);
-                    setReady(false);
-                    setRangeMap(entry.id);
-                  }}
-                >
-                  <span>RANGE {entry.code}</span>
-                  <strong>{entry.name}</strong>
-                  <small>{entry.line}</small>
-                </button>
-              ))}
-            </div>
-          )}
-          {ready && !locked && !rangePanel && !selected && (
-            <div className="range-utilities">
-              <button onClick={openTokens}>STRIKE FOUNDRY ↗</button>
-              <button onClick={openChart}>$HSX CANDLE CHART ↗</button>
-            </div>
+          {ready && !locked && !selected && !rangePanel ? (
+            <RangeLobby
+              current={rangeMap}
+              entered={entered}
+              onDeploy={capture}
+              onLoad={(id) => {
+                storeRangeMap(id);
+                setReady(false);
+                setRangeMap(id);
+              }}
+              onFoundry={openTokens}
+              onChart={openChart}
+              tools={rangePerformance}
+            />
+          ) : (
+            rangePerformance
           )}
           {rangePanel && (
             <RangeOverlay
@@ -582,6 +571,10 @@ export default function App() {
               onResume={() => {
                 setRangePanel(null);
                 capture();
+              }}
+              onOutside={() => {
+                setRangePanel(null);
+                resumeRange();
               }}
             >
               {rangePanel === "foundry" ? <StrikePanel /> : <HsxChartPanel />}
@@ -615,7 +608,7 @@ export default function App() {
           <div className="range-bottom">
             <span>NO ORDER IS SENT UNTIL YOU REVIEW AND CONFIRM</span>
             <strong>
-              {ammo.reloading ? "RELOADING" : `${ammo.magazine} / ∞`}
+              {ammo.reloading ? "RELOADING" : ammo.magazine < 0 ? "BLADE" : `${ammo.magazine} / ∞`}
             </strong>
           </div>
         </>
@@ -1172,6 +1165,11 @@ export default function App() {
           onClose={() => {
             setSelected(null);
             setManagedSide(undefined);
+          }}
+          onDismiss={() => {
+            setSelected(null);
+            setManagedSide(undefined);
+            resumeRange();
           }}
           onTrade={transact}
         />

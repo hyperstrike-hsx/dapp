@@ -12,6 +12,12 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { createBallistics } from "./range/ballistics";
 import { displayMaterial, projectUv } from "./range/environment";
 import { buildMap } from "./range/maps";
+import { createRangeSound } from "./range/sound";
+import { createAmbience } from "./range/ambience";
+import { onRangeVolume, rangeVolume, toggleRangeMute } from "./range/volume";
+import { createSkyBackdrop, type SkyBackdrop } from "./range/skyBackdrop";
+import { MultisampledRenderPass } from "./range/msaaPass";
+import { surveySolids, type Solids } from "./range/solids";
 import type { RangeMapId } from "./range/mapList";
 import { VolumetricPass } from "./range/volumetric";
 import { createArsenal, type ReloadSound, type RigPose, type Timeline, type WeaponRig } from "./range/arsenal";
@@ -462,7 +468,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const scene = new THREE.Scene();
 
     const BASE_FOV = 76;
-    const camera = new THREE.PerspectiveCamera(BASE_FOV, mount.clientWidth / mount.clientHeight, 0.08, 110);
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, mount.clientWidth / mount.clientHeight, 0.16, 110);
     camera.position.set(0, 1.62, 7.2);
     camera.rotation.order = "YXZ";
     const viewModelScene = new THREE.Scene();
@@ -472,9 +478,10 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     viewModelScene.add(new THREE.HemisphereLight(0xd9ecec, 0x2a2622, 0.22));
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", stencil: false });
-    // Stable resolution from the first frame: no delayed quality drop/rebuild.
-    const pixelBudget=quality==="HIGH"?2_800_000:1_300_000;
-    const initialPixelRatio = Math.min(window.devicePixelRatio, quality==="HIGH"?1.6:1.25, Math.sqrt(pixelBudget / (mount.clientWidth * mount.clientHeight)));
+    // Internal resolution: HIGH renders close to a retina panel's native pixels and supersamples a
+    // little on standard-density screens. It only steps down if the frame rate stays low (see below).
+    const pixelBudget=quality==="HIGH"?4_000_000:1_800_000;
+    const initialPixelRatio = Math.min(quality==="HIGH"?Math.max(window.devicePixelRatio,1.25):window.devicePixelRatio, quality==="HIGH"?2:1.4, Math.sqrt(pixelBudget / (mount.clientWidth * mount.clientHeight)));
     renderer.setPixelRatio(initialPixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -486,7 +493,17 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     renderer.debug.checkShaderErrors = import.meta.env.DEV;
     mount.appendChild(renderer.domElement);
 
-    const range = buildMap(map, { scene, renderer, quality, loadingManager });
+    const sound = createRangeSound(map);
+    sound.setVolume(rangeVolume());
+    const offVolume = onRangeVolume((level) => sound.setVolume(level));
+    const ambience = createAmbience(sound, map);
+    // The map's own props, read off a plan of the floor once everything has loaded (range/solids.ts).
+    let solids: Solids | null = null;
+    const range = buildMap(map, {
+      scene, renderer, quality, loadingManager,
+      cue: ambience.cue,
+      blocked: (x, z) => solids?.blocked(x, z) ?? false,
+    });
     const look = range.look;
     scene.background = new THREE.Color(look.background);
     scene.fog = new THREE.FogExp2(look.fog, look.fogDensity);
@@ -504,13 +521,23 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const environmentTextures: THREE.Texture[] = [];
     const textureLoader = new THREE.TextureLoader(loadingManager);
 
+    // The scene pass is multisampled on HIGH (see MultisampledRenderPass); `?msaa=N` overrides for testing.
+    const requestedSamples = Number(new URLSearchParams(window.location.search).get("msaa") ?? NaN);
+    const samples = Math.min(renderer.capabilities.maxSamples, Number.isFinite(requestedSamples) ? requestedSamples : quality === "HIGH" ? 4 : 0);
     const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
+    const scenePass = new MultisampledRenderPass(scene, camera, samples);
+    composer.addPass(scenePass);
     composer.setPixelRatio(initialPixelRatio);
     const aoPass = new GTAOPass(scene, camera, mount.clientWidth, mount.clientHeight);
     const renderAO = aoPass.render.bind(aoPass);
-    aoPass.render = (...args: Parameters<typeof aoPass.render>) =>
+    // The sharp sky dome (HIGH only) stands in for the background, so it stays out of the depth passes.
+    let backdrop: SkyBackdrop | null = null;
+    aoPass.render = (...args: Parameters<typeof aoPass.render>) => {
+      const dome = backdrop?.mesh, shown = dome?.visible ?? false;
+      if (dome) dome.visible = false;
       withOpaqueOccluders(scene, () => renderAO(...args));
+      if (dome) dome.visible = shown;
+    };
     aoPass.enabled = quality === "HIGH";
     aoPass.updateGtaoMaterial({ radius: 0.55, samples: 8, distanceExponent: 1.4, thickness: 0.6, distanceFallOff: 1 });
     aoPass.updatePdMaterial({ samples: 8, rings: 2, radius: 4 });
@@ -568,15 +595,43 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       scene.backgroundIntensity = look.skyIntensity;
       scene.backgroundRotation.y = look.skyRotation;
     });
-
-    const emergencyMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2c50).multiplyScalar(4.8), toneMapped: false });
-    for (const z of [3.5, -8.5, -20.5]) {
-      const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.15), emergencyMaterial);
-      fixture.position.set(-9.54, 3.62, z);
-      scene.add(fixture);
+    const flatBackground = new THREE.Color(look.background);
+    if (look.sky && quality === "HIGH") {
+      backdrop = createSkyBackdrop(renderer, loadingManager, look.sky, look.skyRotation, look.skyClamp);
+      if (backdrop) { scene.add(backdrop.mesh); range.mirrorHidden.push(backdrop.mesh); }
     }
 
     const signFrame = new THREE.MeshStandardMaterial({ color: 0x0c1416, metalness: 0.85, roughness: 0.38 });
+    // Alarm bulkheads on the west wall: a caged red lens on a backplate. They idle at a dim standby
+    // glow (a flat bright box reads as a rendering fault in daylight) and pulse in wave mode.
+    const alarmLens = new THREE.MeshStandardMaterial({ color: 0x3a0609, emissive: 0xff2c50, emissiveIntensity: 0.3, roughness: 0.22, metalness: 0 });
+    {
+      const turn = new THREE.Matrix4().makeRotationZ(Math.PI / 2);
+      const lens = new THREE.CapsuleGeometry(0.055, 0.24, 6, 16).applyMatrix4(turn);
+      const bar = new THREE.CylinderGeometry(0.006, 0.006, 0.36, 6).applyMatrix4(turn);
+      // The middle one sits clear of the RANGE A sign, whose frame ends at z = -8.53.
+      for (const z of [3.5, -7.7, -20.5]) {
+        const fixture = new THREE.Group();
+        fixture.position.set(-9.555, 3.62, z);
+        fixture.rotation.y = Math.PI / 2;
+        const plate = new THREE.Mesh(new RoundedBoxGeometry(0.46, 0.19, 0.05, 2, 0.015), signFrame);
+        const glass = new THREE.Mesh(lens, alarmLens);
+        glass.position.z = 0.05;
+        fixture.add(plate, glass);
+        for (const y of [-0.045, 0, 0.045]) {
+          const guard = new THREE.Mesh(bar, signFrame);
+          guard.position.set(0, y, 0.105 - Math.abs(y) * 0.35);
+          fixture.add(guard);
+        }
+        for (const x of [-0.17, 0.17]) {
+          const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.006, 6, 14, Math.PI), signFrame);
+          hoop.position.set(x, 0, 0.045);
+          hoop.rotation.set(Math.PI / 2, Math.PI / 2, 0);
+          fixture.add(hoop);
+        }
+        scene.add(fixture);
+      }
+    }
     const mountSign = (texture: THREE.Texture, width: number, height: number, position: [number, number, number], rotation: number, parent: THREE.Object3D = scene) => {
       texture.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
       environmentTextures.push(texture);
@@ -611,7 +666,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     chartTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     environmentTextures.push(chartTexture);
     const chartScreen = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), displayMaterial(chartTexture));
-    chartScreen.position.set(0, 3.8, 9.52);
+    // 3 cm off the frame face (z = 9.53): a 1 cm gap ties in depth when seen from the far end of the range.
+    chartScreen.position.set(0, 3.8, 9.5);
     chartScreen.rotation.y = Math.PI;
     scene.add(chartScreen);
     shootableObjects.push(chartScreen);
@@ -741,6 +797,28 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       scene.add(group);
       exhibitGroups.push(group);
     });
+
+    // What stands on the floor is solid to the player too: without this the camera walks through
+    // the station displays and the furnace, and the near plane slices them open.
+    const BODY = 0.4;
+    const keepOut = (position: THREE.Vector3) => {
+      // The display and its stays reach 1.85 m from a station's centre.
+      for (const station of marketPositions) {
+        const dx = position.x - station.x, dz = position.z - station.z, reach = 1.85 + BODY, distance = Math.hypot(dx, dz);
+        if (distance >= reach) continue;
+        if (distance < 1e-4) { position.z = station.z + reach; continue; }
+        position.x = station.x + (dx / distance) * reach;
+        position.z = station.z + (dz / distance) * reach;
+      }
+      // The furnace: a box against the east wall (kit.ts places it at x 9.18, z -11.6, plinth 3.6 x 1.4).
+      const face = 8.43 - BODY, south = -9.8 + BODY, north = -13.4 - BODY;
+      if (position.x > face && position.z < south && position.z > north) {
+        const inX = position.x - face, inSouth = south - position.z, inNorth = position.z - north;
+        if (inX <= inSouth && inX <= inNorth) position.x = face;
+        else if (inSouth < inNorth) position.z = south;
+        else position.z = north;
+      }
+    };
 
     const targetMeshes: THREE.Mesh[] = [];
     const committedExposure = portfolio.reduce((sum, entry) => sum + entry.amount, 0);
@@ -890,9 +968,11 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     let cycleStartedAt = -1;
     let cycleCursor = 0;
     let cycleEjected = false;
+    let slashLandsAt = -1;
     let autoReloadAt = -1;
     let climbDebt = 0;
     let forceFire = false;
+    let lastStride = 0;
     // Aiming: held on Space. `aim` eases 0→1; looking slows by the magnification.
     let forceScope = false, aim = 0, lookScale = 1, throughScope = false;
     let frozenReload: number | null = null;
@@ -902,7 +982,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const horde = createHorde({
       scene,
       obstacles: [...marketPositions.map((position) => ({ x: position.x, z: position.z, r: 2.15 })), { x: 9.18, z: -11.6, r: 2.6 }],
-      audio: () => (audioContext ??= new AudioContext()),
+      solid: (x, z) => solids?.blocked(x, z) ?? false,
+      audio: () => sound.context(),
+      bus: () => sound.bus(0.3),
       onHud: (hud) => { if (!disposed) setHordeHud(hud); },
       onHurt: (amount) => { shake = Math.max(shake, amount <= 1 ? 0.25 + amount * 0.5 : 1); },
     });
@@ -919,18 +1001,16 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (horde.active) horde.stop();
       else horde.start(performance.now());
     };
-    let audioContext: AudioContext | null = null;
     const moveDirection = new THREE.Vector3();
     const reportWeapon = () => {
       const spec = arsenal.rigs[current].spec;
-      ammoRef.current(magazines[current], reserve, reloading);
+      ammoRef.current(spec.reach ? -1 : magazines[current], reserve, reloading);
       setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope });
     };
     reportWeapon();
 
     const burst = (frequency: number, q: number, length: number, gain: number, delay = 0, type: BiquadFilterType = "bandpass") => {
-      audioContext ??= new AudioContext();
-      const context = audioContext;
+      const context = sound.context();
       const at = context.currentTime + delay;
       const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * length)), context.sampleRate);
       const channel = buffer.getChannelData(0);
@@ -943,20 +1023,19 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       filter.Q.value = q;
       const volume = context.createGain();
       volume.gain.value = gain;
-      noise.connect(filter).connect(volume).connect(context.destination);
+      noise.connect(filter).connect(volume).connect(sound.bus(0.12));
       noise.start(at);
     };
     /** A short bright tone: the confirmation that a contract was staged. */
     const chime = (frequency: number) => {
-      audioContext ??= new AudioContext();
-      const context = audioContext, at = context.currentTime;
+      const context = sound.context(), at = context.currentTime;
       [1, 2.01].forEach((harmonic, index) => {
         const oscillator = context.createOscillator(), volume = context.createGain();
         oscillator.type = index === 0 ? "triangle" : "sine";
         oscillator.frequency.setValueAtTime(frequency * harmonic, at);
         volume.gain.setValueAtTime(index === 0 ? 0.09 : 0.035, at);
         volume.gain.exponentialRampToValueAtTime(0.0001, at + (index === 0 ? 0.34 : 0.2));
-        oscillator.connect(volume).connect(context.destination);
+        oscillator.connect(volume).connect(sound.bus(0.12));
         oscillator.start(at);
         oscillator.stop(at + 0.36);
       });
@@ -975,38 +1054,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       else burst(2800, 9, 0.018, 0.2);
     };
 
-    const playShot = (spec: WeaponSpec) => {
-      audioContext ??= new AudioContext();
-      const context = audioContext;
-      const at = context.currentTime;
-      const buffer = context.createBuffer(1, Math.floor(context.sampleRate * spec.sound.length), context.sampleRate);
-      const channel = buffer.getChannelData(0);
-      for (let i = 0; i < channel.length; i += 1) channel[i] = (Math.random() * 2 - 1) * (1 - i / channel.length);
-      const noise = context.createBufferSource();
-      noise.buffer = buffer;
-      const filter = context.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.value = spec.sound.pitch;
-      filter.Q.value = 0.65;
-      const gain = context.createGain();
-      gain.gain.setValueAtTime(spec.sound.gain, at);
-      gain.gain.exponentialRampToValueAtTime(0.001, at + spec.sound.length);
-      noise.connect(filter).connect(gain).connect(context.destination);
-      noise.start(at);
-      const thump = context.createOscillator();
-      const thumpGain = context.createGain();
-      thump.type = "triangle";
-      thump.frequency.setValueAtTime(spec.sound.thump, at);
-      thump.frequency.exponentialRampToValueAtTime(48, at + 0.09);
-      thumpGain.gain.setValueAtTime(spec.sound.gain * 0.8, at);
-      thumpGain.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
-      thump.connect(thumpGain).connect(context.destination);
-      thump.start(at);
-      thump.stop(at + 0.1);
-    };
-
     const startReload = () => {
-      if (reloading || switchingTo >= 0 || magazines[current] === arsenal.rigs[current].spec.magazine) return;
+      if (reloading || switchingTo >= 0 || arsenal.rigs[current].spec.reach || magazines[current] === arsenal.rigs[current].spec.magazine) return;
       reloading = true;
       reloadStartedAt = performance.now();
       reloadCursor = 0;
@@ -1024,6 +1073,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       switchingTo = index;
       switchStartedAt = performance.now();
       playAction("draw");
+      if (arsenal.rigs[index].spec.reach) sound.knife("draw");
     };
     const cycleMode = () => {
       const spec = arsenal.rigs[current].spec;
@@ -1058,6 +1108,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const onPointerLockChange = () => {
       const locked = document.pointerLockElement === renderer.domElement;
       if (!locked) { releaseTrigger(trigger); resetTrigger(trigger); }
+      // Taking the pointer follows a click, which is what lets a browser start audio.
+      if (locked) ambience.start();
+      ambience.setActive(locked);
       lockRef.current(locked);
     };
     const onMouseMove = (event: MouseEvent) => {
@@ -1068,8 +1121,42 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       lookKickY = THREE.MathUtils.clamp(lookKickY + event.movementY * 0.00026, -0.028, 0.028);
       pitch = THREE.MathUtils.clamp(pitch, -1.28, 1.28);
     };
+    /** A knife swing: no round leaves, the cut lands on whatever is within reach. */
+    const slash = (now: number, spec: WeaponSpec) => {
+      recoil = spec.kick;
+      cycleStartedAt = now; cycleCursor = 0; cycleEjected = true;
+      sound.knife("swing");
+      // The cut lands when the blade crosses the view, not when the arm starts moving.
+      slashLandsAt = now + spec.cycleMs * 0.27;
+    };
+    const slashPoint = new THREE.Vector3(), slashScreen = new THREE.Vector3(), slashAim = new THREE.Vector3();
+    const landSlash = (now: number, spec: WeaponSpec) => {
+      // A blade sweeps an arc: it cuts the zombie nearest the middle of the view among those within arm's reach,
+      // rather than only what sits exactly under the crosshair.
+      let victim: THREE.Object3D | null = null, best = Infinity;
+      if (horde.active) for (const part of horde.targets) {
+        part.getWorldPosition(slashPoint);
+        if (slashPoint.distanceTo(camera.position) > spec.reach!) continue;
+        slashScreen.copy(slashPoint).project(camera);
+        if (slashScreen.z > 1 || Math.abs(slashScreen.x) > 0.62 || Math.abs(slashScreen.y) > 0.75) continue;
+        const off = Math.hypot(slashScreen.x, slashScreen.y * 0.6);
+        if (off < best) { best = off; victim = part; }
+      }
+      if (victim) {
+        victim.getWorldPosition(slashPoint);
+        camera.getWorldDirection(slashAim);
+        if (horde.hit(victim, slashPoint, slashAim, spec.damage, spec.headshot, now)) { sound.knife("flesh"); return; }
+      }
+      // Otherwise the blade may ring off whatever solid thing is right ahead.
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+      raycaster.far = spec.reach!;
+      const solid = raycaster.intersectObjects([...shootableObjects, ...interactiveMeshes, ...targetMeshes, ...voteMeshes], false)[0];
+      raycaster.far = 60;
+      if (solid) sound.knife("hard");
+    };
     const fireShot = (now: number) => {
       const rig = arsenal.rigs[current], spec = rig.spec;
+      if (spec.reach) { slash(now, spec); return; }
       magazines[current] -= 1;
       reportWeapon();
       recoil = spec.kick;
@@ -1077,7 +1164,10 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       pitch = THREE.MathUtils.clamp(pitch + spec.climb, -1.28, 1.28);
       lookKickX = THREE.MathUtils.clamp(lookKickX + (Math.random() - 0.5) * spec.climb * 1.6, -0.035, 0.035);
       muzzleEnergy = 1;
-      playShot(spec);
+      sound.shot(spec.id);
+      // The report carries: wildlife bolts and the soundscape ducks under it.
+      ambience.bang();
+      range.startle?.(camera.position, 1);
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
       const hits = raycaster.intersectObjects([...voteMeshes, ...targetMeshes, ...interactiveMeshes, ...shootableObjects, ...(horde.active ? horde.targets : [])], false);
       // Bullets stop in the first zombie; the bolt-action punches through a line of them.
@@ -1109,7 +1199,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         strikeId += 1;
         setStrike({ id: strikeId, market: marketIndex, side, streak: strikeStreak });
       }
-      spawnShotEffects(now, endpoint, hit, modes[current] !== "BOLT");
+      // A map can own what was hit (a chicken, a hanging lamp): then it reacts and no hole is left in the air.
+      const claimed = hit !== undefined && range.shootable.includes(hit.object) && range.struck?.(hit.object, hit.point) === true;
+      spawnShotEffects(now, endpoint, claimed ? undefined : hit, modes[current] !== "BOLT");
       if (modes[current] === "BOLT" && magazines[current] > 0) { cycleStartedAt = now; cycleCursor = 0; cycleEjected = false; }
       if (magazines[current] === 0) { autoReloadAt = now + (modes[current] === "BOLT" ? 420 : 160); resetTrigger(trigger); }
     };
@@ -1139,8 +1231,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (event.repeat) return;
       if (event.code === "KeyR") startReload();
       if (event.code === "KeyV") cycleMode();
+      if (typed === "KeyM") toggleRangeMute();
       if (event.code === "KeyQ") switchWeapon(previous);
-      if (/^Digit[1-5]$/.test(event.code)) switchWeapon(Number(event.code.slice(5)) - 1);
+      if (/^Digit[1-6]$/.test(event.code)) switchWeapon(Number(event.code.slice(5)) - 1);
       if (event.code === "KeyE" && furnaceTargeted) {
         furnaceRef.current();
         document.exitPointerLock();
@@ -1167,6 +1260,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     let fpsFrames = 0;
     let fpsSampleStarted = performance.now();
     let lowFpsSamples = 0;
+    let fpsSamples = 0;
     let adaptivePixelRatio = initialPixelRatio;
     let moodApplied = 0;
     const animate = (now: number) => {
@@ -1176,7 +1270,17 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (fpsElapsed >= 1000) {
         const measuredFps = Math.round((fpsFrames * 1000) / fpsElapsed);
         mount.dataset.fps = String(measuredFps);
-        lowFpsSamples = measuredFps < 54 ? lowFpsSamples + 1 : 0;
+        fpsSamples += 1;
+        // The first seconds compile shaders and upload textures; they say nothing about steady state.
+        lowFpsSamples = fpsSamples > 8 && measuredFps < 46 ? lowFpsSamples + 1 : 0;
+        // Four slow seconds in a row: give back resolution rather than frames, down to a floor.
+        if (lowFpsSamples >= 4 && adaptivePixelRatio > Math.min(1, initialPixelRatio) + 0.01) {
+          lowFpsSamples = 0;
+          adaptivePixelRatio = Math.max(Math.min(1, initialPixelRatio), adaptivePixelRatio * 0.82);
+          renderer.setPixelRatio(adaptivePixelRatio);
+          composer.setPixelRatio(adaptivePixelRatio);
+          onResize();
+        }
         fpsFrames = 0;
         fpsSampleStarted = now;
       }
@@ -1192,13 +1296,26 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         moving = moveDirection.lengthSq() > 0;
         if (moving) {
           moveDirection.normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+          const fromX = camera.position.x, fromZ = camera.position.z;
           camera.position.addScaledVector(moveDirection, (keys.has("ShiftLeft") ? 7.4 : 5.1) * dt);
           camera.position.x = THREE.MathUtils.clamp(camera.position.x, -8.6, 8.6);
-          camera.position.z = THREE.MathUtils.clamp(camera.position.z, -26, 8);
+          // The far limit stops short of the control desk, whose front edge is at z = -24.4.
+          camera.position.z = THREE.MathUtils.clamp(camera.position.z, -24.4 - BODY, 8);
+          keepOut(camera.position);
+          // Slide along props rather than stopping dead; a body already inside one may always leave.
+          if (solids && !solids.blocked(fromX, fromZ) && solids.blocked(camera.position.x, camera.position.z)) {
+            if (!solids.blocked(camera.position.x, fromZ)) camera.position.z = fromZ;
+            else if (!solids.blocked(fromX, camera.position.z)) camera.position.x = fromX;
+            else { camera.position.x = fromX; camera.position.z = fromZ; }
+          }
         }
       }
       const sprinting = moving && keys.has("ShiftLeft");
       const gait = now * (sprinting ? 0.0125 : 0.0092);
+      // A foot lands at each low point of the bob: that is when the ground is heard.
+      const stride = Math.floor(gait / Math.PI);
+      if (moving && stride !== lastStride) ambience.step(sprinting);
+      lastStride = stride;
       const bodyBob = moving ? Math.abs(Math.sin(gait)) * (sprinting ? 0.075 : 0.052) : Math.sin(now * 0.0015) * 0.007;
       const bodyRoll = moving ? Math.sin(gait * 0.5) * (sprinting ? 0.022 : 0.013) : Math.sin(now * 0.0012) * 0.0025;
       lookKickX = THREE.MathUtils.lerp(lookKickX, 0, Math.min(1, dt * 8));
@@ -1213,9 +1330,11 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
 
       // Wave mode restages the room: lamps fail, the sun turns blood red, alarms sweep.
       horde.update(now, dt, camera.position, yaw);
+      ambience.update(now, camera.position, yaw);
       const dreadful = horde.mood();
       if (dreadful > 0.002 || moodApplied > 0) {
         moodApplied = dreadful > 0.002 ? dreadful : 0;
+        ambience.setDread(moodApplied);
         const m = moodApplied, fog = scene.fog as THREE.FogExp2;
         fog.color.copy(calm.fog).lerp(dread.fog, m);
         fog.density = calm.fogDensity * (1 + m * 1.5);
@@ -1229,6 +1348,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         const flicker = Math.sin(now * 0.021) * Math.sin(now * 0.0047) > 0.72 ? 0.2 : 1;
         range.fills.forEach((light, index) => { light.intensity = calm.fills[index] * THREE.MathUtils.lerp(1, 0.2 * flicker, m); });
         bloomPass.strength = THREE.MathUtils.lerp(0.26, 0.42, m);
+        alarmLens.emissiveIntensity = THREE.MathUtils.lerp(0.3, 2.2 + 3.2 * (0.5 + 0.5 * Math.sin(now * 0.0075)), m);
       }
 
       // Weapon switch: lower the old weapon, swap, raise the new one.
@@ -1272,6 +1392,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
           }
         }
       }
+      if (slashLandsAt >= 0 && now >= slashLandsAt) { slashLandsAt = -1; if (spec.reach && switchingTo < 0) landSlash(now, spec); }
       if (autoReloadAt >= 0 && now >= autoReloadAt) startReload();
       const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || document.pointerLockElement === renderer.domElement);
       if (armed && takeShot(spec, modes[current], trigger, now)) {
@@ -1417,9 +1538,14 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         furnaceProximityRef.current(furnaceTargeted);
       }
 
+      // Reflections sample the HDR background; the view itself gets the 8K dome over a flat clear.
+      const dome = backdrop?.ready() && skyMap ? backdrop : null;
+      if (dome) { scene.background = skyMap; dome.mesh.visible = false; }
       range.reflection.render(scene, camera, range.mirrorHidden);
+      if (dome) { scene.background = flatBackground; dome.setIntensity(scene.backgroundIntensity); dome.mesh.visible = true; }
       renderer.clear();
       composer.render(dt);
+      if (dome) { scene.background = skyMap; dome.mesh.visible = false; }
     };
     if (import.meta.env.DEV) {
       // Dev-only camera hook for automated visual checks (pointer lock is unavailable headless).
@@ -1436,6 +1562,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         horde, toggleHorde,
         reload: () => startReload(),
         scene, viewModelScene, camera, renderer, range, composer,
+        blockedAt: (x: number, z: number) => solids?.blocked(x, z) ?? false,
+        hasSolids: () => solids !== null,
       };
     }
     const startRendering = () => {
@@ -1455,6 +1583,11 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       viewModelScene.environmentIntensity = 1.15;
       pmrem.dispose();
       renderer.shadowMap.needsUpdate = true;
+      solids = surveySolids(
+        renderer, scene, 0.3, [0, 7.2],
+        [...marketPositions.map((position): [number, number] => [position.x, position.z + 2.6]), [7.2, -11.6]],
+      );
+      if (!solids && import.meta.env.DEV) console.warn("Range floor plan rejected: a station or the furnace would be cut off. Props are not solid on this map.");
       frame = requestAnimationFrame(animate);
       readyRef.current();
     };
@@ -1493,7 +1626,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       furnaceProximityRef.current(false);
-      void audioContext?.close();
+      offVolume();
+      ambience.dispose();
+      sound.dispose();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
           object.geometry.dispose();
@@ -1514,6 +1649,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       environmentTextures.forEach((texture) => texture.dispose());
       roomProbe?.dispose();
       skyMap?.dispose();
+      backdrop?.dispose();
       range.dispose();
       ballistics.dispose();
       strikeFx.dispose();

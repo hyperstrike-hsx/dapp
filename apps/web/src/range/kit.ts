@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { applyWetFloor, createFloorReflection, type FloorPaint, type FloorReflection } from "./floor";
 import { brushedMetal, disposePbr, paintedSteel, pbrMaterial, steel, tile, timber, type PbrSet } from "./pbr";
 import type { Glow } from "./volumetric";
+import type { Cue } from "./cues";
 
 // Shared parts every range map is built from: the contract a map fulfils, the
 // geometry and texture helpers, the furnace, the sun and the floor.
@@ -62,6 +63,13 @@ export type RangeEnvironment = {
   /** Replaces the sky IBL with a probe of the lit map. */
   captureProbe: (pmrem: THREE.PMREMGenerator) => THREE.WebGLRenderTarget;
   update: (now: number) => void;
+  /** Something loud happened at `at` (a shot: loudness 1): birds take off, animals bolt. */
+  startle?: (at: THREE.Vector3, loudness: number) => void;
+  /**
+   * A bullet or blade struck one of this map's `shootable` objects. Return true when the map dealt
+   * with it itself (an animal that bursts into feathers), so no bullet hole is left in mid-air.
+   */
+  struck?: (object: THREE.Object3D, point: THREE.Vector3) => boolean;
   dispose: () => void;
 };
 
@@ -70,6 +78,13 @@ export type RangeOptions = {
   renderer: THREE.WebGLRenderer;
   quality: RangeQuality;
   loadingManager: THREE.LoadingManager;
+  /** Asks for one of the named sounds of range/cues.ts at a place in the world. Absent in tools and tests. */
+  cue?: Cue;
+  /**
+   * True where something solid stands on the floor (the plan of range/solids.ts). It answers false
+   * everywhere until the map has finished loading, so ask at walk time, not at build time.
+   */
+  blocked?: (x: number, z: number) => boolean;
 };
 
 /** Rewrites UVs by box projection so one texture tile always spans `metres`. */

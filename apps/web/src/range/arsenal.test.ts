@@ -12,12 +12,23 @@ function run(id: string, mode: Parameters<typeof takeShot>[1], from: number, to:
 }
 
 describe("arsenal", () => {
-  it("offers five weapons, each with its own fire modes", () => {
-    expect(ARSENAL.map((weapon) => weapon.id)).toEqual(["ak47", "m4", "famas", "uzi", "rifle"]);
+  it("offers five firearms and a knife, each with its own fire modes", () => {
+    expect(ARSENAL.map((weapon) => weapon.id)).toEqual(["ak47", "m4", "famas", "uzi", "rifle", "knife"]);
+    expect(spec("knife").modes).toEqual(["MELEE"]);
+    expect(spec("knife").reach).toBeGreaterThan(1);
     expect(spec("m4").modes).toEqual(["AUTO", "BURST", "SEMI"]);
     expect(spec("rifle").modes).toEqual(["BOLT"]);
     expect(nextMode(spec("m4"), "SEMI")).toBe("AUTO");
     expect(nextMode(spec("rifle"), "BOLT")).toBe("BOLT");
+  });
+
+  it("slashes once per swing for as long as the trigger is held", () => {
+    const trigger = createTrigger();
+    pressTrigger(trigger);
+    // 100 swings a minute: at 0, 600 and 1200 ms.
+    expect(run("knife", "MELEE", 0, 1500, trigger)).toBe(3);
+    releaseTrigger(trigger);
+    expect(run("knife", "MELEE", 1500, 3000, trigger)).toBe(0);
   });
 
   it("fires continuously in AUTO at the cyclic rate", () => {

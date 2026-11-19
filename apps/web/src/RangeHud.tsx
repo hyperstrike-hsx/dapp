@@ -15,7 +15,7 @@ export type WeaponHud = {
   scope: boolean;
 };
 
-const SLOTS = ["AK-47", "M4A1", "FAMAS", "UZI", "BOLT"];
+const SLOTS = ["AK-47", "M4A1", "FAMAS", "UZI", "BOLT", "KNIFE"];
 
 /** The last YES / NO target struck, with the contracts now staged on that market. */
 export type StrikeHud = { id: number; market: IndexMarket; side: VoteSide; streak: number; count: VoteCount };

@@ -25,16 +25,23 @@ Rifle furniture:
   [Lacquered Cherry Wood](https://polyhaven.com/a/lacquered_cherry_wood), CC0. The AO map is not used and not kept.
   Reproduce with `node scripts/fetch-range-materials.mjs lacquered_cherry_wood`.
 
-Range maps (Dust Court, Piazza, Nightline):
+Range maps (all 2K: diffuse, OpenGL normal and roughness; AO maps are not kept; all CC0 from Poly Haven):
 
-- `sandstone_cracks-2k/`: 2K diffuse, OpenGL normal and roughness from
-  [Sandstone Cracks](https://polyhaven.com/a/sandstone_cracks), CC0. The Dust Court ground.
-- `cobblestone_floor_04-2k/`: 2K diffuse, OpenGL normal and roughness from
-  [Cobblestone Floor 04](https://polyhaven.com/a/cobblestone_floor_04), CC0. The Piazza paving.
-- `painted_plaster_wall-1k/`: 1K diffuse, OpenGL normal and roughness from
-  [Painted Plaster Wall](https://polyhaven.com/a/painted_plaster_wall), CC0. Tinted per building in both towns.
-- `asphalt_02-1k/`: 1K diffuse, OpenGL normal and roughness from
-  [Asphalt 02](https://polyhaven.com/a/asphalt_02), CC0. The Nightline roof deck.
+| Folder | Source | Used for |
+| --- | --- | --- |
+| `sandstone_cracks-2k/` | [Sandstone Cracks](https://polyhaven.com/a/sandstone_cracks) | Dust Court ground |
+| `cobblestone_floor_04-2k/` | [Cobblestone Floor 04](https://polyhaven.com/a/cobblestone_floor_04) | Piazza paving |
+| `painted_plaster_wall-2k/` | [Painted Plaster Wall](https://polyhaven.com/a/painted_plaster_wall) | Plaster, tinted per building |
+| `asphalt_02-2k/` | [Asphalt 02](https://polyhaven.com/a/asphalt_02) | Roof decks, quays, aprons |
+| `snow_02-2k/` | [Snow 02](https://polyhaven.com/a/snow_02) | Whiteout ground and drifts |
+| `corrugated_iron_02-2k/` | [Corrugated Iron 02](https://polyhaven.com/a/corrugated_iron_02) | Roof decks, sheds, containers |
+| `metal_plate-2k/` | [Metal Plate](https://polyhaven.com/a/metal_plate) | Floor plates, machinery |
+| `rusty_metal_02-2k/` | [Rusty Metal 02](https://polyhaven.com/a/rusty_metal_02) | Weathered steel |
+| `green_metal_rust-2k/` | [Green Metal Rust](https://polyhaven.com/a/green_metal_rust) | Painted steel with wear |
+| `tiled_floor_001-2k/` | [Tiled Floor 001](https://polyhaven.com/a/tiled_floor_001) | Station and market tiling |
+| `weathered_brown_planks-2k/` | [Weathered Brown Planks](https://polyhaven.com/a/weathered_brown_planks) | Timber, crates, stalls |
+| `fabric_pattern_07-2k/` | [Fabric Pattern 07](https://polyhaven.com/a/fabric_pattern_07) (colour variant 1) | Cloth, awnings, rugs |
+| `concrete_wall_007-2k/` | [Concrete Wall 007](https://polyhaven.com/a/concrete_wall_007) | Cast concrete walls |
 
-AO maps are not kept for these sets. Reproduce all four, and the map skies, with
-`node scripts/fetch-range-maps.mjs` (MD5-verified, about 37 MB in total).
+Reproduce all of them, and the map skies, with `node scripts/fetch-range-maps.mjs`
+(MD5-verified against the Poly Haven API; files already present are skipped).

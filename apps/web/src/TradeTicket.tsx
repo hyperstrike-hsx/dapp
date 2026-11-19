@@ -21,6 +21,7 @@ export function TradeTicket({
   tape,
   positions,
   onClose,
+  onDismiss = onClose,
   onTrade,
   initialSide,
   initialAction = "BUY",
@@ -30,6 +31,8 @@ export function TradeTicket({
   tape: Tape;
   positions: Position[];
   onClose: () => void;
+  /** Closed by a click (outside the ticket, or ×) rather than Escape. Defaults to `onClose`. */
+  onDismiss?: () => void;
   onTrade: (m: IndexMarket, s: VoteSide, a: "BUY" | "SELL", v: bigint) => void;
   initialSide?: VoteSide;
   initialAction?: "BUY" | "SELL";
@@ -52,6 +55,9 @@ export function TradeTicket({
     [reviewAt, setReviewAt] = useState(0),
     [error, setError] = useState("");
   const dialog = useRef<HTMLElement>(null);
+  // Only a press that began on the surround dismisses: a drag that starts in the ticket (selecting
+  // the amount) and ends outside it must not.
+  const pressedOutside = useRef(false);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
@@ -151,7 +157,13 @@ export function TradeTicket({
     setReviewAt(0);
   };
   return (
-    <div className="ticket-backdrop" onClick={onClose}>
+    <div
+      className="ticket-backdrop"
+      onPointerDown={(e) => { pressedOutside.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressedOutside.current) onDismiss();
+      }}
+    >
       <aside
         ref={dialog}
         tabIndex={-1}
@@ -164,7 +176,7 @@ export function TradeTicket({
         <header className="ticket-head">
           <button
             className="ticket-close"
-            onClick={onClose}
+            onClick={onDismiss}
             aria-label="Close trade ticket"
           >
             ×
