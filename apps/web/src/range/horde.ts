@@ -39,7 +39,11 @@ export type Obstacle = { x: number; z: number; r: number };
 export type HordeOptions = {
   scene: THREE.Scene;
   obstacles: Obstacle[];
+  /** True where one of the map's own props stands (the floor plan of range/solids.ts, once it exists). */
+  solid?: (x: number, z: number) => boolean;
   audio: () => AudioContext;
+  /** Where sounds connect (a mix bus with room reverb); the context's output if absent. */
+  bus?: () => AudioNode;
   onHud: (hud: HordeHud) => void;
   onHurt: (amount: number) => void;
 };
@@ -99,6 +103,11 @@ type Zombie = {
   /** The obstacle being walked around (-1 for none) and the side chosen to pass it on. */
   skirting: number;
   detour: number;
+  /** Seconds spent pressed against one of the map's props; long enough and it shoulders through. */
+  held: number;
+  /** The sidestep being held to get round a prop: its axis (0 none, 1 x, 2 z) and direction. */
+  sideAxis: number;
+  sidestep: number;
 };
 
 /** Seconds an attack lasts, and when in it the blow lands. */
@@ -117,6 +126,7 @@ function softDisc(inner: string, outer: string) {
 
 export function createHorde(options: HordeOptions): Horde {
   const { scene, obstacles } = options;
+  const solid = options.solid ?? (() => false);
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
@@ -181,7 +191,7 @@ export function createHorde(options: HordeOptions): Horde {
     group.add(root);
     return {
       root, model, head, chest: model.bone("bip Spine1"), forearms: [model.bone("bip L Forearm"), model.bone("bip R Forearm")], eyes, proxies, actions: {}, playing: null, gait: "walk", blob,
-      kind: "walker", state: "free", health: 0, speed: 0, damage: 0, scale: 1, timer: 0, stagger: 0, facing: 0, fall: 1, struck: false, groanAt: 0, quirk: Math.random(), headless: false, armGone: [false, false], skirting: -1, detour: 0,
+      kind: "walker", state: "free", health: 0, speed: 0, damage: 0, scale: 1, timer: 0, stagger: 0, facing: 0, fall: 1, struck: false, groanAt: 0, quirk: Math.random(), headless: false, armGone: [false, false], skirting: -1, detour: 0, held: 0, sideAxis: 0, sidestep: 0,
     };
   };
   const loadModels = () => {
@@ -320,7 +330,7 @@ export function createHorde(options: HordeOptions): Horde {
       volume.gain.value = level;
       const panner = context.createStereoPanner();
       panner.pan.value = pan;
-      volume.connect(panner).connect(context.destination);
+      volume.connect(panner).connect(options.bus?.() ?? context.destination);
       build(context, volume, context.currentTime);
     } catch { /* audio is optional */ }
   };
@@ -349,15 +359,87 @@ export function createHorde(options: HordeOptions): Horde {
     oscillator.start(time);
     oscillator.stop(time + length + 0.02);
   };
+  // Vowels as three formant frequencies, pitched down a little: these throats are slack.
+  const VOWELS = { ah: [700, 1050, 2350], uh: [580, 980, 2300], oh: [470, 760, 2300], oo: [310, 800, 2150], eh: [520, 1720, 2400], rr: [430, 1150, 1550] } as const;
+  const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
+  let breathNoise: AudioBuffer | null = null;
+  /**
+   * A voice: a rough buzz and breath (the throat) pushed through three moving resonances
+   * (the mouth). `rasp` chops the buzz at `raspHz`, which is what makes it a growl.
+   */
+  const vocal = (c: AudioContext, out: AudioNode, t: number, v: { length: number; pitch: [number, number, number]; from: readonly number[]; to: readonly number[]; rasp: number; raspHz: number; breath: number; attack: number }) => {
+    const end = t + v.length;
+    const throat = c.createGain();
+    throat.gain.value = 1 - v.rasp / 2;
+    const chop = c.createOscillator(), chopDepth = c.createGain();
+    chop.type = "sawtooth"; chop.frequency.setValueAtTime(v.raspHz, t); chop.frequency.linearRampToValueAtTime(v.raspHz * 0.7, end);
+    chopDepth.gain.value = v.rasp / 2;
+    chop.connect(chopDepth).connect(throat.gain);
+    // Unsteady pitch: a slow wobble plus a faster flutter.
+    const wobble = c.createOscillator(), wobbleDepth = c.createGain(), flutter = c.createOscillator(), flutterDepth = c.createGain();
+    wobble.frequency.value = 4 + Math.random() * 3; wobbleDepth.gain.value = v.pitch[0] * 0.035;
+    flutter.frequency.value = 19 + Math.random() * 9; flutterDepth.gain.value = v.pitch[0] * 0.02;
+    wobble.connect(wobbleDepth); flutter.connect(flutterDepth);
+    const cords = [["sawtooth", 1, 0.8], ["square", 0.5, 0.35]] as const;
+    const oscillators: OscillatorNode[] = [chop, wobble, flutter];
+    for (const [type, ratio, gain] of cords) {
+      const oscillator = c.createOscillator(), level = c.createGain();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(v.pitch[0] * ratio, t);
+      oscillator.frequency.linearRampToValueAtTime(v.pitch[1] * ratio, t + v.length * 0.35);
+      oscillator.frequency.linearRampToValueAtTime(v.pitch[2] * ratio, end);
+      wobbleDepth.connect(oscillator.frequency); flutterDepth.connect(oscillator.frequency);
+      level.gain.value = gain;
+      oscillator.connect(level).connect(throat);
+      oscillators.push(oscillator);
+    }
+    if (!breathNoise || breathNoise.sampleRate !== c.sampleRate) {
+      breathNoise = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      const data = breathNoise.getChannelData(0);
+      for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+    }
+    const breath = c.createBufferSource(), breathLevel = c.createGain();
+    breath.buffer = breathNoise; breath.loop = true;
+    breathLevel.gain.value = v.breath;
+    breath.connect(breathLevel).connect(throat);
+    const envelope = c.createGain();
+    envelope.gain.setValueAtTime(0.0001, t);
+    envelope.gain.exponentialRampToValueAtTime(1, t + v.attack);
+    envelope.gain.setValueAtTime(1, t + v.length * 0.55);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, end);
+    envelope.connect(out);
+    [1, 0.55, 0.22].forEach((gain, index) => {
+      const formant = c.createBiquadFilter(), level = c.createGain();
+      formant.type = "bandpass"; formant.Q.value = 5 + index * 2.5;
+      formant.frequency.setValueAtTime(v.from[index], t);
+      formant.frequency.linearRampToValueAtTime(v.to[index], t + v.length * 0.7);
+      level.gain.value = gain * 2.2;
+      throat.connect(formant).connect(level).connect(envelope);
+    });
+    oscillators.forEach((oscillator) => { oscillator.start(t); oscillator.stop(end + 0.05); });
+    breath.start(t, Math.random() * 0.5); breath.stop(end + 0.05);
+  };
   const sounds = {
-    groan: (at: THREE.Vector3, pitch: number) => voice(at, (c, out, t) => {
-      const filter = c.createBiquadFilter();
-      filter.type = "bandpass"; filter.frequency.value = 420 * pitch; filter.Q.value = 2.2;
-      filter.connect(out);
-      const length = 0.7 + Math.random() * 0.6;
-      tone(c, filter, t, "sawtooth", (95 + Math.random() * 30) * pitch, (62 + Math.random() * 20) * pitch, length, 0.9);
-      tone(c, filter, t + 0.05, "sawtooth", 143 * pitch, 88 * pitch, length * 0.8, 0.4);
-    }, 0.5),
+    /** A long, hollow moan from a wandering zombie: the vowel drifts as the jaw hangs. */
+    moan: (at: THREE.Vector3, pitch: number) => voice(at, (c, out, t) => {
+      const from = pick(["oo", "oh", "uh"] as const), to = pick(["ah", "uh", "oh"] as const), base = (88 + Math.random() * 22) * pitch;
+      vocal(c, out, t, { length: 1.5 + Math.random() * 1.3, pitch: [base * 0.9, base * (1.08 + Math.random() * 0.1), base * 0.72], from: VOWELS[from], to: VOWELS[to], rasp: 0.3 + Math.random() * 0.2, raspHz: 27 + Math.random() * 8, breath: 0.16, attack: 0.28 });
+    }, 0.62),
+    /** A short throaty growl: mostly vocal fry. */
+    growl: (at: THREE.Vector3, pitch: number) => voice(at, (c, out, t) => {
+      const base = (66 + Math.random() * 14) * pitch;
+      vocal(c, out, t, { length: 0.7 + Math.random() * 0.5, pitch: [base, base * 1.12, base * 0.8], from: VOWELS.rr, to: VOWELS.oh, rasp: 0.85, raspHz: 30 + Math.random() * 10, breath: 0.28, attack: 0.1 });
+    }, 0.7),
+    /** The lunge: a sharp open-mouthed snarl. */
+    snarl: (at: THREE.Vector3, pitch: number) => voice(at, (c, out, t) => {
+      const base = (130 + Math.random() * 30) * pitch;
+      vocal(c, out, t, { length: 0.38 + Math.random() * 0.16, pitch: [base, base * 1.5, base * 0.85], from: VOWELS.eh, to: VOWELS.ah, rasp: 0.7, raspHz: 42 + Math.random() * 10, breath: 0.5, attack: 0.03 });
+    }, 0.85),
+    /** Going down: a falling groan that breaks up into a wet rattle. */
+    death: (at: THREE.Vector3, pitch: number) => voice(at, (c, out, t) => {
+      const base = (135 + Math.random() * 25) * pitch;
+      vocal(c, out, t, { length: 1.0 + Math.random() * 0.5, pitch: [base, base * 0.8, base * 0.42], from: VOWELS.ah, to: VOWELS.oo, rasp: 0.95, raspHz: 13 + Math.random() * 5, breath: 0.4, attack: 0.03 });
+    }, 0.75),
     thud: (at: THREE.Vector3) => voice(at, (c, out, t) => { noise(c, out, t, 520, 0.09, 1); tone(c, out, t, "sine", 150, 60, 0.09, 0.5); }, 0.5),
     pop: (at: THREE.Vector3) => voice(at, (c, out, t) => { noise(c, out, t, 1400, 0.14, 1, "bandpass"); noise(c, out, t, 300, 0.2, 1); tone(c, out, t, "sine", 210, 50, 0.16, 0.8); }, 0.7),
     marker: (headshot: boolean) => voice(null, (c, out, t) => { tone(c, out, t, "square", headshot ? 2300 : 1500, headshot ? 1800 : 1300, 0.045, 0.5); }, 0.12),
@@ -378,7 +460,7 @@ export function createHorde(options: HordeOptions): Horde {
       const filter = context.createBiquadFilter();
       filter.type = "lowpass"; filter.frequency.value = 170;
       const oscillators = [41.2, 41.9, 61.7].map((frequency) => { const o = context.createOscillator(); o.type = "sawtooth"; o.frequency.value = frequency; o.connect(filter); o.start(); return o; });
-      filter.connect(volume).connect(context.destination);
+      filter.connect(volume).connect(options.bus?.() ?? context.destination);
       drone = { stop() { volume.gain.cancelScheduledValues(context.currentTime); volume.gain.setTargetAtTime(0, context.currentTime, 0.3); oscillators.forEach((o) => o.stop(context.currentTime + 1.5)); } };
     } catch { drone = null; }
   };
@@ -432,7 +514,7 @@ export function createHorde(options: HordeOptions): Horde {
       x = (Math.random() * 2 - 1) * BOUNDS.x;
       zz = BOUNDS.zMin + Math.random() * (BOUNDS.zMax - BOUNDS.zMin);
       const distance = Math.hypot(x - player.x, zz - player.z);
-      found = distance > 7 && distance < 22 && obstacles.every((o) => Math.hypot(x - o.x, zz - o.z) > o.r + 0.7)
+      found = distance > 7 && distance < 22 && !solid(x, zz) && obstacles.every((o) => Math.hypot(x - o.x, zz - o.z) > o.r + 0.7)
         && zombies.every((other) => other.state === "free" || Math.hypot(x - other.root.position.x, zz - other.root.position.z) > 1.4);
     }
     if (!found) return false;
@@ -447,7 +529,7 @@ export function createHorde(options: HordeOptions): Horde {
     z.root.rotation.set(0, z.facing, 0);
     z.proxies.forEach((proxy) => { proxy.live = true; });
     z.armGone = [false, false];
-    z.skirting = -1; z.detour = 0;
+    z.skirting = -1; z.detour = 0; z.held = 0; z.sideAxis = 0; z.sidestep = 0;
     z.head.scale.setScalar(1);
     z.forearms.forEach((bone) => bone.scale.setScalar(1));
     z.eyes.material = eyeMaterials[kind];
@@ -461,13 +543,15 @@ export function createHorde(options: HordeOptions): Horde {
     riftCursor = (riftCursor + 1) % rifts.length;
     rift.mesh.position.set(x, 0.02, zz); rift.life = 1.6; rift.mesh.visible = true;
     spray(tmp.set(x, 0.05, zz), tmp2.set(0, 1.4, 0), 26, 2.2, DUST, 1.6);
-    sounds.groan(z.root.position, kind === "brute" ? 0.62 : kind === "runner" ? 1.35 : 1);
+    sounds.growl(z.root.position, kind === "brute" ? 0.7 : kind === "runner" ? 1.3 : 1);
     refreshTargets();
     return true;
   };
 
   const kill = (z: Zombie, headshot: boolean, direction: THREE.Vector3, now: number) => {
     z.state = "dying"; z.timer = 0;
+    // A head that is gone makes no sound.
+    if (!headshot) sounds.death(z.root.position, z.kind === "brute" ? 0.62 : z.kind === "runner" ? 1.25 : 0.9 + z.quirk * 0.25);
     // Fall away from the shot.
     const forward = tmp2.set(Math.sin(z.facing), 0, Math.cos(z.facing));
     z.fall = forward.dot(direction) > 0 ? 1 : -1;
@@ -605,7 +689,7 @@ export function createHorde(options: HordeOptions): Horde {
       } else if (distance < reach && !over) {
         z.state = "attacking"; z.timer = 0; z.struck = false;
         play(z, Math.random() < 0.5 ? "attackLeft" : "attackRight", 0.12, true);
-        sounds.groan(position, z.kind === "brute" ? 0.7 : 1.5);
+        sounds.snarl(position, z.kind === "brute" ? 0.62 : z.kind === "runner" ? 1.25 : 0.95 + z.quirk * 0.2);
       } else {
         // Steer for the player, around the stations and each other.
         let sx = dx / distance, sz = dz / distance;
@@ -640,12 +724,43 @@ export function createHorde(options: HordeOptions): Horde {
         }
         const length = Math.hypot(sx, sz) || 1;
         const pace = z.speed * (over ? 0.3 : 1) * (1 - z.stagger * 0.75);
+        const fromX = position.x, fromZ = position.z;
         position.x = THREE.MathUtils.clamp(position.x + (sx / length) * pace * dt, -BOUNDS.x - 0.4, BOUNDS.x + 0.4);
         position.z = THREE.MathUtils.clamp(position.z + (sz / length) * pace * dt, BOUNDS.zMin - 2, BOUNDS.zMax + 1);
         // Steering is a suggestion; this is the wall. Nothing ends a frame inside an obstacle.
         for (const o of obstacles) {
           const ox = position.x - o.x, oz = position.z - o.z, od = Math.hypot(ox, oz);
           if (od < o.r) { const out = od > 0.001 ? o.r / od : 1; position.x = o.x + (od > 0.001 ? ox * out : o.r); position.z = o.z + oz * out; }
+        }
+        // The map's crates, carts and stalls. There is no route finding here, so a blocked zombie
+        // first keeps whatever part of its heading is still open (which slides it along a stall front),
+        // and otherwise sidesteps across its heading, towards the middle of the range where the lanes
+        // are clear, holding that side until it is round. One that stays pinned for a second shoulders
+        // through rather than standing behind a barrel all wave.
+        if (z.held < 1 && !solid(fromX, fromZ) && solid(position.x, position.z)) {
+          const step = pace * dt, wantX = Math.sign(sx), wantZ = Math.sign(sz);
+          const openX = (dir: number) => dir !== 0 && !solid(fromX + dir * step, fromZ);
+          const openZ = (dir: number) => dir !== 0 && !solid(fromX, fromZ + dir * step);
+          // Never let the heading undo a sidestep in progress: that is how one ends up pacing a crate.
+          const keepX = Math.abs(sx) > 0.35 * length && !(z.sideAxis === 1 && wantX !== z.sidestep) && openX(wantX);
+          const keepZ = Math.abs(sz) > 0.35 * length && !(z.sideAxis === 2 && wantZ !== z.sidestep) && openZ(wantZ);
+          let moveX = 0, moveZ = 0, patience = 1;
+          if (keepZ && (!keepX || Math.abs(sz) >= Math.abs(sx))) { moveZ = wantZ; patience = 0.2; }
+          else if (keepX) { moveX = wantX; patience = 0.2; }
+          else {
+            if (z.sideAxis === 0) {
+              if (Math.abs(sz) >= Math.abs(sx)) { z.sideAxis = 1; z.sidestep = Math.abs(fromX) > 1 ? -Math.sign(fromX) : z.quirk > 0.5 ? 1 : -1; }
+              else { z.sideAxis = 2; z.sidestep = Math.abs(dz) > 0.5 ? Math.sign(dz) : z.quirk > 0.5 ? 1 : -1; }
+            }
+            if (z.sideAxis === 1 && openX(z.sidestep)) moveX = z.sidestep;
+            else if (z.sideAxis === 2 && openZ(z.sidestep)) moveZ = z.sidestep;
+          }
+          position.x = fromX + moveX * step;
+          position.z = fromZ + moveZ * step;
+          z.held += dt * patience;
+        } else if (!solid(position.x, position.z)) {
+          z.held = Math.max(0, z.held - dt * 0.5);
+          if (z.held === 0) z.sideAxis = 0;
         }
         let turn = Math.atan2(sx, sz) - z.facing;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
@@ -659,7 +774,9 @@ export function createHorde(options: HordeOptions): Horde {
       placeProxies(z);
       if (now > z.groanAt) {
         z.groanAt = now + 2600 + Math.random() * 5200;
-        sounds.groan(position, z.kind === "brute" ? 0.6 : z.kind === "runner" ? 1.3 : 0.9 + z.quirk * 0.3);
+        const voicePitch = z.kind === "brute" ? 0.62 : z.kind === "runner" ? 1.3 : 0.85 + z.quirk * 0.35;
+        if (Math.random() < (z.kind === "runner" ? 0.6 : 0.3)) sounds.growl(position, voicePitch);
+        else sounds.moan(position, voicePitch);
       }
     }
     return alive;
@@ -708,7 +825,8 @@ export function createHorde(options: HordeOptions): Horde {
       const z = zombies[object.userData.zombie as number];
       if (!z || (z.state !== "rising" && z.state !== "chasing" && z.state !== "attacking")) return false;
       const zone = object.userData.zone as string;
-      const head = zone === "head";
+      // A weapon with no headshot multiplier (the knife) cuts the head like any other part.
+      const head = zone === "head" && headshot > 0;
       hud.hitId += 1; hud.headshot = head;
       sounds.marker(head);
       let dealt = amount * (boostTimer > 0 ? 2 : 1);

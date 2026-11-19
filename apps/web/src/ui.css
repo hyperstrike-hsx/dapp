@@ -1414,73 +1414,468 @@ html {
   }
 }
 
-/* Range map picker: shown with the deploy card whenever the pointer is free. */
-.range-maps {
+/* ---- Range briefing: the sheet over the scene whenever the pointer is free ---
+   One screen for "deploy" and "paused". The scene behind is blurred and darkened so the text
+   reads on any map (a sunlit square and a night rooftop need the same contrast), more strongly
+   once a session is under way and the visitor is reading rather than looking. */
+.range-lobby {
   position: absolute;
-  z-index: 16;
-  left: 14px;
-  right: 14px;
-  bottom: 152px;
-  display: flex;
-  justify-content: safe center;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.range-maps::-webkit-scrollbar {
-  display: none;
-}
-.range-maps button {
-  flex: 0 0 auto;
+  z-index: 19;
+  inset: var(--hh) 0 0;
   display: grid;
-  gap: 3px;
-  min-width: 158px;
-  padding: 10px 13px 11px;
-  border: 1px solid #a7edda33;
-  background: #091719e0;
+  overflow-y: auto;
+  padding: 20px 28px 22px;
+  background:
+    radial-gradient(120% 90% at 50% 40%, #06121488 0%, #050d0fd9 100%);
+  backdrop-filter: blur(10px) saturate(0.85);
+  -webkit-backdrop-filter: blur(10px) saturate(0.85);
+  animation: lobby-in 0.28s var(--ease) both;
+}
+.range-lobby.paused {
+  background:
+    radial-gradient(120% 90% at 50% 40%, #061214b8 0%, #040b0dea 100%);
+  backdrop-filter: blur(18px) saturate(0.7);
+  -webkit-backdrop-filter: blur(18px) saturate(0.7);
+}
+@keyframes lobby-in {
+  from {
+    opacity: 0;
+  }
+}
+.lobby-shell {
+  width: min(1120px, 100%);
+  margin: auto;
+  display: grid;
+  gap: 12px;
+}
+.lobby-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.lobby-top > strong {
+  margin-right: auto;
+  padding-left: 10px;
+  border-left: 2px solid var(--orange);
+  font: 700 11px/1.6 var(--mono);
+  letter-spacing: 0.18em;
+  color: var(--paper);
+}
+.range-lobby .range-performance {
+  position: static;
+  padding: 0 0 0 12px;
+  background: none;
+}
+.range-lobby .range-performance button {
+  padding: 9px 10px;
+  border-color: #a7edda4d;
+  cursor: pointer;
+}
+.lobby-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  border: 1px solid #a7edda3d;
+  background: #081517e6;
+  box-shadow: 0 30px 90px #0009;
+}
+.lobby-shot {
+  position: relative;
+  margin: 0;
+  min-height: 230px;
+  background: #0b1c1e;
+  overflow: hidden;
+}
+.lobby-shot img,
+.lobby-shot-blank {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: lobby-in 0.35s var(--ease) both;
+}
+.lobby-shot-blank,
+.lobby-thumb i {
+  display: grid;
+  place-items: center;
+  font: 800 64px/1 "Barlow Condensed", sans-serif;
+  font-style: normal;
+  color: #a7edda2e;
+  background: repeating-linear-gradient(135deg, #0d2224 0 14px, #0a1b1d 14px 28px);
+}
+.lobby-shot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 70%, #081517 100%), linear-gradient(0deg, #08151799 0%, transparent 30%);
+  pointer-events: none;
+}
+.lobby-shot figcaption {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  bottom: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font: 700 10px/1 var(--mono);
+  letter-spacing: 0.14em;
+}
+.lobby-shot figcaption span {
+  padding: 6px 8px;
+  background: #091719e6;
+  border-left: 2px solid var(--orange);
+  color: var(--paper);
+}
+.lobby-shot figcaption em {
+  padding: 6px 8px;
+  font-style: normal;
+  color: #c9d8d4;
+  background: #091719b8;
+}
+.lobby-shot figcaption em.on,
+.lobby-thumb b {
+  color: #06201c;
+  background: var(--mint);
+}
+.lobby-about {
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  padding: 20px 26px 18px 24px;
+}
+.lobby-eyebrow {
+  font: 11px var(--mono);
+  letter-spacing: 0.08em;
+  color: var(--orange);
+}
+.lobby-about h2 {
+  margin: 0;
+  font: 800 42px/0.95 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.02em;
+  color: var(--paper);
+}
+.lobby-line {
+  margin: -4px 0 0;
+  font: 600 13px/1.3 Barlow, sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+.lobby-text {
+  margin: 0;
+  max-width: 54ch;
+  font: 400 14px/1.5 Barlow, sans-serif;
+  color: #cfdcd6;
+}
+.lobby-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 2px 0 4px;
+  background: #a7edda24;
+  border: 1px solid #a7edda24;
+}
+.lobby-facts div {
+  padding: 7px 10px 8px;
+  background: #0a1a1c;
+}
+.lobby-facts dt {
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.16em;
+  color: #7f9f99;
+}
+.lobby-facts dd {
+  margin: 5px 0 0;
+  font: 500 13px/1.25 Barlow, sans-serif;
+  color: var(--paper);
+}
+.range-lobby .range-enter,
+.range-load {
+  position: static;
+  transform: none;
+  display: block;
+  width: 100%;
+  padding: 15px 20px;
+  border: 1px solid var(--mint);
+  background: var(--mint);
+  color: #06201c;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  backdrop-filter: none;
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
+}
+.range-lobby .range-enter strong,
+.range-load strong {
+  font: 800 26px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.03em;
+}
+.range-lobby .range-enter:hover,
+.range-load:hover {
+  background: #c4fff0;
+  box-shadow: 0 0 0 5px #a7edda26;
+}
+.range-load {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #241304;
+}
+.range-load:hover {
+  background: #ffc081;
+  box-shadow: 0 0 0 5px #eea45d2e;
+}
+.lobby-switch {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+.lobby-back {
+  padding: 0 16px;
+  border: 1px solid #a7edda4d;
+  background: transparent;
+  color: var(--paper);
+  font: 600 12px Barlow, sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.lobby-back:hover {
+  border-color: var(--mint);
+}
+.lobby-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0;
+  min-height: 22px;
+  align-items: center;
+  font: 500 11px/1.3 Barlow, sans-serif;
+  color: var(--muted);
+}
+.lobby-hint span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.lobby-hint kbd {
+  padding: 3px 5px;
+  border: 1px solid #a7edda40;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.06em;
+  color: var(--paper);
+  background: #0c1f21;
+}
+.lobby-maps-head {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  margin-top: 4px;
+}
+.lobby-maps-head strong {
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.16em;
+  color: var(--paper);
+}
+.lobby-maps-head span {
+  font: 500 12px/1.3 Barlow, sans-serif;
+  color: #9db4b0;
+}
+.lobby-maps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.lobby-maps button {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding: 0;
+  border: 1px solid #a7edda2e;
+  background: #081517eb;
   color: var(--paper);
   text-align: left;
   cursor: pointer;
-  backdrop-filter: blur(10px);
+  overflow: hidden;
   transition:
     border-color 0.2s,
-    background 0.2s;
+    transform 0.2s var(--ease);
 }
-.range-maps button:hover {
+.lobby-maps button:hover {
   border-color: #a7edda99;
-  background: #0d2224f0;
 }
-.range-maps button.active {
+.lobby-maps button:hover .lobby-thumb img {
+  transform: scale(1.05);
+}
+.lobby-maps button.shown {
   border-color: var(--mint);
-  background: #12302ff2;
-  box-shadow: inset 0 -2px 0 var(--mint);
+  box-shadow:
+    0 0 0 1px var(--mint),
+    0 10px 30px #0008;
 }
-.range-maps span {
-  font: 700 10px/1 var(--mono);
+.lobby-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 6.6;
+  background: #0b1c1e;
+  overflow: hidden;
+}
+.lobby-thumb img,
+.lobby-thumb i {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s var(--ease);
+}
+.lobby-thumb i {
+  font-size: 34px;
+}
+.lobby-maps button:not(.shown) .lobby-thumb img {
+  filter: saturate(0.8) brightness(0.86);
+}
+.lobby-thumb b {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 4px 6px;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.12em;
+}
+.lobby-card-text {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px 10px;
+}
+.lobby-card-text small {
+  font: 700 9px/1 var(--mono);
   letter-spacing: 0.14em;
   color: #8fb3ad;
 }
-.range-maps button.active span {
+.lobby-maps button.shown .lobby-card-text small {
   color: var(--mint);
 }
-.range-maps strong {
+.lobby-card-text strong {
   font: 700 19px/1 "Barlow Condensed", sans-serif;
   letter-spacing: 0.05em;
 }
-.range-maps small {
+.lobby-card-text em {
   font: 500 11px/1.25 Barlow, sans-serif;
+  font-style: normal;
   color: #9db4b0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.range-lobby .range-utilities {
+  position: static;
+  transform: none;
+  width: auto;
+  gap: 8px;
+}
+.range-lobby .range-utilities button {
+  flex: none;
+  padding: 9px 12px;
+  background: transparent;
+  border-color: #a7edda4d;
+  font-size: 11px;
+}
+.range-lobby .range-utilities button:hover {
+  border-color: var(--mint);
+}
+/* Short windows: the ten ranges become one strip that scrolls sideways, so the briefing never
+   needs vertical scrolling on a laptop. */
+@media (max-height: 910px) and (min-width: 901px) {
+  .lobby-shell {
+    gap: 10px;
+  }
+  .lobby-shot {
+    min-height: 200px;
+  }
+  .lobby-about {
+    gap: 7px;
+    padding: 16px 24px 14px 22px;
+  }
+  .lobby-about h2 {
+    font-size: 36px;
+  }
+  .lobby-text {
+    font-size: 13px;
+  }
+  .lobby-maps {
+    mask-image: linear-gradient(90deg, #000 calc(100% - 70px), #0006);
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(168px, 1fr);
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    scrollbar-color: #a7edda55 transparent;
+    padding-bottom: 6px;
+  }
+  .lobby-maps button {
+    scroll-snap-align: start;
+  }
 }
 @media (max-width: 900px) {
-  .range-maps {
-    bottom: 150px;
+  .range-lobby {
+    padding: 14px 14px 96px;
   }
-  .range-maps button {
-    min-width: 150px;
+  .lobby-top {
+    flex-wrap: wrap;
+  }
+  .lobby-top > strong {
+    flex: 1 0 40%;
+  }
+  .range-lobby .range-utilities {
+    order: 3;
+    width: 100%;
+  }
+  .range-lobby .range-utilities button {
+    flex: 1;
+  }
+  .lobby-brief {
+    grid-template-columns: 1fr;
+  }
+  .lobby-shot {
+    min-height: 0;
+    aspect-ratio: 16 / 8;
+  }
+  .lobby-shot::after {
+    background: linear-gradient(0deg, #081517 0%, transparent 45%);
+  }
+  .lobby-about {
+    padding: 16px 16px 16px;
+  }
+  .lobby-about h2 {
+    font-size: 36px;
+  }
+  .lobby-maps-head {
+    display: grid;
+    gap: 6px;
+  }
+  .lobby-maps {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 46%;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    margin-right: -14px;
+    padding-right: 14px;
+  }
+  .lobby-maps::-webkit-scrollbar {
+    display: none;
+  }
+  .lobby-maps button {
+    scroll-snap-align: start;
   }
 }
-@media (max-height: 760px) {
-  .in-range .range-enter {
-    top: calc(var(--hh) + 26%);
+@media (prefers-reduced-motion: reduce) {
+  .range-lobby,
+  .lobby-shot img {
+    animation: none;
   }
 }
