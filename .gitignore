@@ -65,3 +65,7 @@ pnpm-debug.log*
 *.sqlite-wal
 .env.native
 infra/deployments/native-*.json
+
+# ─── Office documents in the served folder (never publish) ───────────────────
+apps/web/public/**/*.xls
+apps/web/public/**/*.xlsx
