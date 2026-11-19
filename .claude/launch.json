@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@hyperstrike/web", "exec", "vite", "--port", "1337", "--strictPort"],
+      "port": 1337
+    }
+  ]
+}
