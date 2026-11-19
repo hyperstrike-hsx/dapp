@@ -5,10 +5,20 @@
 The other range maps each have their own sky, 2K HDRIs from [Poly Haven](https://polyhaven.com/license) (CC0),
 fetched and MD5-verified by `node scripts/fetch-range-maps.mjs`:
 
-- `goegap-2k.hdr`: [Goegap](https://polyhaven.com/a/goegap), the Dust Court sky.
+- `goegap-2k.hdr`: [Goegap](https://polyhaven.com/a/goegap), the Dust Court, Airframe and Bazaar sky.
 - `tears_of_steel_bridge-2k.hdr`: [Tears of Steel Bridge](https://polyhaven.com/a/tears_of_steel_bridge), the Piazza sky.
-- `rooftop_night-2k.hdr`: [Rooftop Night](https://polyhaven.com/a/rooftop_night), the Nightline sky.
+- `rooftop_night-2k.hdr`: [Rooftop Night](https://polyhaven.com/a/rooftop_night), the Nightline and Quayside sky.
+
+On HIGH quality the sky the player sees is not the 2K HDR, which reads soft on a high-density display, but an
+8K tonemapped JPG of the same panorama drawn on a dome (`src/range/skyBackdrop.ts`). The HDR keeps lighting the
+scene and feeding the floor reflections. The JPGs come from the same Poly Haven assets (CC0) and the same script:
+
+- `goegap-8k.jpg`, `tears_of_steel_bridge-8k.jpg`, `rooftop_night-8k.jpg` (8192 × 4096, about 17 MB together).
+
+A tonemapped JPG is display-referred, so `skyBackdrop.ts` carries a measured curve per sky that maps it back to
+the HDR's radiance; the dome then matches the background it replaces in brightness and colour. Devices that
+cannot hold an 8K texture, touch devices and PERFORMANCE quality keep the HDR background.
 
 Each map's sun or moon light is aimed along the direction measured from its sky file, so shadows agree with
-the sky, and image-based light is again a probe captured from the lit map (`src/range/kit.ts`). The Core Hall
-map is sealed and has no sky.
+the sky, and image-based light is again a probe captured from the lit map (`src/range/kit.ts`). Core Hall,
+Underline and Whiteout have no sky file (sealed, underground and overcast).
