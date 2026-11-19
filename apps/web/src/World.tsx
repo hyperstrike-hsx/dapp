@@ -26,9 +26,9 @@ import { createTrigger, nextMode, pressTrigger, releaseTrigger, resetTrigger, ta
 import { createArms, emptyPose } from "./range/hands";
 import { RangeHud, type WeaponHud } from "./RangeHud";
 import { RangeTouch } from "./RangeTouch";
-import { leanAssets, leanTextureSize, touchControls, type RangeControl, type TouchApi } from "./range/touch";
+import { leanAssets, leanCanvas, leanTextureSize, leanUrl, textureLimit, touchControls, type RangeControl, type TouchApi } from "./range/touch";
 import { createStrikeFx } from "./range/strikeFx";
-import { createHorde, type HordeHud } from "./range/horde";
+import { ALARM_FROM, createHorde, type HordeHud } from "./range/horde";
 import { createSequenceDetector } from "./range/konami";
 import { withOpaqueOccluders } from "./opaqueOcclusion";
 import { drawHsxChart, subscribeHsxChart } from "./hsxChart";
@@ -52,6 +52,8 @@ type Props = {
   onChart: () => void;
   onChartProximity: (nearby: boolean) => void;
   onReady: () => void;
+  /** How many of the map's files have arrived, of how many asked for so far. */
+  onProgress?: (done: number, total: number) => void;
   /** Filled in with what the app shell may ask of the range: start play, pause, use. */
   control?: MutableRefObject<RangeControl | null>;
   /** The browser took the graphics context away, which on a phone means it ran out of memory. */
@@ -86,7 +88,7 @@ function muzzleFireTexture() {
   }
   ctx.closePath();
   ctx.fill();
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -135,7 +137,7 @@ function controlCenterTexture(entry: PortfolioDisplayEntry | null, index: number
     ctx.font = "700 21px monospace";
     ctx.fillText(`RESOLVES ${entry.resolves}`, 48, 484);
   }
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
@@ -243,7 +245,7 @@ function labelTexture(market: IndexMarket) {
   ctx.fillStyle = "#e2f4f2";
   ctx.font = "800 34px monospace";
   ctx.fillText(market.volume, 732, 408);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
@@ -260,7 +262,7 @@ function indexExhibitTexture(market: IndexMarket) {
   c.font="700 28px monospace";c.fillStyle="#88a9a0";c.fillText("BASE 1,000 / ILLUSTRATIVE INDEX",48,235);
   c.strokeStyle="#9af5df";c.lineWidth=4;c.setLineDash([12,10]);c.beginPath();c.moveTo(45,315);c.lineTo(979,315);c.stroke();
   c.setLineDash([]);c.fillStyle="#eea45d";c.font="700 23px monospace";c.fillText("NO INDIVIDUAL-ITEM PREDICTIONS",48,423);
-  const texture = new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture;
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture;
 }
 
 function wordmarkTexture() {
@@ -302,7 +304,7 @@ function wordmarkTexture() {
   ctx.font = "700 21px monospace";
   ctx.letterSpacing = "7px";
   ctx.fillText("TRADE THE CS2 ECONOMY / CANONICAL INDEX MARKETS", 768, 274);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -352,7 +354,7 @@ function outcomeTexture(side: VoteSide, staged: number, cents: number) {
   canvas.width = 512;
   canvas.height = 192;
   paintOutcome(canvas, side, staged, cents);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(canvas); // repainted in place, so it keeps its own canvas
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -381,7 +383,7 @@ function environmentSignTexture(title: string, subtitle: string) {
   ctx.font = "700 25px monospace";
   ctx.letterSpacing = "2px";
   ctx.fillText(subtitle, 55, 180, 910);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
@@ -414,7 +416,7 @@ function rangeDecalTexture(label: string, detail: string, orange = false) {
   ctx.font = "700 22px monospace";
   ctx.letterSpacing = "3px";
   ctx.fillText("HYPEREVM NATIVE / WAYFINDING", 79, 377);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
@@ -425,7 +427,7 @@ function smooth01(value: number) {
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-export function World({ quality="HIGH", map="foundry", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady, control, onContextLost }: Props) {
+export function World({ quality="HIGH", map="foundry", markets, onSelect, onProximity, entered, onEntered, onLockChange, onAmmoChange, onVote, votes, portfolio, onFurnace, onFurnaceProximity, onChart, onChartProximity, onReady, onProgress, control, onContextLost }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const enteredRef = useRef(entered);
@@ -441,6 +443,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
   const chartRef = useRef(onChart);
   const chartProximityRef = useRef(onChartProximity);
   const readyRef = useRef(onReady);
+  const progressRef = useRef(onProgress);
   const lostRef = useRef(onContextLost);
   const portfolioRef = useRef(portfolio);
   const lcdRefreshRef = useRef<(() => void) | null>(null);
@@ -449,6 +452,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
   // in the scene, so both survive a change of map: a range picked in play opens straight into play.
   const [touch] = useState(touchControls);
   const touchPlayRef = useRef(false);
+  /** When a click last asked for the pointer and has not been answered yet (0 otherwise). */
+  const askedRef = useRef(0);
   const touchApiRef = useRef<TouchApi | null>(null);
   const syncPlayRef = useRef<() => void>(() => {});
   const useActionRef = useRef<() => void>(() => {});
@@ -473,6 +478,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
   useEffect(() => { chartRef.current = onChart; }, [onChart]);
   useEffect(() => { chartProximityRef.current = onChartProximity; }, [onChartProximity]);
   useEffect(() => { readyRef.current = onReady; }, [onReady]);
+  useEffect(() => { progressRef.current = onProgress; }, [onProgress]);
   useEffect(() => { lostRef.current = onContextLost; }, [onContextLost]);
   useEffect(() => { portfolioRef.current = portfolio; lcdRefreshRef.current?.(); }, [portfolio]);
   useEffect(() => {
@@ -482,15 +488,30 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         const mount = mountRef.current;
         if (touch) { touchPlayRef.current = true; syncPlayRef.current(); return Promise.resolve(); }
         if (!mount || document.pointerLockElement === mount) return Promise.resolve();
-        try { return Promise.resolve(mount.requestPointerLock()); } catch (error) { return Promise.reject(error); }
+        const ask = (): Promise<void> => {
+          try { return Promise.resolve(mount.requestPointerLock()); } catch (error) { return Promise.reject(error); }
+        };
+        askedRef.current = performance.now();
+        // A browser refuses the pointer for about a second after Escape, while the click that asked
+        // still counts for a few more: ask once again before calling it refused.
+        return ask().catch(() => new Promise<void>((resolve, reject) => {
+          window.setTimeout(() => {
+            if (!askedRef.current || document.pointerLockElement === mount) resolve();
+            else ask().then(resolve, reject);
+          }, 1300);
+        }));
       },
       pause: () => {
+        askedRef.current = 0;
         if (touch) { touchPlayRef.current = false; syncPlayRef.current(); }
         else if (document.pointerLockElement === mountRef.current) document.exitPointerLock();
       },
       use: () => useActionRef.current(),
     };
-    return () => { control.current = null; };
+    // Answered either way: the pointer was taken, or the player let go of it.
+    const answered = () => { askedRef.current = 0; };
+    document.addEventListener("pointerlockchange", answered);
+    return () => { control.current = null; document.removeEventListener("pointerlockchange", answered); };
   }, [control, touch]);
 
   useEffect(() => {
@@ -506,6 +527,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const playing = () => live && wanted();
 
     const loadingManager = new THREE.LoadingManager();
+    if (leanAssets()) loadingManager.setURLModifier(leanUrl);
+    loadingManager.onProgress = (_url, done, total) => { if (!disposed) progressRef.current?.(done, total); };
     loadingManager.itemStart("hyperstrike-world-bootstrap");
 
     const scene = new THREE.Scene();
@@ -640,6 +663,24 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         const data = hdr.image.data, cap = THREE.DataUtils.toHalfFloat(look.skyClamp);
         for (let i = 0; i < data.length; i += 1) if (i % 4 !== 3 && data[i] > cap && data[i] < 0x8000) data[i] = cap;
       }
+      // three.js turns the sky into a cube as tall as the picture: 48 MB from a 2K sky. A phone
+      // shows it across a few hundred pixels, so it gets the sky at half the size (12 MB).
+      if (leanAssets() && hdr.image.data instanceof Uint16Array) {
+        let { data, width, height } = hdr.image as { data: Uint16Array; width: number; height: number };
+        while (height > textureLimit() && width % 2 === 0 && height % 2 === 0) {
+          const w = width / 2, h = height / 2, out = new Uint16Array(w * h * 4), below = width * 4;
+          for (let y = 0; y < h; y += 1) {
+            let from = y * 2 * below, to = y * w * 4;
+            for (let x = 0; x < w; x += 1, from += 8) for (let channel = 0; channel < 4; channel += 1, to += 1) {
+              const at = from + channel;
+              out[to] = THREE.DataUtils.toHalfFloat((THREE.DataUtils.fromHalfFloat(data[at]) + THREE.DataUtils.fromHalfFloat(data[at + 4]) + THREE.DataUtils.fromHalfFloat(data[at + below]) + THREE.DataUtils.fromHalfFloat(data[at + below + 4])) / 4);
+            }
+          }
+          data = out; width = w; height = h;
+        }
+        hdr.image = { data, width, height };
+        hdr.needsUpdate = true;
+      }
       skyMap = hdr;
       scene.background = hdr;
       scene.backgroundIntensity = look.skyIntensity;
@@ -710,7 +751,18 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     chartFrame.castShadow = true;
     scene.add(chartFrame);
     const chartCanvas = document.createElement("canvas");
-    drawHsxChart(chartCanvas, null);
+    // The chart is painted 1920 wide. A phone keeps it at the size it will be shown.
+    const paintChart = (data: Parameters<typeof drawHsxChart>[1]) => {
+      const limit = textureLimit();
+      if (!Number.isFinite(limit)) { drawHsxChart(chartCanvas, data); return; }
+      const full = document.createElement("canvas");
+      drawHsxChart(full, data);
+      const small = leanCanvas(full, limit);
+      chartCanvas.width = small.width; chartCanvas.height = small.height;
+      chartCanvas.getContext("2d")?.drawImage(small, 0, 0);
+      small.width = small.height = 0;
+    };
+    paintChart(null);
     const chartTexture = new THREE.CanvasTexture(chartCanvas);
     chartTexture.colorSpace = THREE.SRGBColorSpace;
     chartTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -723,7 +775,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     shootableObjects.push(chartScreen);
     const unsubscribeChart = subscribeHsxChart(data => {
       if (disposed) return;
-      drawHsxChart(chartCanvas, data);
+      paintChart(data);
       chartTexture.needsUpdate = true;
     });
     const wordmark = new THREE.Mesh(
@@ -1027,10 +1079,56 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     let forceScope = false, aim = 0, lookScale = 1, throughScope = false;
     let frozenReload: number | null = null;
 
+    /**
+     * Compiles the shaders of everything under `root`, as the scene pass and the occlusion pass will
+     * draw it, without holding up a frame: the driver builds them in the background and this waits
+     * for it. Left to the renderer, each is built on the frame that first shows it, which stalls.
+     */
+    const warm = async (root: THREE.Object3D) => {
+      const bound = renderer.getRenderTarget();
+      // The passes draw into render targets, and that selects other shader variants than the canvas does.
+      renderer.setRenderTarget(composer.renderTarget1);
+      renderer.compile(root, camera, scene);
+      if (aoPass.enabled) {
+        // The occlusion pass draws every mesh with one normal material; a skinned body is a variant of it.
+        const kinds = new Set<string>();
+        root.traverse((child) => {
+          const mesh = child as THREE.SkinnedMesh;
+          if (!mesh.isSkinnedMesh) return;
+          const kind = Object.keys(mesh.geometry.attributes).sort().join();
+          if (kinds.has(kind)) return;
+          kinds.add(kind);
+          const own = mesh.material;
+          mesh.material = aoPass.normalMaterial;
+          renderer.compile(mesh, camera, scene);
+          mesh.material = own;
+        });
+      }
+      renderer.setRenderTarget(bound);
+      const programs = () => (renderer.info.programs ?? []) as Array<THREE.WebGLProgram & { isReady?: () => boolean }>;
+      const patience = performance.now() + 8000;
+      while (!disposed && performance.now() < patience && programs().some((program) => program.isReady?.() === false)) {
+        await new Promise((resolve) => { setTimeout(resolve, 16); });
+      }
+      // Listing a program's uniforms is the last of its set-up and takes the driver ten milliseconds or
+      // so each, compiled or not. Done here, one new program a frame, rather than all on the frame
+      // that first draws them.
+      for (const program of [...programs()]) {
+        if (disposed) return;
+        const began = performance.now();
+        program.getUniforms();
+        program.getAttributes();
+        if (performance.now() - began > 1.5) await new Promise((resolve) => { requestAnimationFrame(resolve); });
+      }
+    };
+
     // Wave mode (unlocked with the Konami code).
     let shake = 0;
     const horde = createHorde({
       scene,
+      // The alarm beacons are the stations' own lights, borrowed: the stations go dark for the mode.
+      lamps: stationLights,
+      warm,
       obstacles: [...marketPositions.map((position) => ({ x: position.x, z: position.z, r: 2.15 })), { x: 9.18, z: -11.6, r: 2.6 }],
       solid: (x, z) => solids?.blocked(x, z) ?? false,
       audio: () => sound.context(),
@@ -1039,7 +1137,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       onHurt: (amount) => { shake = Math.max(shake, amount <= 1 ? 0.25 + amount * 0.5 : 1); },
     });
     volumetricPass.glows.push(...horde.glows);
-    const konami = createSequenceDetector();
+    // Four arrows in, the rest of the code is coming: fetch the bodies and compile them already.
+    const konami = createSequenceDetector(undefined, (matched) => { if (matched === 4) horde.prepare(); });
     const calm = {
       fog: (scene.fog as THREE.FogExp2).color.clone(), fogDensity: (scene.fog as THREE.FogExp2).density,
       sun: range.sun.color.clone(), sunIntensity: range.sun.intensity,
@@ -1545,11 +1644,14 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       contact?.update();
       arms.update(contact);
 
+      // Wave mode puts the stations' lights out, and then uses three of them as its alarm beacons.
+      const stationGlow = 1 - THREE.MathUtils.smoothstep(dreadful, 0, ALARM_FROM);
       exhibitGroups.forEach((group, index) => {
         const market = markets[index];
         const count = votesRef.current[market.id] ?? { YES: 0, NO: 0 };
         const majority = count.YES === count.NO ? "TIE" : count.YES > count.NO ? "YES" : "NO";
-        if (majority !== stationMajorities[index]) {
+        const lent = horde.holds(stationLights[index]);
+        if (majority !== stationMajorities[index] && !lent) {
           stationMajorities[index] = majority;
           const color = marketLightColor(market, count);
           stationLights[index].color.setHex(color);
@@ -1565,7 +1667,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
           texture.needsUpdate = true;
         }
         const flare = Math.max(0, 1 - (now - (stationLights[index].userData.hitAt ?? -1e6)) / 420);
-        stationLights[index].intensity = 7 * (1 + flare * flare * 2.6);
+        if (!lent) stationLights[index].intensity = 7 * (1 + flare * flare * 2.6) * stationGlow;
         const targeted = index === lastTargeted;
         screenMaterials[index].emissiveIntensity = targeted ? 1.1 : 1;
         group.scale.setScalar(THREE.MathUtils.lerp(group.scale.x, targeted ? 1.03 : 1, 0.1));
@@ -1684,6 +1786,12 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       frame = requestAnimationFrame(animate);
       live = true;
       setLive(true);
+      // A range picked in the moment a browser refuses the pointer (just after Escape) loaded
+      // without it. Ask once more now that there is something to play in.
+      if (!touch && !wanted() && askedRef.current && performance.now() - askedRef.current < 15000) {
+        try { void Promise.resolve(mount.requestPointerLock()).catch(() => {}); } catch { /* refused: the briefing has RESUME */ }
+      }
+      askedRef.current = 0;
       // The pointer may already be held: a range picked from the briefing takes it with that click.
       syncPlay();
       readyRef.current();

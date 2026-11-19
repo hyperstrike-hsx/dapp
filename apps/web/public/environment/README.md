@@ -22,3 +22,8 @@ cannot hold an 8K texture, touch devices and PERFORMANCE quality keep the HDR ba
 Each map's sun or moon light is aimed along the direction measured from its sky file, so shadows agree with
 the sky, and image-based light is again a probe captured from the lit map (`src/range/kit.ts`). Core Hall,
 Underline and Whiteout have no sky file (sealed, underground and overcast).
+
+
+Phones and tablets fetch each sky as its `*-1k.hdr` copy (`bonzai-sky-1k.hdr` for the foundry): the same picture at
+1024 x 512, a 2 x 2 average of the 2K file in linear light, run-length encoded (`leanUrl` in `src/range/touch.ts`).
+A quarter of the download, and three.js then builds a 12 MB sky cube from it instead of a 48 MB one.

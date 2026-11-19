@@ -5,7 +5,7 @@ import { applyWetFloor, createFloorReflection, type FloorPaint, type FloorReflec
 import { brushedMetal, disposePbr, paintedSteel, pbrMaterial, steel, tile, timber, type PbrSet } from "./pbr";
 import type { Glow } from "./volumetric";
 import type { Cue } from "./cues";
-import { photoRoot } from "./touch";
+import { leanAssets, leanCanvas, photoRoot } from "./touch";
 
 // Shared parts every range map is built from: the contract a map fulfils, the
 // geometry and texture helpers, the furnace, the sun and the floor.
@@ -244,7 +244,7 @@ export function canvasTexture(width: number, height: number, draw: (context: Can
   const canvas = document.createElement("canvas");
   canvas.width = width; canvas.height = height;
   draw(canvas.getContext("2d")!);
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   if (repeat) texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   return texture;
@@ -401,7 +401,7 @@ export function createKit(options: RangeOptions) {
     sun.target.position.set(0, 0, -9.5);
     sun.position.copy(sun.target.position).addScaledVector(config.toSun.clone().normalize(), distance);
     sun.castShadow = true;
-    sun.shadow.mapSize.setScalar(high ? 4096 : 2048);
+    sun.shadow.mapSize.setScalar(high ? 4096 : leanAssets() ? 1024 : 2048);
     sun.shadow.camera.left = -extent; sun.shadow.camera.right = extent;
     sun.shadow.camera.top = extent; sun.shadow.camera.bottom = -extent;
     sun.shadow.camera.near = config.near ?? 8; sun.shadow.camera.far = config.far ?? 72;

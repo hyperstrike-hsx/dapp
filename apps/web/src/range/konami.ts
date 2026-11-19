@@ -5,8 +5,11 @@ export const KONAMI = [
   "KeyB", "KeyA",
 ] as const;
 
-/** Feeds key codes one at a time; returns true on the key that completes the sequence. */
-export function createSequenceDetector(sequence: readonly string[] = KONAMI) {
+/**
+ * Feeds key codes one at a time; returns true on the key that completes the sequence.
+ * `onProgress` hears how many keys of it are in after each one, for getting ready early.
+ */
+export function createSequenceDetector(sequence: readonly string[] = KONAMI, onProgress?: (matched: number) => void) {
   let matched = 0;
   return (code: string) => {
     if (code === sequence[matched]) matched += 1;
@@ -19,6 +22,7 @@ export function createSequenceDetector(sequence: readonly string[] = KONAMI) {
         if (sequence.slice(0, length).every((key, index) => key === typed[typed.length - length + index])) { matched = length; break; }
       }
     }
+    onProgress?.(matched);
     if (matched < sequence.length) return false;
     matched = 0;
     return true;

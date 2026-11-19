@@ -7,6 +7,7 @@ import { createLife } from "./life";
 import { createProps, type PropItem, type PropKind } from "./props";
 import { createTrees, type TreeItem } from "./trees";
 import { createWind } from "./wind";
+import { leanAssets } from "./touch";
 
 export { projectUv } from "./kit";
 export type { RangeEnvironment, RangeQuality } from "./kit";
@@ -2255,7 +2256,7 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
   sun.target.position.set(0, 0, -9.5);
   sun.position.copy(sun.target.position).addScaledVector(sunTravel, -42);
   sun.castShadow = true;
-  sun.shadow.mapSize.setScalar(high ? 4096 : 2048);
+  sun.shadow.mapSize.setScalar(high ? 4096 : leanAssets() ? 1024 : 2048);
   sun.shadow.camera.left = -24; sun.shadow.camera.right = 24;
   sun.shadow.camera.top = 24; sun.shadow.camera.bottom = -24;
   sun.shadow.camera.near = 8; sun.shadow.camera.far = 72;

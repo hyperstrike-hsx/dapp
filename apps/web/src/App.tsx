@@ -1,4 +1,5 @@
 import {
+  Component,
   lazy,
   Suspense,
   useCallback,
@@ -6,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { INDEXES, demoMarkets } from "./markets";
 import { quoteBuy, quoteSell } from "@hyperstrike/sdk";
@@ -127,6 +129,30 @@ const probability = (t?: Tape) =>
     (Number(t?.no ?? 5e9) / (Number(t?.yes ?? 5e9) + Number(t?.no ?? 5e9))) *
       100,
   );
+/**
+ * Keeps a range that throws while it is being built from taking the whole page down with it, and
+ * hands the reason over so the loading screen can say it. Picking another range tries again.
+ */
+class RangeBoundary extends Component<
+  { retry: string; onFault: (message: string) => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    this.props.onFault(error instanceof Error ? error.message : String(error));
+  }
+  componentDidUpdate(before: { retry: string }) {
+    if (this.state.failed && before.retry !== this.props.retry)
+      this.setState({ failed: false });
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 export default function App() {
   const [portfolioTab, setPortfolioTab] = useState<
     "Paper" | "Onchain" | "Sports demo" | "Archive"
@@ -294,6 +320,38 @@ export default function App() {
       ),
     [],
   );
+  // What the loading screen says: how far along, and what went wrong if anything did. A phone has
+  // no console to look in, so a range that cannot start says why on the screen.
+  const [loading, setLoading] = useState<{ done: number; total: number } | null>(null),
+    [slow, setSlow] = useState(false),
+    [fault, setFault] = useState("");
+  const [crash, setCrash] = useState("");
+  const onProgress = useCallback(
+    (done: number, total: number) => setLoading({ done, total }),
+    [],
+  );
+  useEffect(() => {
+    setLoading(null);
+    setSlow(false);
+    setFault("");
+    if (!ready) setCrash("");
+    if (!range || ready) return;
+    const overdue = window.setTimeout(() => setSlow(true), 30_000);
+    const heard = (event: ErrorEvent | PromiseRejectionEvent) => {
+      const reason: unknown =
+        "reason" in event ? event.reason : (event.error ?? event.message);
+      setFault(
+        String(reason instanceof Error ? reason.message : reason).slice(0, 200),
+      );
+    };
+    window.addEventListener("error", heard);
+    window.addEventListener("unhandledrejection", heard);
+    return () => {
+      window.clearTimeout(overdue);
+      window.removeEventListener("error", heard);
+      window.removeEventListener("unhandledrejection", heard);
+    };
+  }, [range, ready, rangeMap]);
   const onReady = useCallback(() => setReady(true), []),
     onEntered = useCallback(() => setEntered(true), []);
   const openTokens = useCallback(() => {
@@ -542,6 +600,7 @@ export default function App() {
           <Suspense
             fallback={<div className="range-loading">Preparing the range…</div>}
           >
+            <RangeBoundary retry={`${rangeMap}/${quality}`} onFault={setCrash}>
             <World
               quality={quality}
               map={rangeMap}
@@ -560,13 +619,37 @@ export default function App() {
               onChart={openChart}
               onChartProximity={setNearChart}
               onReady={onReady}
+              onProgress={onProgress}
               control={worldControl}
               onContextLost={onContextLost}
             />
+            </RangeBoundary>
           </Suspense>
           {!ready && (
-            <div className="range-loading">
-              LOADING MATERIALS / LIGHTING / VIEWMODEL
+            <div className="range-loading" role="status">
+              {crash ? (
+                <>
+                  <strong>THE RANGE COULD NOT START</strong>
+                  <span>{crash}</span>
+                  <small>Reload the page to try again.</small>
+                </>
+              ) : (
+                <>
+                  <strong>LOADING {rangeMapInfo.name}</strong>
+                  <span>
+                    {loading
+                      ? `${loading.done} / ${loading.total} FILES`
+                      : "MATERIALS / LIGHTING / VIEWMODEL"}
+                  </span>
+                  {slow && (
+                    <small>
+                      {fault
+                        ? `Still loading. Last error: ${fault}`
+                        : "Still loading. A slow connection can take a minute."}
+                    </small>
+                  )}
+                </>
+              )}
             </div>
           )}
           <div className="range-tag">

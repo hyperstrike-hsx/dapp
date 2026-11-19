@@ -48,6 +48,8 @@ Reproduce all of them, and the map skies, with `node scripts/fetch-range-maps.mj
 
 Phones and tablets:
 
-- Every `*-1k/` folder is its `*-2k/` neighbour resized to 1024 pixels (`sips -Z 1024 -s formatOptions 82`), same files, same licence.
-  The range loads these on touch devices, where a browser closes a page that holds a desktop's worth of textures
-  (see `leanAssets` in `src/range/touch.ts`). Regenerate a set after replacing its 2K source.
+- Every `*-1k/` folder is its `*-2k/` neighbour resized to 1024 pixels (`sips -Z 1024 -s formatOptions 82`), and every
+  `*-512/` folder is the `*-1k/` one resized to 512 the same way: same files, same licence.
+  The range loads these on touch devices, where a browser closes a page that holds a desktop's worth of textures:
+  512 by default, 1K on a device that reports 8 GB of memory or more (see `leanAssets` and `leanTextureSize` in
+  `src/range/touch.ts`). Regenerate both after replacing a 2K source.

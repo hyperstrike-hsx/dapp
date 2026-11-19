@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Kit, Transform } from "./kit";
+import { leanCanvas, shrinkRgba } from "./touch";
 
 // Shared small props for every range map: bottles, jars, produce, casks, drums, crates,
 // cartons, sacks and baskets, built once per map from a handful of shared PBR materials.
@@ -624,7 +625,8 @@ const SANS = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 const BLOCK = 'Impact, "Arial Narrow", "Helvetica Neue", Arial, sans-serif';
 const SCRIPT = '"Snell Roundhand", "Brush Script MT", "Segoe Script", cursive';
 
-function dataTexture(data: Uint8Array, width: number, height: number, srgb: boolean, anisotropy: number) {
+function dataTexture(full: Uint8Array, fullWidth: number, fullHeight: number, srgb: boolean, anisotropy: number) {
+  const { data, width, height } = shrinkRgba(full, fullWidth, fullHeight);
   const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter;
@@ -883,7 +885,7 @@ class Painter {
 
   /** Colour, ORM and normal textures of the finished sheet. */
   finish(strength: number, anisotropy: number): Maps {
-    const map = new THREE.CanvasTexture(this.a.canvas), ormMap = new THREE.CanvasTexture(this.o.canvas);
+    const map = new THREE.CanvasTexture(leanCanvas(this.a.canvas)), ormMap = new THREE.CanvasTexture(leanCanvas(this.o.canvas));
     map.colorSpace = THREE.SRGBColorSpace;
     map.anisotropy = ormMap.anisotropy = anisotropy;
     const w = this.h.canvas.width, h = this.h.canvas.height, source = this.h.getImageData(0, 0, w, h).data, out = new Uint8Array(w * h * 4);
@@ -1125,7 +1127,7 @@ function paintMarks(scale: number, anisotropy: number) {
       c.fillRect(x, 560, width, length);
     }
   }
-  const texture = new THREE.CanvasTexture(c.canvas);
+  const texture = new THREE.CanvasTexture(leanCanvas(c.canvas));
   texture.premultiplyAlpha = true;
   texture.anisotropy = anisotropy;
   return texture;

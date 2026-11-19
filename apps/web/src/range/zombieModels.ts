@@ -45,7 +45,19 @@ export type ZombieModel = {
 const node = (name: string) => THREE.PropertyBinding.sanitizeNodeName(name);
 const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
-export async function loadZombies(): Promise<ZombieLibrary> {
+let shared: Promise<ZombieLibrary> | null = null;
+
+/**
+ * The bodies and their clips. Fetched and parsed once for the page: `dispose` on the result only
+ * gives back what a renderer holds for it, so the next range (which has a renderer of its own)
+ * gets the same library without the wait.
+ */
+export function loadZombies(): Promise<ZombieLibrary> {
+  shared ??= fetchZombies().catch((error) => { shared = null; throw error; });
+  return shared;
+}
+
+async function fetchZombies(): Promise<ZombieLibrary> {
   const manager = new THREE.LoadingManager();
   // Every file points at its own copy of the one palette texture; it is loaded once below instead.
   manager.setURLModifier((url) => (/zcolors\.png$/i.test(url) ? BLANK : url));
@@ -71,6 +83,10 @@ export async function loadZombies(): Promise<ZombieLibrary> {
   const variants = (await Promise.all(skeletons.flatMap((skeleton) => VARIANTS.map(async (letter) => {
     const gltf = await loader.loadAsync(`${BASE}/rig-gltf_joined/${FOLDER[skeleton]}_${letter}_joined.gltf`);
     strip(gltf.scene, true);
+    // The renderer wants a skinned mesh's bounds the first time it draws it, and works them out bone
+    // by bone. Done here, every copy inherits them and no frame of the game pays for it.
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse((child) => { if ((child as THREE.SkinnedMesh).isSkinnedMesh) (child as THREE.SkinnedMesh).computeBoundingSphere(); });
     return { scene: gltf.scene, skeleton };
   }))));
 

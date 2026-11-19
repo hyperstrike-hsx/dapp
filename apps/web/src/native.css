@@ -1004,6 +1004,24 @@ button {
   background: #091719;
   font: 12px ui-monospace;
   color: var(--mint);
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+.range-loading strong {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.range-loading span {
+  color: #8fb3ad;
+}
+.range-loading small {
+  max-width: 44ch;
+  font: 500 12px/1.4 Barlow, sans-serif;
+  letter-spacing: 0.02em;
+  color: #c9d8d4;
 }
 .range-tag {
   position: absolute;
@@ -1651,18 +1669,33 @@ button {
 @keyframes horde-pulse {
   50% { opacity: 0.45; }
 }
+/* Two full-screen layers, each painted once and then only faded: the low-health edge and the
+   flash of a hit. Animating the gradient itself repainted the whole view on every frame of it. */
 .horde-vignette {
   position: absolute;
   inset: 0;
+}
+.horde-vignette::before,
+.horde-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.horde-vignette::before {
   background: radial-gradient(ellipse at center, transparent 42%, #b0100899 100%);
   opacity: calc(var(--danger) * 0.75);
 }
-.horde-vignette[data-hurt] {
+.horde-vignette::after {
+  background: radial-gradient(ellipse at center, #b0100833 20%, #d01408dd 100%);
+  opacity: 0;
+  will-change: opacity;
+}
+.horde-vignette[data-hurt]::after {
   animation: horde-hurt 0.55s ease-out;
 }
 @keyframes horde-hurt {
-  0% { opacity: 1; background: radial-gradient(ellipse at center, #b0100833 20%, #d01408dd 100%); }
-  100% { opacity: calc(var(--danger) * 0.75); }
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 .horde-hitmarker {
   position: absolute;

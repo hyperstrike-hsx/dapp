@@ -11,6 +11,12 @@ import { createZombieModel, loadZombies, type ClipKey, type ZombieLibrary, type 
 // mode starts. Bullets hit unseen shapes that follow the bones, so a shot knows
 // whether it took a head, an arm or a leg; heads and forearms come off by
 // collapsing their bones. Everything is pooled: no allocation while the mode runs.
+//
+// Entering the mode must not stall a frame, and two things would: a light added to the
+// scene (three.js builds every lit shader again for the new count) and a material drawn
+// for the first time (its shader is compiled on the spot). So the alarm beacons take over
+// lights the room already has, and the bodies and effects are compiled in the background
+// while the alarm sounds; the first wave waits for that.
 
 export type HordePhase = "idle" | "intro" | "wave" | "break" | "over";
 export type HordeHud = {
@@ -44,6 +50,14 @@ export type HordeOptions = {
   audio: () => AudioContext;
   /** Where sounds connect (a mix bus with room reverb); the context's output if absent. */
   bus?: () => AudioNode;
+  /**
+   * Point lights of the room that the alarm may take over while the mode runs, three at most.
+   * Their owner must leave a light alone while `holds` is true for it, and have it dark by
+   * the time the mood reaches `ALARM_FROM`.
+   */
+  lamps?: THREE.PointLight[];
+  /** Compiles the shaders of everything under `root` ahead of its first frame, without holding one up. */
+  warm?: (root: THREE.Object3D) => Promise<unknown>;
   onHud: (hud: HordeHud) => void;
   onHurt: (amount: number) => void;
 };
@@ -56,8 +70,12 @@ export type Horde = {
   glows: Glow[];
   /** Outgoing damage multiplier (overdrive pickup). */
   damageBoost: () => number;
+  /** Fetches the models and compiles their shaders ahead of `start`, so the mode opens without waiting. */
+  prepare: () => void;
   start: (now: number) => void;
   stop: () => void;
+  /** True while the alarm is using this light (see `lamps`). */
+  holds: (light: THREE.Light) => boolean;
   /** Applies a bullet. Returns true when it struck a zombie. */
   hit: (object: THREE.Object3D, point: THREE.Vector3, direction: THREE.Vector3, damage: number, headshot: number, now: number) => boolean;
   update: (now: number, dt: number, player: THREE.Vector3, yaw: number) => void;
@@ -67,6 +85,8 @@ export type Horde = {
 };
 
 const POOL = 20, GORE = 420, STAINS = 36;
+/** The mood at which the alarm beacons come up: below it the room's own lamps are still fading out. */
+export const ALARM_FROM = 0.4;
 const BOUNDS = { x: 8.3, zMin: -23, zMax: 7.2 };
 const BEST_KEY = "hyperstrike.horde.best";
 
@@ -149,7 +169,10 @@ export function createHorde(options: HordeOptions): Horde {
   const blobGeometry = keep(new THREE.PlaneGeometry(1.25, 1.25).rotateX(-Math.PI / 2));
 
   const zombies: Zombie[] = [];
-  let library: ZombieLibrary | null = null, loading = false, disposed = false;
+  let library: ZombieLibrary | null = null, disposed = false;
+  /** Set once the pool is built and its shaders are compiled: from then on showing a zombie costs nothing. */
+  let staged = false;
+  let preparing: Promise<void> | null = null;
   const PARTS: Array<[Zone, string, string | null, number, boolean]> = [
     ["head", "bip Head", null, 0.135, false],
     ["body", "bip Pelvis", "bip Neck", 0.2, false],
@@ -194,17 +217,26 @@ export function createHorde(options: HordeOptions): Horde {
       kind: "walker", state: "free", health: 0, speed: 0, damage: 0, scale: 1, timer: 0, stagger: 0, facing: 0, fall: 1, struck: false, groanAt: 0, quirk: Math.random(), headless: false, armGone: [false, false], skirting: -1, detour: 0, held: 0, sideAxis: 0, sidestep: 0,
     };
   };
-  const loadModels = () => {
-    if (library || loading) return;
-    loading = true;
-    loadZombies().then((models) => {
-      if (disposed) { models.dispose(); return; }
+  const nextFrame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()); });
+  const prepare = () => {
+    preparing ??= (async () => {
+      const models = await loadZombies();
+      if (disposed) return;
       library = models;
-      for (let i = 0; i < POOL; i += 1) zombies.push(buildZombie(i, models));
-    }).catch((error) => {
+      // A body and its skeleton take a millisecond or two to copy: two a frame goes unnoticed.
+      for (let i = 0; i < POOL; i += 1) {
+        zombies.push(buildZombie(i, models));
+        if (i % 2 === 1) { await nextFrame(); if (disposed) return; }
+      }
+      // The skinned body, the gore, the pickups: compiled now rather than on the frame that first shows them.
+      await options.warm?.(group);
+      staged = !disposed;
+    })().catch((error) => {
       console.error("Zombie models failed to load", error);
+      // Let a later start try again.
+      preparing = null;
       if (phase !== "idle") { banner("ZOMBIE MODELS FAILED TO LOAD", "CHECK /models/zombies"); publish(); }
-    }).finally(() => { loading = false; });
+    });
   };
 
   // Cross-fades to a clip; `once` plays it through a single time and holds the last frame.
@@ -304,14 +336,56 @@ export function createHorde(options: HordeOptions): Horde {
   group.add(shock);
   let shockLife = 0;
 
-  // Alarm beacons restage the room in red.
-  const beacons = [[-6.5, 4.4, 2], [6.5, 4.4, -10], [-6.5, 4.4, -20]].map(([x, y, z]) => {
-    const light = new THREE.PointLight(0xff1a12, 0, 26, 1.6);
-    light.position.set(x, y, z);
-    group.add(light);
+  // Alarm beacons restage the room in red. They are lights the room already has, moved and
+  // recoloured for as long as the mode runs, so the scene's light count never changes. Where
+  // the room has too few to lend, the rest are ours and stay in the scene, dark, from the start.
+  const BEACONS = [new THREE.Vector3(-6.5, 4.4, 2), new THREE.Vector3(6.5, 4.4, -10), new THREE.Vector3(-6.5, 4.4, -20)];
+  const ALARM_RED = 0xff1a12, ALARM_REACH = 26, ALARM_DECAY = 1.6;
+  const alarm = new THREE.Group();
+  scene.add(alarm);
+  const lent = (options.lamps ?? []).slice(0, BEACONS.length);
+  const beacons = BEACONS.map((position, index) => {
+    if (lent[index]) return lent[index];
+    const light = new THREE.PointLight(ALARM_RED, 0, ALARM_REACH, ALARM_DECAY);
+    light.position.copy(position);
+    alarm.add(light);
     return light;
   });
-  const glows: Glow[] = beacons.map((light) => ({ position: light.position.clone(), color: new THREE.Color(0, 0, 0) }));
+  type Home = { parent: THREE.Object3D | null; position: THREE.Vector3; color: THREE.Color; intensity: number; distance: number; decay: number };
+  let homes: Home[] | null = null;
+  const takeLamps = () => {
+    homes = lent.map((light, index) => {
+      const home: Home = { parent: light.parent, position: light.position.clone(), color: light.color.clone(), intensity: light.intensity, distance: light.distance, decay: light.decay };
+      alarm.add(light);
+      light.position.copy(BEACONS[index]);
+      light.color.setHex(ALARM_RED);
+      light.distance = ALARM_REACH; light.decay = ALARM_DECAY; light.intensity = 0;
+      return home;
+    });
+  };
+  const returnLamps = () => {
+    homes?.forEach((home, index) => {
+      const light = lent[index];
+      (home.parent ?? scene).add(light);
+      light.position.copy(home.position);
+      light.color.copy(home.color);
+      light.distance = home.distance; light.decay = home.decay; light.intensity = home.intensity;
+    });
+    homes = null;
+  };
+  const glows: Glow[] = BEACONS.map((position) => ({ position: position.clone(), color: new THREE.Color(0, 0, 0) }));
+  /** Sweeps the beacons. `level` is 0 until the room's own lamps are out, then follows the mood up to 1. */
+  const sweepAlarm = (now: number) => {
+    const level = THREE.MathUtils.smoothstep(mood, ALARM_FROM, 1);
+    if (level > 0 && !homes) takeLamps();
+    else if (level === 0 && homes) returnLamps();
+    const sweep = now * 0.004;
+    beacons.forEach((light, i) => {
+      const pulse = Math.max(0, Math.sin(sweep + i * 2.1)) ** 3;
+      if (homes || !lent[i]) light.intensity = level * (8 + pulse * 62);
+      glows[i].color.setRGB(1, 0.06, 0.04).multiplyScalar(level * (0.12 + pulse * 0.9));
+    });
+  };
 
   // ---- Sound --------------------------------------------------------------------
   const listener = new THREE.Vector3();
@@ -482,7 +556,8 @@ export function createHorde(options: HordeOptions): Horde {
     hud.remaining = queue.length + zombies.filter((z) => z.state !== "free" && z.state !== "dying" && z.state !== "dead").length;
     hud.multiplier = comboMultiplier(streak);
     hud.combo = Math.max(0, comboTimer);
-    hud.countdown = phase === "break" || phase === "intro" ? Math.max(0, Math.ceil(phaseTimer)) : 0;
+    // The first wave waits for the bodies to be ready; the count holds at one until they are.
+    hud.countdown = phase === "break" || phase === "intro" ? Math.max(phase === "intro" && !staged ? 1 : 0, Math.ceil(phaseTimer)) : 0;
     hud.boost = Math.max(0, boostTimer);
     hud.health = Math.max(0, Math.round(hud.health));
     options.onHud({ ...hud });
@@ -801,10 +876,11 @@ export function createHorde(options: HordeOptions): Horde {
     targets,
     glows,
     damageBoost: () => (boostTimer > 0 ? 2 : 1),
+    prepare,
+    holds: (light) => homes !== null && lent.includes(light as THREE.PointLight),
     start(now) {
-      loadModels();
+      prepare();
       reset();
-      group.visible = true;
       Object.assign(hud, { wave: 0, score: 0, kills: 0, health: 100, banner: "", detail: "" });
       phase = "intro";
       phaseTimer = 4.2;
@@ -853,23 +929,20 @@ export function createHorde(options: HordeOptions): Horde {
       listenerYaw = yaw;
       const target = phase === "idle" ? 0 : 1;
       mood += (target - mood) * Math.min(1, dt * 1.6);
+      if (phase === "idle" && mood < 0.002) mood = 0;
+      sweepAlarm(now);
       if (phase === "idle") {
-        if (mood < 0.01 && group.visible) group.visible = false;
-        beacons.forEach((light, i) => { light.intensity = 0; glows[i].color.setScalar(0); });
+        if (group.visible) group.visible = false;
         return;
       }
+      // Nothing of the mode is drawn before its shaders are compiled.
+      if (staged && !group.visible) group.visible = true;
       player.copy(playerPosition);
       listener.copy(playerPosition);
-      const sweep = now * 0.004;
-      beacons.forEach((light, i) => {
-        const pulse = Math.max(0, Math.sin(sweep + i * 2.1)) ** 3;
-        light.intensity = mood * (8 + pulse * 62);
-        glows[i].color.setRGB(1, 0.06, 0.04).multiplyScalar(mood * (0.12 + pulse * 0.9));
-      });
 
       if (phase === "intro") {
         phaseTimer -= dt;
-        if (phaseTimer <= 0) beginWave(1);
+        if (phaseTimer <= 0 && staged) beginWave(1);
       } else if (phase === "wave") {
         spawnTimer -= dt;
         const alive = zombies.filter((z) => z.state === "rising" || z.state === "chasing" || z.state === "attacking").length;
@@ -959,9 +1032,10 @@ export function createHorde(options: HordeOptions): Horde {
     },
     dispose() {
       disposed = true;
+      returnLamps();
       library?.dispose();
       drone?.stop();
-      scene.remove(group);
+      scene.remove(group, alarm);
       disposables.forEach((item) => item.dispose());
     },
   };

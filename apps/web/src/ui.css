@@ -1544,6 +1544,21 @@ html {
   gap: 9px;
   padding: 20px 26px 18px 24px;
 }
+/* Every range's text shares one cell: the panel is as tall as the longest, so the cards below
+   hold still while the mouse moves over them. */
+.lobby-sheets {
+  display: grid;
+}
+.lobby-sheet {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  visibility: hidden;
+}
+.lobby-sheet[data-shown] {
+  visibility: visible;
+}
 .lobby-eyebrow {
   font: 11px var(--mono);
   letter-spacing: 0.08em;
@@ -1590,8 +1605,7 @@ html {
   font: 500 13px/1.25 Barlow, sans-serif;
   color: var(--paper);
 }
-.range-lobby .range-enter,
-.range-load {
+.range-lobby .range-enter {
   position: static;
   transform: none;
   display: block;
@@ -1608,41 +1622,50 @@ html {
     background 0.2s,
     box-shadow 0.2s;
 }
-.range-lobby .range-enter strong,
-.range-load strong {
+.range-lobby .range-enter strong {
   font: 800 26px/1 "Barlow Condensed", sans-serif;
   letter-spacing: 0.03em;
 }
-.range-lobby .range-enter:hover,
-.range-load:hover {
+.range-lobby .range-enter:hover {
   background: #c4fff0;
   box-shadow: 0 0 0 5px #a7edda26;
 }
-.range-load {
-  background: var(--orange);
-  border-color: var(--orange);
-  color: #241304;
+.range-lobby .range-enter:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
-.range-load:hover {
-  background: #ffc081;
-  box-shadow: 0 0 0 5px #eea45d2e;
-}
-.lobby-switch {
+/* The button goes into the loaded range. While another one is being read about its place is taken
+   by a note of the same size: that range is entered from its own card. */
+.lobby-action {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
 }
-.lobby-back {
-  padding: 0 16px;
-  border: 1px solid #a7edda4d;
-  background: transparent;
-  color: var(--paper);
-  font: 600 12px Barlow, sans-serif;
-  letter-spacing: 0.04em;
-  cursor: pointer;
+.lobby-action > * {
+  grid-area: 1 / 1;
 }
-.lobby-back:hover {
-  border-color: var(--mint);
+.lobby-pick {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 20px;
+  border: 1px dashed #eea45d99;
+  background: #eea45d14;
+  visibility: hidden;
+}
+.lobby-pick strong {
+  font: 800 19px/1 "Barlow Condensed", sans-serif;
+  letter-spacing: 0.05em;
+  color: var(--orange);
+}
+.lobby-pick span {
+  font: 500 11px/1.25 Barlow, sans-serif;
+  color: #c9d8d4;
+}
+.lobby-action[data-peek] .range-enter {
+  visibility: hidden;
+}
+.lobby-action[data-peek] .lobby-pick {
+  visibility: visible;
 }
 .lobby-hint {
   display: flex;
@@ -1744,6 +1767,32 @@ html {
   font: 700 9px/1 var(--mono);
   letter-spacing: 0.12em;
 }
+.lobby-thumb u {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 4px 6px;
+  font: 700 9px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  color: #241304;
+  background: var(--orange);
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.16s,
+    transform 0.16s var(--ease);
+}
+.lobby-maps button.loaded .lobby-thumb u {
+  color: #06201c;
+  background: var(--mint);
+}
+.lobby-maps button:hover .lobby-thumb u,
+.lobby-maps button:focus-visible .lobby-thumb u,
+.range-lobby.paused .lobby-maps button.loaded .lobby-thumb u {
+  opacity: 1;
+  transform: none;
+}
 .lobby-card-text {
   display: grid;
   gap: 3px;
@@ -1797,6 +1846,9 @@ html {
   .lobby-about {
     gap: 7px;
     padding: 16px 24px 14px 22px;
+  }
+  .lobby-sheet {
+    gap: 7px;
   }
   .lobby-about h2 {
     font-size: 36px;
@@ -1891,19 +1943,11 @@ html {
   padding: 18px 14px calc(12px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #050d0f00 0%, #050d0ff5 34%);
 }
-.lobby-dock .range-load strong,
 .lobby-dock .range-enter strong {
   font-size: 21px;
 }
-.lobby-dock .range-enter,
-.lobby-dock .range-load {
+.lobby-dock .range-enter {
   padding: 14px 16px;
-}
-.lobby-dock .lobby-back {
-  max-width: 116px;
-  padding: 0 12px;
-  font-size: 11px;
-  line-height: 1.3;
 }
 /* Wider than a phone held upright: the cards stay card-sized instead of filling the strip. */
 .range-lobby.docked .lobby-maps {

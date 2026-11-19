@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { shrinkRgba } from "./touch";
 
 // Procedural, tileable PBR texture sets generated once at load.
 // Every set carries base colour, a tangent-space normal map derived from a
@@ -135,8 +136,9 @@ class Surface {
         orm[o + 3] = 255;
       }
     }
-    const texture = (data: Uint8Array, srgb: boolean) => {
-      const result = new THREE.DataTexture(data, n, n, THREE.RGBAFormat, THREE.UnsignedByteType);
+    const texture = (full: Uint8Array, srgb: boolean) => {
+      const { data, width, height } = shrinkRgba(full, n, n);
+      const result = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
       result.wrapS = result.wrapT = THREE.RepeatWrapping;
       result.magFilter = THREE.LinearFilter;
       result.minFilter = THREE.LinearMipmapLinearFilter;

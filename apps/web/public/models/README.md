@@ -30,3 +30,9 @@ palette texture. Loaded by `src/range/zombieModels.ts` the first time wave mode 
 - About 15 MB; each animation file repeats the mesh, which the loader discards.
 
 The M4A1, FAMAS and Uzi have no model files: they are built in code (`src/range/arsenal.ts`).
+
+
+Phones and tablets fetch lighter copies of the first-person textures (`leanUrl` in `src/range/touch.ts`):
+`arms/textures-lean/` is `arms/textures/` at 1024 pixels as JPG (`sips -Z 1024 -s format jpeg -s formatOptions 88`),
+and `bolt-action-rifle/textures-lean/` is `bolt-action-rifle/textures/` at half size under the same file names
+(`-s formatOptions 86`). Same licences as their sources. Regenerate them after replacing a source texture.
