@@ -1517,6 +1517,11 @@ button {
   border-bottom: 2px solid transparent;
   color: var(--muted);
 }
+/* Dropped: the slot stays, struck through, until the weapon is picked up again. */
+.weapon-hud li.is-gone {
+  opacity: 0.34;
+  text-decoration: line-through;
+}
 .weapon-hud li.is-active {
   color: #e2fff1;
   border-color: var(--mint);

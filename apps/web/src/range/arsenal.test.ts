@@ -12,23 +12,30 @@ function run(id: string, mode: Parameters<typeof takeShot>[1], from: number, to:
 }
 
 describe("arsenal", () => {
-  it("offers five firearms and a knife, each with its own fire modes", () => {
-    expect(ARSENAL.map((weapon) => weapon.id)).toEqual(["ak47", "m4", "famas", "uzi", "rifle", "knife"]);
-    expect(spec("knife").modes).toEqual(["MELEE"]);
-    expect(spec("knife").reach).toBeGreaterThan(1);
+  it("offers six firearms, each with its own fire modes", () => {
+    expect(ARSENAL.map((weapon) => weapon.id)).toEqual(["ak47", "m4", "famas", "uzi", "rifle", "deagle"]);
+    expect(spec("deagle").modes).toEqual(["SEMI"]);
+    expect(spec("deagle").magazine).toBe(7);
     expect(spec("m4").modes).toEqual(["AUTO", "BURST", "SEMI"]);
     expect(spec("rifle").modes).toEqual(["BOLT"]);
     expect(nextMode(spec("m4"), "SEMI")).toBe("AUTO");
     expect(nextMode(spec("rifle"), "BOLT")).toBe("BOLT");
   });
 
-  it("slashes once per swing for as long as the trigger is held", () => {
+  it("fires the pistol once per pull, and no faster than its slide can run", () => {
     const trigger = createTrigger();
     pressTrigger(trigger);
-    // 100 swings a minute: at 0, 600 and 1200 ms.
-    expect(run("knife", "MELEE", 0, 1500, trigger)).toBe(3);
+    expect(run("deagle", "SEMI", 0, 1000, trigger)).toBe(1);
+    // A second pull straight after a shot waits for the slide: 267 rounds a minute is one every 225 ms.
     releaseTrigger(trigger);
-    expect(run("knife", "MELEE", 1500, 3000, trigger)).toBe(0);
+    pressTrigger(trigger);
+    expect(takeShot(spec("deagle"), "SEMI", trigger, 2000)).toBe(true);
+    releaseTrigger(trigger);
+    pressTrigger(trigger);
+    expect(takeShot(spec("deagle"), "SEMI", trigger, 2100)).toBe(false);
+    expect(run("deagle", "SEMI", 2104, 3000, trigger)).toBe(1);
+    // The slide is home again before the next round can go.
+    expect(spec("deagle").cycleMs).toBeLessThanOrEqual(60000 / spec("deagle").rpm);
   });
 
   it("fires continuously in AUTO at the cyclic rate", () => {

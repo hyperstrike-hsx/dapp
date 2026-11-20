@@ -901,7 +901,7 @@ export function createHorde(options: HordeOptions): Horde {
       const z = zombies[object.userData.zombie as number];
       if (!z || (z.state !== "rising" && z.state !== "chasing" && z.state !== "attacking")) return false;
       const zone = object.userData.zone as string;
-      // A weapon with no headshot multiplier (the knife) cuts the head like any other part.
+      // A weapon with no headshot multiplier strikes the head like any other part.
       const head = zone === "head" && headshot > 0;
       hud.hitId += 1; hud.headshot = head;
       sounds.marker(head);

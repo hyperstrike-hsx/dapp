@@ -110,7 +110,7 @@ export function RangeTouch({ api, weapon }: { api: { current: TouchApi | null };
         <div className="touch-weapon">
           <button type="button" aria-label="Next weapon" onPointerDown={tap((controls) => controls.nextWeapon())}>
             <strong>{weapon.name}</strong>
-            <span>{weapon.reloading ? "RELOADING" : weapon.blade ? "BLADE" : `${weapon.magazine} / ${weapon.capacity}`}</span>
+            <span>{weapon.reloading ? "RELOADING" : `${weapon.magazine} / ${weapon.capacity}`}</span>
             <em>SWITCH ↻</em>
           </button>
           {weapon.modes.length > 1 && (

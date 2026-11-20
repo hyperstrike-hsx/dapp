@@ -11,9 +11,23 @@ import type { Collider, Contact } from "./collider";
 // off-screen, which is what a shouldered arm looks like in view.
 
 type V3 = [number, number, number];
-export type HandPose = { p: V3; f: V3; n: V3; curl: number | number[] };
-/** `flex` holds the bend of every finger joint in radians: three per finger, index to little finger, then the thumb. */
-export type ResolvedPose = { position: THREE.Vector3; quaternion: THREE.Quaternion; flex: number[] };
+export type HandPose = {
+  p: V3; f: V3; n: V3; curl: number | number[];
+  /** Where the tip of the thumb rests, for a grip that lays the thumb somewhere on purpose. Only a resting grip is fitted to it. */
+  thumb?: V3;
+  /**
+   * For a grip that is authored in place rather than seated, because a flat palm cannot settle onto
+   * it: a handle held in the fork of the thumb, a hand laid across under a short fore-end. How far
+   * the palm may sink into what it holds, in metres.
+   */
+  cup?: number;
+};
+/**
+ * `flex` holds the bend of every finger joint in radians: three per finger, index to little finger, then the thumb.
+ * `base` is what the thumb's first joint does besides bend: swing across the palm, turn about its own length, and lift off the palm.
+ * `laid` marks a thumb that has been fitted to the place it was asked to rest (`reach`).
+ */
+export type ResolvedPose = { position: THREE.Vector3; quaternion: THREE.Quaternion; flex: number[]; base: [number, number, number]; laid: boolean; cup: number; reach?: THREE.Vector3 };
 
 const bx = new THREE.Vector3(), by = new THREE.Vector3(), bz = new THREE.Vector3(), basis = new THREE.Matrix4();
 
@@ -27,18 +41,21 @@ export function resolvePose(pose: HandPose): ResolvedPose {
   const curl = typeof pose.curl === "number" ? [pose.curl, pose.curl, pose.curl, pose.curl, pose.curl] : pose.curl;
   const flex: number[] = [];
   curl.forEach((c, finger) => (finger < 4 ? TUNING.finger : TUNING.thumb).forEach((gain) => flex.push((c - TUNING.restCurl) * gain)));
-  return { position: new THREE.Vector3(...pose.p), quaternion: new THREE.Quaternion().setFromRotationMatrix(basis), flex };
+  return { position: new THREE.Vector3(...pose.p), quaternion: new THREE.Quaternion().setFromRotationMatrix(basis), flex, base: [0, 0, 0], laid: false, cup: pose.cup ?? 0, reach: pose.thumb ? new THREE.Vector3(...pose.thumb) : undefined };
 }
 
 export function blendPose(a: ResolvedPose, b: ResolvedPose, t: number, out: ResolvedPose) {
   out.position.lerpVectors(a.position, b.position, t);
   out.quaternion.slerpQuaternions(a.quaternion, b.quaternion, t);
   for (let i = 0; i < 15; i += 1) out.flex[i] = a.flex[i] + (b.flex[i] - a.flex[i]) * t;
+  for (let i = 0; i < 3; i += 1) out.base[i] = a.base[i] + (b.base[i] - a.base[i]) * t;
+  out.laid = t < 0.5 ? a.laid : b.laid;
+  out.cup = a.cup + (b.cup - a.cup) * t;
   return out;
 }
 
 export function emptyPose(): ResolvedPose {
-  return { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), flex: new Array<number>(15).fill(0) };
+  return { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), flex: new Array<number>(15).fill(0), base: [0, 0, 0], laid: false, cup: 0 };
 }
 
 export type Arm = { apply: (pose: ResolvedPose) => void; elbow: THREE.Vector3 };
@@ -54,7 +71,8 @@ export type Arms = {
   ready: () => boolean;
   /**
    * Seats a resting grip on a weapon: the palm settles onto the surface and the hand slides
-   * along its length until the knuckles sit just past the edge of what it holds.
+   * along its length until the knuckles sit just past the edge of what it holds. A grip that
+   * names a place for its thumb has the thumb laid there.
    */
   fit: (pose: ResolvedPose, left: boolean, contact: Contact) => void;
   /**
@@ -106,8 +124,8 @@ type SideRig = {
   thumb: Flex[];
   /** Fingertip bones, index to little finger then thumb. */
   tips: THREE.Bone[];
-  /** Axis, in the thumb's first bone, that swings it across the palm's plane. */
-  thumbSwing: THREE.Vector3;
+  /** Axes in the thumb's first bone: the one that swings it across the palm's plane, the bone's own length, which it turns about, and the one that lifts it off the palm toward what the hand holds. */
+  thumbSwing: THREE.Vector3; thumbAlong: THREE.Vector3; thumbOut: THREE.Vector3;
   /**
    * Points just under the skin of the palm, the heel of the hand and the ball of the thumb, in the
    * hand's frame. Those on the ball of the thumb also carry their place in the thumb's first bone.
@@ -118,8 +136,10 @@ type Side = {
   target: THREE.Group; elbow: THREE.Vector3; left: boolean; rig?: SideRig;
   /** Authored joint bends for the frame, the bends the surface allows, and what is shown (eased). */
   flex: number[]; solved: number[]; shown: number[];
-  /** How far the thumb is swung aside to clear the weapon: solved, and shown. */
-  swing: number; swingShown: number;
+  /** The thumb's base as authored (swing, turn, lift), whether the thumb was laid in place on purpose, and how far the palm may sink into what it holds. */
+  base: [number, number, number]; laid: boolean; cup: number;
+  /** How far the thumb's base is swung, once it has cleared the weapon: solved, and shown. Its turn and lift, as shown. */
+  swing: number; swingShown: number; turnShown: number; outShown: number;
   /** What the last solve was for, so a hand that has not moved is not solved again. */
   stamp: string;
   /** Where the elbow has been moved to keep the sleeve out of the weapon: solved, and shown. */
@@ -135,7 +155,7 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
   const side = (left: boolean, elbow: THREE.Vector3): Side => {
     const target = new THREE.Group();
     hands.add(target);
-    return { target, elbow, left, flex: new Array<number>(15).fill(0), solved: new Array<number>(15).fill(0), shown: new Array<number>(15).fill(0), swing: 0, swingShown: 0, stamp: "", elbowShift: new THREE.Vector3(), elbowShown: new THREE.Vector3(), settled: new THREE.Vector3(), authored: new THREE.Vector3() };
+    return { target, elbow, left, flex: new Array<number>(15).fill(0), solved: new Array<number>(15).fill(0), shown: new Array<number>(15).fill(0), base: [0, 0, 0], laid: false, cup: 0, swing: 0, swingShown: 0, turnShown: 0, outShown: 0, stamp: "", elbowShift: new THREE.Vector3(), elbowShown: new THREE.Vector3(), settled: new THREE.Vector3(), authored: new THREE.Vector3() };
   };
   const sides = [side(false, new THREE.Vector3(0.17, -0.3, 0.42)), side(true, new THREE.Vector3(-0.4, -0.25, 0.02))];
   const arm = (s: Side): Arm => ({
@@ -144,6 +164,8 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
       s.target.position.copy(pose.position);
       s.target.quaternion.copy(pose.quaternion);
       for (let i = 0; i < 15; i += 1) s.flex[i] = pose.flex[i];
+      for (let i = 0; i < 3; i += 1) s.base[i] = pose.base[i];
+      s.laid = pose.laid; s.cup = pose.cup;
     },
   });
 
@@ -211,8 +233,11 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         thumb: flex(chain(4), (from) => grasp.clone().sub(from).normalize()),
         tips: [0, 1, 2, 3, 4].map((index) => chain(index)[3]),
         thumbSwing: facing.clone().applyQuaternion(turn(chain(4)[0]).invert()),
+        thumbAlong: chain(4)[1].position.clone().normalize(),
+        thumbOut: new THREE.Vector3(),
         skin,
       };
+      s.rig.thumbOut.crossVectors(s.rig.thumbAlong, s.rig.thumbSwing).normalize();
     }
     model = scene;
     space = root;
@@ -262,14 +287,17 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
   };
   const chainOf = (rig: SideRig, index: number) => (index < 4 ? rig.fingers[index] : rig.thumb);
   const swingQ = new THREE.Quaternion();
-  /** The thumb's first joint: swung across the palm's plane, then bent. */
-  const thumbTo = (rig: SideRig, swing: number, angle: number) => {
-    const joint = rig.thumb[0];
-    joint.bone.quaternion.copy(joint.rest).multiply(swingQ.setFromAxisAngle(rig.thumbSwing, swing)).multiply(bend.setFromAxisAngle(joint.axis, angle));
+  /** The thumb's first joint: swung across the palm's plane, lifted off the palm, bent, then turned about its own length. */
+  const thumbTo = (rig: SideRig, swing: number, angle: number, turn: number, out: number) => {
+    const joint = rig.thumb[0], q = joint.bone.quaternion;
+    q.copy(joint.rest).multiply(swingQ.setFromAxisAngle(rig.thumbSwing, swing));
+    if (out) q.multiply(swingQ.setFromAxisAngle(rig.thumbOut, out));
+    q.multiply(bend.setFromAxisAngle(joint.axis, angle));
+    if (turn) q.multiply(swingQ.setFromAxisAngle(rig.thumbAlong, turn));
   };
-  const show = (s: Side, angles: number[], swing: number) => {
+  const show = (s: Side, angles: number[], swing: number, turn: number, out: number) => {
     for (let index = 0; index < 5; index += 1) chainOf(s.rig!, index).forEach((joint, n) => curlTo(joint, angles[index * 3 + n]));
-    thumbTo(s.rig!, swing, angles[12]);
+    thumbTo(s.rig!, swing, angles[12], turn, out);
   };
 
   // Collision. Everything below works in the `hands` group's space, which is the weapon's.
@@ -296,7 +324,7 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         if (distance === Infinity || distance < 1e-6) return;
         if (radius + distance <= worst) return;
         const buried = contact.inside(centre);
-        const depth = buried ? radius + distance : radius - distance;
+        const depth = (buried ? radius + distance : radius - distance) - s.cup;
         if (depth <= worst) return;
         worst = depth;
         push.subVectors(centre, hit).multiplyScalar((buried ? -1 : 1) / distance);
@@ -311,7 +339,7 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         centre.copy(sample.at).applyQuaternion(s.target.quaternion).add(s.target.position);
         const fraction = contact.segment(point.copy(centre).addScaledVector(push2, -UNDER), centre.addScaledVector(push2, SKIN_RADIUS));
         // A gloved palm gives a little where it presses on what it holds.
-        const depth = (1 - fraction) * (UNDER + SKIN_RADIUS) - TUNING.soft;
+        const depth = (1 - fraction) * (UNDER + SKIN_RADIUS) - TUNING.soft - s.cup;
         if (!(depth > worst)) continue;
         worst = depth;
         push.copy(push2).negate();
@@ -357,11 +385,12 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
     // or lifts by the smallest amount that clears, preferring where it was authored. Its first
     // bone is the ball of the thumb, which rests on what the palm holds and is handled with the palm.
     // The base is judged with the rest of the thumb held open, as it closes onto the surface afterwards.
-    rig.thumb.forEach((joint, n) => curlTo(joint, Math.min(s.flex[12 + n], OPEN[n])));
+    // A thumb laid in place was fitted to the weapon already, and stays as it was fitted.
+    rig.thumb.forEach((joint, n) => curlTo(joint, s.laid ? s.flex[12 + n] : Math.min(s.flex[12 + n], OPEN[n])));
     const thumbBone = rig.thumb[0].bone;
     /** How much of the thumb is in the way with its base swung and lifted like this: zero when it is clear. */
     const thumbBlocked = (swing: number, lift: number) => {
-      thumbTo(rig, swing, s.flex[12] + lift);
+      thumbTo(rig, swing, s.flex[12] + lift, s.base[1], s.base[2]);
       thumbBone.updateWorldMatrix(false, true);
       rig.thumb.forEach((joint, n) => joints[n].setFromMatrixPosition(joint.bone.matrixWorld).applyMatrix4(toHands));
       joints[3].setFromMatrixPosition(rig.tips[4].matrixWorld).applyMatrix4(toHands);
@@ -370,6 +399,8 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         const radius = TUNING.thumbRadius[n] * slim;
         if (contact.closest(point.lerpVectors(joints[n], joints[n + 1], t), radius) < radius) count += 3;
       }
+      // A cupped palm has the ball of the thumb pressed round what it holds on purpose.
+      if (s.cup > 0) return count;
       thumbToHands.multiplyMatrices(toHands, thumbBone.matrixWorld);
       for (const sample of rig.skin) {
         if (sample.onThumb && contact.body.closest(point.copy(sample.onThumb).applyMatrix4(thumbToHands), SKIN_RADIUS) < SKIN_RADIUS * 0.8 * slim) count += 1;
@@ -380,25 +411,25 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
     // palm, a little to either side, the gentlest first. It is tried at full thickness, then
     // thinner, since a thumb lying along the weapon is resting on it rather than blocked by it.
     const lowest = Math.min(0, THUMB_BACK - s.flex[12]);
-    let swing = 0, lift = 0, left = Infinity;
-    for (const thin of [1, 0.55]) {
+    let swing = s.base[0], lift = 0, left = s.laid ? 0 : Infinity;
+    if (!s.laid) for (const thin of [1, 0.55]) {
       slim = thin;
       left = Infinity;
-      const attempt = (nextSwing: number, nextLift: number) => {
+      const attempt = (aside: number, nextLift: number) => {
         if (left === 0) return;
-        const count = thumbBlocked(nextSwing, nextLift);
-        if (count < left) { swing = nextSwing; lift = nextLift; left = count; }
+        const count = thumbBlocked(s.base[0] + aside, nextLift);
+        if (count < left) { swing = s.base[0] + aside; lift = nextLift; left = count; }
       };
       attempt(0, 0);
-      attempt(THREE.MathUtils.clamp(s.swing, -THUMB_ASIDE, THUMB_ASIDE), THREE.MathUtils.clamp(s.solved[12] - s.flex[12], lowest, THUMB_IN));
+      attempt(THREE.MathUtils.clamp(s.swing - s.base[0], -THUMB_ASIDE, THUMB_ASIDE), THREE.MathUtils.clamp(s.solved[12] - s.flex[12], lowest, THUMB_IN));
       for (const reach of [0.25, 0.5, 0.75, 1]) for (const [a, b] of THUMB_WAYS) attempt(a * reach * THUMB_ASIDE, b < 0 ? -b * reach * lowest : b * reach * THUMB_IN);
       if (left === 0) break;
     }
     slim = 1;
     s.swing = swing;
     s.solved[12] = s.flex[12] + lift;
-    thumbTo(rig, swing, s.solved[12]);
-    if (left > 0) {
+    thumbTo(rig, swing, s.solved[12], s.base[1], s.base[2]);
+    if (left > 0 && !(s.cup > 0)) {
       // No way of holding the thumb clears the body: the hand gives way, as far as the ball of the thumb is in it.
       thumbBone.updateWorldMatrix(false, false);
       thumbToHands.multiplyMatrices(toHands, thumbBone.matrixWorld);
@@ -415,6 +446,10 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
 
     for (let index = 0; index < 5; index += 1) {
       const chain = chainOf(rig, index), base = index * 3;
+      if (index === 4 && s.laid) {
+        for (let n = 1; n < 3; n += 1) { s.solved[base + n] = s.flex[base + n]; curlTo(chain[n], s.flex[base + n]); }
+        continue;
+      }
       // Fingers authored as gripping may close past their authored bend to find the surface.
       const wraps = index < 4 && s.flex[base] > 0.5;
       let held = false;
@@ -489,6 +524,120 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
     return true;
   };
 
+  /**
+   * How far a thumb being laid in place may go: its base swung either way, lifted off the palm (or
+   * a little behind it), turned either way; its outer joints opened and closed. `press` is how much
+   * of each outer bone's thickness must stay clear: the flesh at the root of the thumb squeezes
+   * round a corner, the pad rests on what it touches.
+   */
+  const LAY = { swing: 0.9, behind: -0.2, out: 1.3, turn: 1, open: -0.3, closed: 1.3, press: [0.55, 0.9] };
+  const LAY_SWEEP = { swing: [-0.8, -0.4, 0, 0.4, 0.8], out: [-0.2, 0.1, 0.4, 0.7, 1, 1.3], turn: [-1, -0.5, 0, 0.5, 1], bend: [-0.3, 0.25, 0.8, 1.3] };
+  const LAY_LIMITS = [[-LAY.swing, LAY.swing], [LAY.behind, LAY.out], [-LAY.turn, LAY.turn], [LAY.open, LAY.closed], [LAY.open, LAY.closed]];
+  /**
+   * Lays the thumb where a grip asks for it: the base joint's swing, lift and turn and the bends of
+   * the two outer joints that bring the tip nearest `target` with the thumb resting on the weapon,
+   * not in it. Done once per grip: a coarse sweep whose best few are each refined, since the way
+   * round a corner is narrow and the nearest coarse guess is not always on it. Given an earlier
+   * answer in `from`, only that is refined. Returns [swing, lift, turn, bend, bend].
+   */
+  const layThumb = (s: Side, contact: Contact, target: THREE.Vector3, from?: number[]) => {
+    const rig = s.rig!, [first, middle, last] = rig.thumb, tip = rig.tips[4];
+    rig.upper.updateWorldMatrix(true, true);
+    toHands.copy(hands.matrixWorld).invert();
+    const read = (n: number) => joints[n].setFromMatrixPosition((n < 3 ? rig.thumb[n].bone : tip).matrixWorld).applyMatrix4(toHands);
+    /** How far bone `n` of the thumb is into the weapon, as a length to weigh against the distance left to the target. */
+    const inWeapon = (n: number) => {
+      const radius = TUNING.thumbRadius[n] * LAY.press[n - 1];
+      let total = 0;
+      for (const t of [0.34, 0.67, 1]) {
+        const distance = contact.closest(point.lerpVectors(joints[n], joints[n + 1], t), radius);
+        if (distance < radius) total += 0.004 + (radius - distance) * 2;
+      }
+      // A bone that is clear of every surface may still have passed through a thin one.
+      return contact.segment(joints[n], joints[n + 1]) <= 1 ? total + 0.05 : total;
+    };
+    /** The same for the ball of the thumb, which a cupped palm presses round what it holds on purpose. */
+    const ballInWeapon = () => {
+      if (s.cup > 0) return 0;
+      thumbToHands.multiplyMatrices(toHands, first.bone.matrixWorld);
+      let total = 0;
+      for (const sample of rig.skin) {
+        if (sample.onThumb && contact.body.closest(point.copy(sample.onThumb).applyMatrix4(thumbToHands), SKIN_RADIUS) < SKIN_RADIUS * 0.8) total += 0.0015;
+      }
+      return total;
+    };
+    // Nearest the target, by the least contortion.
+    const reach = (v: number[]) => joints[3].distanceTo(target) + 0.0015 * (Math.abs(v[0]) + Math.abs(v[2]));
+    let best = Infinity;
+    const cost = (v: number[]) => {
+      thumbTo(rig, v[0], 0, v[2], v[1]);
+      curlTo(middle, v[3]);
+      curlTo(last, v[4]);
+      first.bone.updateWorldMatrix(false, true);
+      for (let n = 0; n < 4; n += 1) read(n);
+      let total = reach(v);
+      for (let n = 1; n < 3 && total < best; n += 1) total += inWeapon(n);
+      return total < best ? total + ballInWeapon() : total;
+    };
+    const kept: Array<{ total: number; v: number[] }> = [], trial = [0, 0, 0, 0, 0];
+    if (from) kept.push({ total: cost(from), v: from.slice() });
+    else {
+      // Each joint out from the base only moves what is beyond it, so what the inner ones cost is worked out once.
+      const KEEP = 6;
+      for (const swing of LAY_SWEEP.swing) for (const out of LAY_SWEEP.out) for (const turn of LAY_SWEEP.turn) {
+        thumbTo(rig, swing, 0, turn, out);
+        first.bone.updateWorldMatrix(false, false);
+        read(0);
+        trial[0] = swing; trial[1] = out; trial[2] = turn;
+        let ball = -1;
+        for (const bend of LAY_SWEEP.bend) {
+          curlTo(middle, bend);
+          middle.bone.updateWorldMatrix(false, false);
+          read(1);
+          trial[3] = bend;
+          let inner = -1;
+          for (const end of LAY_SWEEP.bend) {
+            curlTo(last, end);
+            last.bone.updateWorldMatrix(false, true);
+            read(2); read(3);
+            trial[4] = end;
+            let total = reach(trial);
+            if (total >= best) continue;
+            if (inner < 0) inner = inWeapon(1);
+            total += inner;
+            if (total >= best) continue;
+            total += inWeapon(2);
+            if (total >= best) continue;
+            if (ball < 0) ball = ballInWeapon();
+            total += ball;
+            if (total >= best) continue;
+            kept.push({ total, v: trial.slice() });
+            kept.sort((x, y) => x.total - y.total);
+            if (kept.length > KEEP) kept.length = KEEP;
+            if (kept.length === KEEP) best = kept[KEEP - 1].total;
+          }
+        }
+      }
+    }
+    let found = [0, 0, 0, 0, 0], least = Infinity;
+    for (const start of kept) {
+      const v = start.v;
+      best = start.total;
+      for (const step of [0.15, 0.08, 0.04, 0.02, 0.01]) for (let round = 0; round < 4; round += 1) {
+        let better = false;
+        for (let i = 0; i < 5; i += 1) for (const sign of [-1, 1]) {
+          for (let k = 0; k < 5; k += 1) trial[k] = v[k];
+          trial[i] = THREE.MathUtils.clamp(v[i] + sign * step, LAY_LIMITS[i][0], LAY_LIMITS[i][1]);
+          const total = cost(trial);
+          if (total < best - 1e-6) { best = total; v[i] = trial[i]; better = true; }
+        }
+        if (!better) break;
+      }
+      if (best < least) { least = best; found = v; }
+    }
+    return found;
+  };
+
   const contactIds = new WeakMap<Contact, number>();
   let contactCount = 0;
   const contactId = (contact: Contact) => {
@@ -542,34 +691,60 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         nearest = Math.min(nearest, contact.segment(a, b.copy(a).addScaledVector(facing, span)) * span);
       }
       const gap = nearest - BEHIND - TUNING.palm;
-      if (gap < TUNING.reach) pose.position.addScaledVector(facing, gap);
+      if (gap < TUNING.reach && !(pose.cup > 0)) pose.position.addScaledVector(facing, gap);
 
       // Seat: slide until the knuckles are just past the edge, so the fingers have something to
       // fold around instead of folding into it.
       const gripping = [0, 1, 2, 3].filter((index) => pose.flex[index * 3] > 0.5);
-      if (gripping.length < 3) return;
-      s.target.position.copy(pose.position);
-      s.target.quaternion.copy(pose.quaternion);
-      hands.updateWorldMatrix(true, true);
-      solve(s);
-      rig.upper.updateWorldMatrix(true, true);
-      toHands.copy(hands.matrixWorld).invert();
-      const knuckles = gripping.map((index) => new THREE.Vector3().setFromMatrixPosition(rig.fingers[index][0].bone.matrixWorld).applyMatrix4(toHands));
-      const clear = (slide: number) => knuckles.every((knuckle) => {
-        a.copy(knuckle).addScaledVector(forward, slide - TUNING.fingerRadius[0]);
-        return contact.segment(a, b.copy(a).addScaledVector(facing, 0.04)) > 1;
-      });
-      let slide = 0;
-      if (clear(0)) { while (slide > -TUNING.seat && clear(slide - 0.003)) slide -= 0.003; }
-      else { while (slide < TUNING.seat && !clear(slide)) slide += 0.003; if (!clear(slide)) slide = 0; }
-      pose.position.addScaledVector(forward, slide);
+      if (gripping.length >= 3 && !(pose.cup > 0)) {
+        s.target.position.copy(pose.position);
+        s.target.quaternion.copy(pose.quaternion);
+        hands.updateWorldMatrix(true, true);
+        solve(s);
+        rig.upper.updateWorldMatrix(true, true);
+        toHands.copy(hands.matrixWorld).invert();
+        const knuckles = gripping.map((index) => new THREE.Vector3().setFromMatrixPosition(rig.fingers[index][0].bone.matrixWorld).applyMatrix4(toHands));
+        const clear = (slide: number) => knuckles.every((knuckle) => {
+          a.copy(knuckle).addScaledVector(forward, slide - TUNING.fingerRadius[0]);
+          return contact.segment(a, b.copy(a).addScaledVector(facing, 0.04)) > 1;
+        });
+        let slide = 0;
+        if (clear(0)) { while (slide > -TUNING.seat && clear(slide - 0.003)) slide -= 0.003; }
+        else { while (slide < TUNING.seat && !clear(slide)) slide += 0.003; if (!clear(slide)) slide = 0; }
+        pose.position.addScaledVector(forward, slide);
+      }
+
+      // Thumb: laid where the grip asks, with the hand settled on the weapon the way a frame settles
+      // it. Laying the thumb can let the hand settle a little differently, so it is done again if so.
+      if (!pose.reach) return;
+      const settledAt = new THREE.Vector3(Infinity, 0, 0);
+      for (let round = 0; round < 3; round += 1) {
+        s.target.position.copy(pose.position);
+        s.target.quaternion.copy(pose.quaternion);
+        for (let i = 0; i < 15; i += 1) s.flex[i] = pose.flex[i];
+        for (let i = 0; i < 3; i += 1) s.base[i] = pose.base[i];
+        s.laid = pose.laid; s.cup = pose.cup;
+        s.authored.copy(pose.position);
+        hands.updateWorldMatrix(true, true);
+        const near = depenetrate(s, contact);
+        hands.updateWorldMatrix(false, true);
+        solve(s);
+        if (near) for (let pass = 0; pass < 4 && closeFingers(s, contact, pass < 3); pass += 1) { hands.updateWorldMatrix(false, true); solve(s); }
+        if (s.target.position.distanceTo(settledAt) < 0.0003) break;
+        settledAt.copy(s.target.position);
+        // Once laid, the thumb is only adjusted for where the hand has settled since.
+        const [swing, out, turn, middle, tip] = layThumb(s, contact, pose.reach, pose.laid ? [pose.base[0], pose.base[2], pose.base[1], pose.flex[13], pose.flex[14]] : undefined);
+        pose.base[0] = swing; pose.base[1] = turn; pose.base[2] = out; pose.laid = true;
+        pose.flex[12] = 0; pose.flex[13] = middle; pose.flex[14] = tip;
+      }
+      s.stamp = "";
     },
     update(contact) {
       if (!begin()) return;
       for (const s of sides) {
         if (!s.rig) continue;
         // A hand that has not moved against the weapon since last frame keeps its answer.
-        const t = s.target, stamp = contact ? `${contactId(contact)}|${contact.version}|${t.position.x},${t.position.y},${t.position.z}|${t.quaternion.x},${t.quaternion.y},${t.quaternion.z}|${s.flex.join()}` : "free";
+        const t = s.target, stamp = contact ? `${contactId(contact)}|${contact.version}|${t.position.x},${t.position.y},${t.position.z}|${t.quaternion.x},${t.quaternion.y},${t.quaternion.z}|${s.flex.join()}|${s.base.join()}|${s.cup}` : "free";
         const fresh = stamp !== s.stamp;
         if (fresh) s.authored.copy(t.position);
         s.stamp = stamp;
@@ -582,12 +757,14 @@ export function createArms(anisotropy: number, manager: THREE.LoadingManager, is
         if (near) {
           // Fingers that stay buried even fully open move the whole hand, then everything is solved again.
           for (let pass = 0; pass < 4 && closeFingers(s, contact!, pass < 3); pass += 1) { hands.updateWorldMatrix(false, true); solve(s); }
-        } else if (fresh) { s.swing = 0; for (let i = 0; i < 15; i += 1) s.solved[i] = s.flex[i]; }
+        } else if (fresh) { s.swing = s.base[0]; for (let i = 0; i < 15; i += 1) s.solved[i] = s.flex[i]; }
         if (fresh) s.settled.copy(t.position);
         // Ease toward the answer so a finger settles onto a surface rather than snapping to it.
         for (let i = 0; i < 15; i += 1) s.shown[i] += (s.solved[i] - s.shown[i]) * 0.5;
         s.swingShown += (s.swing - s.swingShown) * 0.5;
-        show(s, s.shown, s.swingShown);
+        s.turnShown += (s.base[1] - s.turnShown) * 0.5;
+        s.outShown += (s.base[2] - s.outShown) * 0.5;
+        show(s, s.shown, s.swingShown, s.turnShown, s.outShown);
       }
     },
     penetration(contact) {

@@ -737,7 +737,7 @@ export default function App() {
           <div className="range-bottom">
             <span>NO ORDER IS SENT UNTIL YOU REVIEW AND CONFIRM</span>
             <strong>
-              {ammo.reloading ? "RELOADING" : ammo.magazine < 0 ? "BLADE" : `${ammo.magazine} / ∞`}
+              {ammo.reloading ? "RELOADING" : `${ammo.magazine} / ∞`}
             </strong>
           </div>
         </>

@@ -26,9 +26,7 @@ type ShotProfile = {
   tail: number;
 };
 
-type Firearm = Exclude<WeaponId, "knife">;
-
-const SHOTS: Record<Firearm, ShotProfile> = {
+const SHOTS: Record<WeaponId, ShotProfile> = {
   // 7.62×39: heavy, low and loud, with the carrier slamming home.
   ak47: { crack: { hz: 3200, gain: 1, decay: 0.022 }, body: { hz: 620, q: 0.7, gain: 1.15, decay: 0.16 }, thump: { from: 125, to: 42, gain: 1.1, decay: 0.13 }, clack: { hz: 2400, gain: 0.36, decay: 0.03, delay: 0.055 }, rumble: { hz: 380, gain: 0.5, decay: 0.55 }, drive: 2.4, length: 1, level: 0.56, tail: 0.42 },
   // 5.56 from a carbine: sharper and tighter.
@@ -39,6 +37,8 @@ const SHOTS: Record<Firearm, ShotProfile> = {
   uzi: { crack: { hz: 2600, gain: 0.7, decay: 0.018 }, body: { hz: 820, q: 0.9, gain: 0.9, decay: 0.085 }, thump: { from: 185, to: 70, gain: 0.65, decay: 0.07 }, clack: { hz: 1900, gain: 0.5, decay: 0.03, delay: 0.045 }, rumble: { hz: 450, gain: 0.22, decay: 0.25 }, drive: 1.6, length: 0.6, level: 0.42, tail: 0.24 },
   // Full-power rifle round: a boom that rolls on. The bolt is worked by hand, so no clack.
   rifle: { crack: { hz: 2800, gain: 1.2, decay: 0.03 }, body: { hz: 480, q: 0.6, gain: 1.3, decay: 0.26 }, thump: { from: 95, to: 32, gain: 1.4, decay: 0.22 }, clack: { hz: 2000, gain: 0, decay: 0.02, delay: 0.05 }, rumble: { hz: 260, gain: 0.8, decay: 1.1 }, drive: 3, length: 1.8, level: 0.75, tail: 0.6 },
+  // .50 AE from a six-inch barrel: a hard, deep bark, and a heavy slide slamming home after it.
+  deagle: { crack: { hz: 3000, gain: 1.15, decay: 0.024 }, body: { hz: 560, q: 0.65, gain: 1.25, decay: 0.19 }, thump: { from: 112, to: 36, gain: 1.3, decay: 0.17 }, clack: { hz: 2600, gain: 0.4, decay: 0.028, delay: 0.085 }, rumble: { hz: 300, gain: 0.62, decay: 0.75 }, drive: 2.8, length: 1.3, level: 0.66, tail: 0.5 },
 };
 
 /** Reverb time in seconds, and how bright the tail is, for each map. */
@@ -58,15 +58,12 @@ const ROOMS: Record<RangeMapId, { seconds: number; damping: number; wet: number 
 const VARIATIONS = 3;
 const RATE = 44100;
 
-export type KnifeSound = "swing" | "flesh" | "hard" | "draw";
-
 export type RangeSound = {
   /** The shared context, created on first use (which must follow a user gesture). */
   context: () => AudioContext;
   /** Where every source connects: feeds the master and, by `send`, the room reverb. */
   bus: (send?: number) => AudioNode;
   shot: (id: WeaponId) => void;
-  knife: (kind: KnifeSound) => void;
   /** Master level for everything on this context, 0 (muted) to 1. */
   setVolume: (level: number) => void;
   dispose: () => void;
@@ -168,9 +165,9 @@ export function createRangeSound(map: RangeMapId): RangeSound {
   let disposed = false;
 
   // Rendering needs no user gesture, so the shots are ready before the first trigger pull.
-  const shots = new Map<Firearm, AudioBuffer[]>();
+  const shots = new Map<WeaponId, AudioBuffer[]>();
   if (typeof OfflineAudioContext !== "undefined") {
-    for (const id of Object.keys(SHOTS) as Firearm[]) {
+    for (const id of Object.keys(SHOTS) as WeaponId[]) {
       void Promise.all(Array.from({ length: VARIATIONS }, () => renderShot(SHOTS[id])))
         .then((buffers) => { if (!disposed) shots.set(id, buffers); })
         .catch(() => { /* audio is optional */ });
@@ -211,38 +208,10 @@ export function createRangeSound(map: RangeMapId): RangeSound {
     return node;
   };
 
-  /** A sine partial that rings and dies: the building block of blade sounds. */
-  const ring = (audio: AudioContext, out: AudioNode, at: number, from: number, to: number, length: number, gain: number) => {
-    const oscillator = audio.createOscillator(), volume = audio.createGain();
-    oscillator.frequency.setValueAtTime(from, at);
-    oscillator.frequency.exponentialRampToValueAtTime(to, at + length);
-    volume.gain.setValueAtTime(gain, at);
-    volume.gain.exponentialRampToValueAtTime(0.0001, at + length);
-    oscillator.connect(volume).connect(out);
-    oscillator.start(at); oscillator.stop(at + length + 0.02);
-  };
-  /** Noise swept through a band-pass: air moving past a blade. */
-  const sweep = (audio: AudioContext, out: AudioNode, at: number, hz: [number, number, number], length: number, gain: number, q = 1.4) => {
-    const source = audio.createBufferSource();
-    source.buffer = noiseBuffer(audio, length + 0.05);
-    const filter = audio.createBiquadFilter();
-    filter.type = "bandpass"; filter.Q.value = q;
-    filter.frequency.setValueAtTime(hz[0], at);
-    filter.frequency.exponentialRampToValueAtTime(hz[1], at + length * 0.45);
-    filter.frequency.exponentialRampToValueAtTime(hz[2], at + length);
-    const volume = audio.createGain();
-    volume.gain.setValueAtTime(0.0001, at);
-    volume.gain.exponentialRampToValueAtTime(gain, at + length * 0.4);
-    volume.gain.exponentialRampToValueAtTime(0.0001, at + length);
-    source.connect(filter).connect(volume).connect(out);
-    source.start(at);
-  };
-
   return {
     context: ensure,
     bus,
     shot(id) {
-      if (id === "knife") return;
       try {
         const audio = ensure();
         const buffers = shots.get(id);
@@ -254,30 +223,6 @@ export function createRangeSound(map: RangeMapId): RangeSound {
         volume.gain.value = 0.9 + Math.random() * 0.1;
         source.connect(volume).connect(bus(SHOTS[id].tail));
         source.start();
-      } catch { /* audio is optional */ }
-    },
-    knife(kind) {
-      try {
-        const audio = ensure(), at = audio.currentTime, out = bus(kind === "hard" ? 0.3 : 0.12);
-        const tune = 0.93 + Math.random() * 0.14;
-        if (kind === "swing") {
-          sweep(audio, out, at, [500 * tune, 2600 * tune, 700], 0.2, 0.5);
-          sweep(audio, out, at + 0.02, [1800, 5200 * tune, 2200], 0.13, 0.16, 3);
-        } else if (kind === "flesh") {
-          // A dull wet thump with a short tearing edge.
-          ring(audio, out, at, 150 * tune, 55, 0.12, 0.7);
-          sweep(audio, out, at, [900, 420 * tune, 180], 0.13, 0.6, 0.8);
-          sweep(audio, out, at + 0.03, [2600, 1500 * tune, 900], 0.09, 0.2, 2.5);
-        } else if (kind === "hard") {
-          // Steel on something that does not give: inharmonic partials and a tick.
-          for (const [hz, length, gain] of [[2140, 0.22, 0.2], [3390, 0.16, 0.16], [5270, 0.11, 0.1], [7450, 0.07, 0.07]]) ring(audio, out, at, hz * tune, hz * tune * 0.995, length, gain);
-          sweep(audio, out, at, [6000, 3800, 2500], 0.03, 0.4, 1);
-        } else {
-          // Blade clearing a sheath: a rising scrape that ends in a faint ring.
-          sweep(audio, out, at, [1400, 4200 * tune, 6400], 0.18, 0.2, 4);
-          ring(audio, out, at + 0.14, 4100 * tune, 4080 * tune, 0.3, 0.05);
-          ring(audio, out, at + 0.14, 6230 * tune, 6200 * tune, 0.2, 0.03);
-        }
       } catch { /* audio is optional */ }
     },
     setVolume(level) {

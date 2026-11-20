@@ -20,11 +20,18 @@ type Props = {
 
 const CONTROLS: Array<[string, string]> = [
   ["WASD", "move"],
-  ["MOUSE", "aim"],
-  ["HOLD", "fire"],
+  ["SHIFT", "walk"],
+  ["CTRL", "crouch"],
+  ["SPACE", "jump"],
+  ["LMB", "fire"],
+  ["RMB", "aim / scope"],
   ["R", "reload"],
-  ["E", "review"],
-  ["1–6", "weapons"],
+  ["E", "use"],
+  ["G", "drop"],
+  ["F", "inspect"],
+  ["Q", "last weapon"],
+  ["1–0", "weapons"],
+  ["V", "fire mode"],
   ["M", "mute"],
 ];
 const TOUCH_CONTROLS: Array<[string, string]> = [

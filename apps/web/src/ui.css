@@ -1437,6 +1437,21 @@ html {
   backdrop-filter: blur(18px) saturate(0.7);
   -webkit-backdrop-filter: blur(18px) saturate(0.7);
 }
+/* Anything else opened over a live range (a trade ticket, the foundry and chart panels) sits on
+   the pause screen's veil: the same blur and darkening, so the range reads the same behind all
+   of them. Two rules, since a browser that drops one selector of a list drops the whole rule. */
+.in-range .ticket-backdrop {
+  background:
+    radial-gradient(120% 90% at 50% 40%, #061214b8 0%, #040b0dea 100%);
+  backdrop-filter: blur(18px) saturate(0.7);
+  -webkit-backdrop-filter: blur(18px) saturate(0.7);
+}
+.in-range .range-overlay::backdrop {
+  background:
+    radial-gradient(120% 90% at 50% 40%, #061214b8 0%, #040b0dea 100%);
+  backdrop-filter: blur(18px) saturate(0.7);
+  -webkit-backdrop-filter: blur(18px) saturate(0.7);
+}
 @keyframes lobby-in {
   from {
     opacity: 0;

@@ -1,7 +1,7 @@
 // Weapon roster and trigger logic. Pure data and functions: no rendering here.
 
-export type FireMode = "AUTO" | "BURST" | "SEMI" | "BOLT" | "MELEE";
-export type WeaponId = "ak47" | "m4" | "famas" | "uzi" | "rifle" | "knife";
+export type FireMode = "AUTO" | "BURST" | "SEMI" | "BOLT";
+export type WeaponId = "ak47" | "m4" | "famas" | "uzi" | "rifle" | "deagle";
 
 export type WeaponSpec = {
   id: WeaponId;
@@ -14,7 +14,7 @@ export type WeaponSpec = {
   burst: number;
   magazine: number;
   reloadMs: number;
-  /** Time to work the action between shots (bolt-action only). */
+  /** How long the action takes after a shot: a bolt worked by hand (which holds the next shot), or a pistol's slide going back and home. */
   cycleMs: number;
   damage: number;
   headshot: number;
@@ -24,8 +24,6 @@ export type WeaponSpec = {
   /** Magnification while aiming, and whether that is through an optic (which fills the view) or over the sights. */
   zoom: number;
   scope: boolean;
-  /** A blade: no ammunition, and it only reaches this far (metres). */
-  reach?: number;
 };
 
 export const ARSENAL: WeaponSpec[] = [
@@ -34,7 +32,7 @@ export const ARSENAL: WeaponSpec[] = [
   { id: "famas", name: "FAMAS F1", calibre: "5.56×45", modes: ["BURST", "AUTO"], rpm: 1000, burst: 3, magazine: 25, reloadMs: 2600, cycleMs: 0, damage: 28, headshot: 3, kick: 0.075, climb: 0.0045, zoom: 1.35, scope: false },
   { id: "uzi", name: "UZI", calibre: "9×19", modes: ["AUTO", "SEMI"], rpm: 620, burst: 1, magazine: 32, reloadMs: 2050, cycleMs: 0, damage: 22, headshot: 2.5, kick: 0.06, climb: 0.0032, zoom: 1.25, scope: false },
   { id: "rifle", name: "BOLT-ACTION 7.62", calibre: "7.62×54R", modes: ["BOLT"], rpm: 50, burst: 1, magazine: 5, reloadMs: 3100, cycleMs: 1150, damage: 190, headshot: 4, kick: 0.2, climb: 0.022, zoom: 4, scope: true },
-  { id: "knife", name: "KNIFE", calibre: "COMBAT BLADE", modes: ["MELEE"], rpm: 100, burst: 1, magazine: 1, reloadMs: 0, cycleMs: 520, damage: 60, headshot: 0, kick: 0.05, climb: 0, zoom: 1, scope: false, reach: 1.75 },
+  { id: "deagle", name: "DESERT EAGLE", calibre: ".50 AE", modes: ["SEMI"], rpm: 267, burst: 1, magazine: 7, reloadMs: 2300, cycleMs: 220, damage: 58, headshot: 3.5, kick: 0.17, climb: 0.019, zoom: 1.25, scope: false },
 ];
 
 export function nextMode(spec: WeaponSpec, mode: FireMode): FireMode {
@@ -64,9 +62,6 @@ export function takeShot(spec: WeaponSpec, mode: FireMode, trigger: Trigger, now
     fire = trigger.held && since >= interval;
   } else if (mode === "SEMI") {
     fire = trigger.fresh && since >= interval;
-  } else if (mode === "MELEE") {
-    // Hold to keep slashing, one swing at a time.
-    fire = (trigger.held || trigger.fresh) && since >= interval;
   } else if (mode === "BOLT") {
     fire = trigger.fresh && since >= spec.cycleMs;
   } else {

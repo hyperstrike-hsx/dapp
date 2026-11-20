@@ -5,23 +5,29 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { ARSENAL, type WeaponId, type WeaponSpec } from "./arsenalSpec";
 import type { Mover } from "./collider";
 import { blendPose, resolvePose, type HandPose, type ResolvedPose } from "./hands";
+import { DEAGLE_SKINS, FAMAS_SKINS, M4_SKINS, UZI_SKINS, type Skin } from "./skins";
 import { createFinishKit, prepareRifle, surfaceBuilt, surfaceWeapon, type FinishKit, type WeaponSurfacing } from "./weapon";
 
-// The five weapons.
+// The six weapons.
 //
 // Every weapon lives in the same "weapon space": real metres, bore along -Z,
 // +Y up, origin where the web of the firing hand meets the grip. The AK and
-// the bolt-action are authored models normalised into that space; the M4, FAMAS
-// and Uzi are modelled here from extruded side profiles, turned parts and
-// chamfered blocks, then surfaced with the same edge-wear materials.
+// the bolt-action are authored models normalised into that space; the M4, FAMAS,
+// Uzi and Desert Eagle are modelled here from extruded side profiles, turned parts and
+// chamfered blocks, then surfaced with the same edge-wear materials and skinned
+// after the index illustrations (see skins.ts).
 //
 // Each weapon carries its grips (where both hands rest) and timelines for the
-// reload and, for the bolt-action, for working the action between shots.
+// reload and, where the action shows it, for what happens between shots: the
+// bolt-action being worked, the pistol's slide coming back.
 
 type V3 = [number, number, number];
 export type ReloadSound = "magOut" | "magIn" | "rack" | "slap" | "boltUp" | "boltBack" | "boltHome" | "cloth";
-/** `toRest` blends the pose back toward the weapon's resting grip: 1 is that grip exactly, wherever fitting seated it. */
-type HandKey = { t: number; pose: HandPose; toRest?: number };
+/**
+ * `toRest` blends the pose back toward the weapon's resting grip: 1 is that grip exactly, wherever fitting seated it.
+ * `via` marks a place the hand only passes through, on its way round something: it does not slow down for it.
+ */
+type HandKey = { t: number; pose: HandPose; toRest?: number; via?: boolean };
 type PartKey = { t: number; p?: V3; r?: V3; hide?: boolean };
 export type Timeline = {
   /** Keys are dense samples of a motion that carries its own easing: read them straight, without easing each step. */
@@ -31,7 +37,7 @@ export type Timeline = {
   body?: PartKey[];
   parts?: Record<string, PartKey[]>;
   sounds?: Array<{ t: number; kind: ReloadSound }>;
-  /** Moment a spent case leaves the action (bolt-action). */
+  /** Moment a spent case leaves the action, where that is not the instant of the shot (bolt-action). */
   eject?: number;
 };
 
@@ -111,11 +117,18 @@ function createBuilder() {
     },
     /** Side silhouette as [z, y] points, extruded to `width` across X with chamfered edges. */
     profile(points: Array<[number, number]>, width: number, finish: string, x = 0, bevel = 0.002) {
-      const shape = new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(z, y)));
+      this.shape(new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(z, y))), width, finish, x, bevel, 1);
+    },
+    /** The same from a drawn shape (z across, y up), which may have curves and holes. */
+    shape(shape: THREE.Shape, width: number, finish: string, x = 0, bevel = 0.002, curveSegments = 12) {
       const b = Math.min(bevel, width * 0.3);
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth: width - b * 2, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 1, curveSegments: 1 });
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: width - b * 2, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 1, curveSegments });
       geometry.rotateY(-Math.PI / 2);
       place(geometry, [x + width / 2 - b, 0, 0], finish);
+    },
+    /** Geometry already in weapon space. */
+    solid(geometry: THREE.BufferGeometry, finish: string) {
+      place(geometry, [0, 0, 0], finish);
     },
     /** Accessory rail: a base strip with recoil-lug teeth. `side` is the outward direction. */
     rail(z0: number, z1: number, at: [number, number], side: "top" | "bottom" | "left" | "right", finish: string) {
@@ -138,14 +151,16 @@ function createBuilder() {
       mesh.position.set(at[0] - current.position.x, at[1] - current.position.y, at[2] - current.position.z);
       current.add(mesh);
     },
-    /** Merges queued geometry into one mesh per part and finish. */
-    finish(kit: FinishKit) {
+    /** Merges queued geometry into one mesh per part and finish, and paints `skins` over the finishes they name. */
+    finish(kit: FinishKit, skins?: Record<string, Skin>) {
       const groups = new Map<string, { group: THREE.Group; finish: string; geometries: THREE.BufferGeometry[] }>();
       pending.forEach(({ group, finish, geometry }) => {
         const key = `${group.id}:${finish}`;
         const entry = groups.get(key) ?? { group, finish, geometries: [] };
         const flat = geometry.index ? geometry.toNonIndexed() : geometry;
         if (flat !== geometry) geometry.dispose();
+        // Merging needs every piece to carry the same attributes; the surfacing unwraps them again anyway.
+        if (!flat.attributes.uv) flat.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(flat.attributes.position.count * 2), 2));
         entry.geometries.push(flat);
         groups.set(key, entry);
       });
@@ -156,7 +171,7 @@ function createBuilder() {
         mesh.userData.finish = finish;
         group.add(mesh);
       });
-      return surfaceBuilt(root, kit);
+      return surfaceBuilt(root, kit, skins);
     },
   };
 }
@@ -238,21 +253,22 @@ function buildM4(kit: FinishKit): Built {
   b.profile([[-0.09, 0.012], [-0.142, 0.014], [-0.152, -0.1], [-0.165, -0.186], [-0.108, -0.196], [-0.1, -0.1]], 0.023, "polymer", 0, 0.003);
   for (let i = 0; i < 5; i += 1) b.box(0.0255, 0.004, 0.05, [0, -0.06 - i * 0.026, -0.124 - i * 0.0026], "polymer", [-0.1, 0, 0], 0.001);
   b.box(0.027, 0.008, 0.062, [0, -0.193, -0.137], "polymer", [-0.17, 0, 0]);
-  const surface = b.finish(kit);
+  const surface = b.finish(kit, M4_SKINS);
   return { root: b.root, parts: builtParts(b), muzzle: [0, B, -0.582], port: [0.03, B, -0.085], dispose() { surface.dispose(); extras.forEach((m) => m.dispose()); geometries.forEach((g) => g.dispose()); } };
 }
 
 function buildFamas(kit: FinishKit): Built {
   const b = createBuilder(), B = 0.05;
   // One-piece bullpup body: handguard, receiver and stock.
-  b.profile([[-0.21, B + 0.03], [-0.21, B - 0.03], [-0.13, B - 0.046], [0.02, B - 0.05], [0.075, -0.03], [0.168, -0.03], [0.2, -0.052], [0.398, -0.092], [0.404, B + 0.03], [0.362, B + 0.047], [0.17, B + 0.047], [0.15, B + 0.03]], 0.05, "grey", 0, 0.006);
+  b.profile([[-0.21, B + 0.03], [-0.21, B - 0.03], [-0.13, B - 0.046], [0.02, B - 0.05], [0.074, B - 0.05], [0.09, -0.03], [0.168, -0.03], [0.2, -0.052], [0.398, -0.092], [0.404, B + 0.03], [0.362, B + 0.047], [0.17, B + 0.047], [0.15, B + 0.03]], 0.05, "grey", 0, 0.006);
   b.box(0.053, 0.14, 0.014, [0, -0.012, 0.408], "rubber", undefined, 0.005);
   for (let i = 0; i < 5; i += 1) b.box(0.052, 0.004, 0.05, [0, B - 0.004 - i * 0.008, -0.165], "grey", undefined, 0.001);
   b.box(0.03, 0.012, 0.31, [0, B + 0.034, -0.03], "parkerized");
   // Grip and whole-hand trigger guard.
   b.profile(gripProfile(0.016, -0.034, 0.028, 0.105), 0.032, "grey", 0, 0.004);
-  b.box(0.02, 0.006, 0.112, [0, -0.09, -0.062], "grey", [-0.27, 0, 0], 0.002);
-  b.box(0.02, 0.056, 0.007, [0, -0.046, -0.121], "grey", [-0.1, 0, 0], 0.002);
+  // The guard is one loop: down from the body ahead of the trigger, and back to the foot of the grip.
+  b.box(0.02, 0.006, 0.084, [0, -0.1018, -0.0428], "grey", [-0.043, 0, 0], 0.002);
+  b.box(0.02, 0.112, 0.007, [0, -0.05, -0.085], "grey", [-0.046, 0, 0], 0.002);
   b.box(0.005, 0.03, 0.007, [0, -0.012, -0.05], "blued", [-0.25, 0, 0]);
   // The carrying handle that gives the rifle its silhouette.
   b.profile([[0.142, B + 0.03], [0.098, B + 0.03], [0.082, B + 0.098], [0.112, B + 0.098]], 0.022, "grey", 0, 0.003);
@@ -282,7 +298,7 @@ function buildFamas(kit: FinishKit): Built {
   b.profile([[0.103, -0.006], [0.158, -0.006], [0.153, -0.19], [0.096, -0.184]], 0.024, "parkerized", 0, 0.002);
   b.box(0.027, 0.007, 0.062, [0, -0.19, 0.1245], "parkerized", [0.1, 0, 0]);
   for (let i = 0; i < 2; i += 1) b.box(0.0256, 0.12, 0.004, [0, -0.11, 0.115 + i * 0.022], "parkerized", [0.035, 0, 0], 0.001);
-  const surface = b.finish(kit);
+  const surface = b.finish(kit, FAMAS_SKINS);
   return { root: b.root, parts: builtParts(b), muzzle: [0, B, -0.382], port: [0.034, B + 0.008, 0.1], dispose: surface.dispose };
 }
 
@@ -325,8 +341,85 @@ function buildUzi(kit: FinishKit): Built {
   b.box(0.021, 0.2, 0.037, [0, -0.14, -0.004], "blued", undefined, 0.002);
   b.box(0.024, 0.007, 0.041, [0, -0.243, -0.004], "blued");
   for (let i = 0; i < 3; i += 1) b.box(0.0222, 0.1, 0.004, [0, -0.175, -0.016 + i * 0.012], "blued", undefined, 0.001);
-  const surface = b.finish(kit);
+  const surface = b.finish(kit, UZI_SKINS);
   return { root: b.root, parts: builtParts(b), muzzle: [0, B, -0.249], port: [0.03, 0.058, -0.05], dispose: surface.dispose };
+}
+
+/** A cross-section drawn as [x, y] points, run along the bore from `front` back to `rear`, with chamfered ends. */
+function prism(section: Array<[number, number]>, front: number, rear: number, bevel = 0.0014) {
+  const shape = new THREE.Shape(section.map(([x, y]) => new THREE.Vector2(x, y)));
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: rear - front - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelOffset: -bevel, bevelSegments: 1 });
+  return geometry.translate(0, 0, front + bevel);
+}
+
+/** How far the Desert Eagle's grip leans back for each metre it drops, how far its slide travels, and where the grip ends. */
+const DEAGLE = { rake: 0.22, travel: 0.042, foot: -0.092 };
+
+/**
+ * Desert Eagle: a gas-operated pistol as long as a carbine's receiver. The barrel is fixed to the
+ * frame and stands clear of the slide, slab-sided below and bevelled up to a slotted rib; the slide
+ * is the block behind it and two arms that run forward under it, and all of that comes back on a shot.
+ */
+function buildDeagle(kit: FinishKit): Built {
+  const b = createBuilder(), B = 0.043, RAKE = DEAGLE.rake;
+  // The same bevelled shoulders on barrel and slide, the barrel's rib standing a little higher.
+  const shouldered = (foot: number, top: number, rib: number): Array<[number, number]> => [[-0.0153, foot], [0.0153, foot], [0.0153, B + 0.003], [rib, top - 0.0035], [rib, top], [-rib, top], [-rib, top - 0.0035], [-0.0153, B + 0.003]];
+
+  // Barrel, fixed: rib slotted for a scope mount, ramp foresight, crowned muzzle with the gas plug under it.
+  b.solid(prism(shouldered(0.026, B + 0.0222, 0.0078), -0.226, -0.0702), "anodized");
+  for (let i = 0; i < 9; i += 1) b.box(0.0156, 0.0016, 0.0046, [0, B + 0.0226, -0.094 - i * 0.0115], "anodized", undefined, 0.0005);
+  b.profile([[-0.2195, 0.0648], [-0.2045, 0.0648], [-0.2065, 0.0718], [-0.2125, 0.0718]], 0.0034, "blued", 0, 0.0008);
+  b.tube(0.0086, 0.0064, 0.004, [0, B, -0.2268], "blued", 20);
+  b.cyl(0.0064, 0.002, [0, B, -0.2262], "rubber", "z", 0.0064, 16);
+  b.cyl(0.0032, 0.003, [0, B - 0.0118, -0.2262], "blued", "z", 0.0032, 10);
+
+  // Frame: one bar from the nose to the tang over the web of the hand, with the works under the barrel and slide.
+  b.profile([[-0.208, 0.0145], [0.035, 0.0145], [0.0445, 0.0075], [0.037, -0.002], [-0.2, -0.002], [-0.208, 0.004]], 0.0296, "parkerized", 0, 0.0022);
+  b.box(0.018, 0.012, 0.124, [0, 0.0205, -0.133], "rubber", undefined, 0.001);
+  b.box(0.02, 0.021, 0.1, [0, 0.0255, -0.02], "rubber", undefined, 0.001);
+  // The next round, waiting under the slide: it shows when the slide is back.
+  b.cyl(0.0064, 0.03, [0, 0.0395, -0.052], "brass", "z", 0.0064, 12);
+  // Squared trigger guard, cut from one piece, and the trigger in it.
+  const guard = new THREE.Shape([[-0.014, 0.002], [-0.096, 0.002], [-0.0985, -0.006], [-0.0965, -0.032], [-0.089, -0.0415], [-0.014, -0.0415]].map(([z, y]) => new THREE.Vector2(z, y)));
+  guard.holes.push(new THREE.Path([[-0.033, -0.0022], [-0.0905, -0.0022], [-0.0915, -0.03], [-0.086, -0.0365], [-0.036, -0.0365], [-0.03, -0.03]].map(([z, y]) => new THREE.Vector2(z, y))));
+  b.shape(guard, 0.0108, "parkerized", 0, 0.002, 1);
+  b.box(0.0056, 0.021, 0.0052, [0, -0.0125, -0.0495], "blued", [0.16, 0, 0], 0.0014);
+  // Grip: the frame's own straps, raked back, with a panel let into each side and a medallion in each panel.
+  const FOOT = DEAGLE.foot, PANEL = FOOT + 0.006;
+  const front = (y: number) => -0.027 - RAKE * y, back = (y: number) => 0.0295 - RAKE * (y + 0.012);
+  b.profile([[-0.027, 0.003], [0.034, 0.003], [back(-0.012), -0.012], [back(-0.05) + 0.0015, -0.05], [back(FOOT), FOOT], [front(FOOT), FOOT]], 0.027, "parkerized", 0, 0.0045);
+  b.profile([[front(-0.008) + 0.0045, -0.008], [back(-0.012) - 0.0065, -0.008], [back(-0.016) - 0.004, -0.016], [back(PANEL) - 0.0045, PANEL], [front(PANEL) + 0.0045, PANEL]], 0.0345, "polymer", 0, 0.003);
+  b.cyl(0.0056, 0.0358, [0, -0.046, 0.0108], "blued", "x", 0.0056, 16);
+  // Hammer spur behind the slide; slide stop, its pin and the magazine catch on the frame.
+  b.box(0.0066, 0.0125, 0.006, [0, 0.0265, 0.0478], "blued", [0.5, 0, 0], 0.0014);
+  b.box(0.0028, 0.005, 0.03, [-0.0152, 0.0088, -0.05], "blued", undefined, 0.001);
+  b.cyl(0.0034, 0.0326, [0, 0.0066, -0.082], "blued", "x", 0.0034, 10);
+  b.cyl(0.0034, 0.004, [-0.0138, -0.011, -0.0205], "blued", "x", 0.0034, 10);
+
+  // Slide: the block behind the barrel, its two arms forward under the barrel joined at the nose, and what rides on it.
+  b.part("bolt", [0, B, -0.07]);
+  b.solid(prism(shouldered(0.0145, 0.0605, 0.0086), -0.0715, 0.044, 0.0018), "anodized");
+  for (const x of [-0.0124, 0.0124]) b.box(0.0058, 0.0125, 0.132, [x, 0.0205, -0.137], "anodized", undefined, 0.0012);
+  b.box(0.0306, 0.0125, 0.008, [0, 0.0205, -0.2], "anodized", undefined, 0.0012);
+  // Slanted grasping grooves, the safety with its lever on both sides, the rear sight.
+  for (let i = 0; i < 6; i += 1) b.box(0.0318, 0.026, 0.0022, [0, 0.0315, -0.004 + i * 0.0048], "anodized", [0.3, 0, 0], 0.0006);
+  b.cyl(0.0044, 0.0336, [0, 0.0405, 0.0368], "blued", "x", 0.0044, 12);
+  for (const x of [-0.0158, 0.0158]) b.box(0.003, 0.0052, 0.015, [x, 0.038, 0.0288], "blued", [0.42, 0, 0], 0.001);
+  b.box(0.021, 0.0045, 0.011, [0, 0.0622, 0.034], "blued", undefined, 0.001);
+  for (const x of [-0.0068, 0.0068]) b.box(0.0064, 0.0062, 0.0085, [x, 0.0668, 0.0348], "blued", undefined, 0.001);
+  // Ejection port on the right shoulder, and the bolt that fills it.
+  b.box(0.002, 0.0118, 0.031, [0.0121, 0.0538, -0.05], "bright", [0, 0, 0.467], 0.0004);
+  b.cyl(0.0088, 0.03, [0, B, -0.078], "bright", "z", 0.0088, 14);
+
+  // Seven rounds of .50 in a single stack: a magazine as deep as the grip, lying along its rake.
+  const lean = -Math.atan(RAKE);
+  b.part("mag", [0, FOOT, 0.02]);
+  b.box(0.0165, 0.096, 0.042, [0, -0.046, 0.0108], "bright", [lean, 0, 0], 0.0016);
+  b.cyl(0.0062, 0.034, [0, 0.0005, 0], "brass", "z", 0.0062, 12);
+  b.box(0.0285, 0.0065, 0.058, [0, FOOT - 0.0035, 0.0205], "blued", undefined, 0.0018);
+
+  const surface = b.finish(kit, DEAGLE_SKINS);
+  return { root: b.root, parts: builtParts(b), muzzle: [0, B, -0.229], port: [0.016, 0.056, -0.05], dispose: surface.dispose };
 }
 
 // ---- Authored models --------------------------------------------------------
@@ -343,6 +436,8 @@ function mountAuthored(root: THREE.Group, object: THREE.Object3D, surfacing: Wea
   holder.position.set(...muzzleAt).sub(surfacing.muzzle.clone().applyQuaternion(holder.quaternion));
   root.add(holder);
   root.updateMatrixWorld(true);
+  // The skin is painted in weapon space; this is how the model's own space gets there.
+  surfacing.frame.multiplyMatrices(holder.matrix, object.matrix);
   const parts = new Map<string, THREE.Object3D[]>();
   const found: Array<[string, THREE.Object3D]> = [];
   object.traverse((child) => {
@@ -361,10 +456,15 @@ const MAG_TILT: PartKey = { t: 0, p: [-0.045, 0.035, 0.03], r: [0.24, 0.2, -0.5]
 const at = (t: number, key: PartKey): PartKey => ({ ...key, t });
 const OFFSCREEN_LEFT: V3 = [-0.16, -0.46, 0.12];
 
-/** Detachable magazine change: grab, strip, fetch a fresh one, seat it. Ends at `end`. */
-function magazineSwap(hold: HandPose, grasp: HandPose, pull: V3, pullTilt: V3, end: number) {
+/**
+ * Detachable magazine change: grab, strip, fetch a fresh one, seat it. Ends at `end`.
+ * `out` is where the hand goes for the fresh magazine, out of sight below the view.
+ */
+function magazineSwap(hold: HandPose, grasp: HandPose, pull: V3, pullTilt: V3, end: number, out = OFFSCREEN_LEFT) {
   const s = end / 0.66;
-  const away = (curl: number): HandPose => ({ ...grasp, p: OFFSCREEN_LEFT, curl });
+  const away = (curl: number): HandPose => ({ ...grasp, p: out, curl });
+  // The magazine goes with the hand that holds it.
+  const carried: V3 = [out[0] - grasp.p[0], out[1] - grasp.p[1], out[2] - grasp.p[2]];
   return {
     left: [
       { t: 0.15 * s, pose: moved(grasp, [-0.03, -0.01, 0], 0.15) },
@@ -379,8 +479,8 @@ function magazineSwap(hold: HandPose, grasp: HandPose, pull: V3, pullTilt: V3, e
     mag: [
       { t: 0.21 * s },
       { t: 0.29 * s, p: pull, r: pullTilt },
-      { t: 0.4 * s, p: add(OFFSCREEN_LEFT, [0.03, 0.1, -0.1]), r: pullTilt, hide: true },
-      { t: 0.47 * s, p: add(OFFSCREEN_LEFT, [0.03, 0.1, -0.1]), r: pullTilt },
+      { t: 0.4 * s, p: carried, r: pullTilt, hide: true },
+      { t: 0.47 * s, p: carried, r: pullTilt },
       { t: 0.58 * s, p: pull, r: pullTilt },
       { t: 0.64 * s, p: [0, 0.004, 0] },
       { t: 0.66 * s },
@@ -388,31 +488,6 @@ function magazineSwap(hold: HandPose, grasp: HandPose, pull: V3, pullTilt: V3, e
     sounds: [{ t: 0.1 * s, kind: "cloth" as const }, { t: 0.23 * s, kind: "magOut" as const }, { t: 0.63 * s, kind: "magIn" as const }],
     hold,
   };
-}
-
-/**
- * Combat knife held in a fist: the handle lies along the grip axis (up and a little
- * forward), so the blade rises out of the top of the hand.
- */
-function buildKnife(kit: FinishKit): Built {
-  const b = createBuilder();
-  const Y0 = -0.05, Z0 = 0.022, UP = 0.94, LEAN = 0.34, TILT = -Math.atan2(LEAN, UP);
-  /** A point `along` the knife and `across` it (spine side positive), as a [z, y] silhouette point. */
-  const at = (along: number, across: number): [number, number] => [Z0 - along * LEAN + across * UP, Y0 + along * UP + across * LEAN];
-  const centre = (along: number, across = 0, x = 0): V3 => { const [z, y] = at(along, across); return [x, y, z]; };
-  // Clip-point blade with a ground edge, a fuller and a sharpened swedge.
-  b.profile([at(0.056, 0.013), at(0.176, 0.013), at(0.238, -0.004), at(0.2, -0.019), at(0.056, -0.021)], 0.0042, "bright", 0, 0.0019);
-  b.box(0.0046, 0.092, 0.0052, centre(0.112, 0.005), "blued", [TILT, 0, 0], 0.0008);
-  b.box(0.0052, 0.014, 0.036, centre(0.063, -0.004), "parkerized", [TILT, 0, 0], 0.001);
-  // Guard, moulded handle with finger grooves, and a steel pommel with a lanyard hole.
-  b.box(0.016, 0.009, 0.062, centre(0.051, -0.004), "blued", [TILT, 0, 0], 0.003);
-  b.box(0.023, 0.104, 0.03, centre(-0.004, -0.002), "rubber", [TILT, 0, 0], 0.008);
-  for (let i = 0; i < 5; i += 1) b.box(0.0245, 0.006, 0.0315, centre(0.032 - i * 0.018, -0.002), "polymer", [TILT, 0, 0], 0.002);
-  b.box(0.021, 0.016, 0.034, centre(-0.064, -0.002), "blued", [TILT, 0, 0], 0.004);
-  b.cyl(0.0042, 0.024, centre(-0.064, -0.002), "bright", "x", 0.0042, 12);
-  const surface = b.finish(kit);
-  const tip = centre(0.238, -0.004);
-  return { root: b.root, parts: builtParts(b), muzzle: tip, port: tip, dispose: surface.dispose };
 }
 
 // ---- Bolt-action choreography -----------------------------------------------
@@ -695,20 +770,31 @@ type RigSetup = {
   cycle?: Timeline;
 };
 
-const GRIP_F: V3 = [0, -0.34, -0.94];
-const firing = (p: V3, f: V3 = GRIP_F): HandPose => hand(p, f, [-1, 0, 0.05], [0.42, 0.92, 0.96, 1, 0.55]);
-const support = (p: V3, curl = 0.72): HandPose => hand(p, [0.86, 0.5, -0.08], [-0.5, 0.86, 0], [curl, curl + 0.04, curl + 0.04, curl, 0.25]);
+/** How far the firing hand is turned in round a handle, and where the root of the thumb is in the hand's own frame. */
+const GRIP_TURN = 0.384, THUMB_ROOT: V3 = [-0.036, 0.009, 0.026];
+/**
+ * The firing hand on a handle. It is turned in round the handle, which sits in the fork of the
+ * thumb, and the thumb is laid on the weapon's left side: `root` is where the root of the thumb
+ * goes, behind the top of the handle, and `thumb` where its tip rests. `dip` is how far the
+ * fingers point down, which follows the rake of the handle.
+ */
+const firing = (root: V3, thumb: V3, dip = -0.29): HandPose => ({
+  ...holding(root, THUMB_ROOT, [Math.sin(GRIP_TURN), dip, -Math.cos(GRIP_TURN)], [-Math.cos(GRIP_TURN), 0, -Math.sin(GRIP_TURN)], [0.42, 0.92, 0.96, 1, 0.5]),
+  thumb, cup: 0.012,
+});
+/** The supporting hand under a fore-end, with its thumb laid up the weapon's left side at `thumb`. */
+const support = (p: V3, thumb: V3, curl = 0.72): HandPose => ({ ...hand(p, [0.86, 0.5, -0.08], [-0.5, 0.86, 0], [curl, curl + 0.04, curl + 0.04, curl, 0.25]), thumb });
 const overTop = (p: V3, curl = 0.6): HandPose => hand(p, [0.96, -0.2, 0.15], [0.2, -0.97, 0], curl);
 const sideGrasp = (p: V3, curl = 0.85): HandPose => hand(p, [0.12, -0.25, -0.96], [1, 0, 0], curl);
 
 function setups(): RigSetup[] {
   // AK-47: rock the magazine out and in, then reach over to run the charging handle.
-  const akLeft = support([-0.014, -0.004, -0.33]);
+  const akLeft = support([-0.014, -0.004, -0.33], [-0.027, 0.044, -0.405]);
   const akSwap = magazineSwap(akLeft, sideGrasp([-0.032, -0.085, -0.2]), [0, -0.1, -0.075], [-0.55, 0, 0], 0.62);
   const akHandle = overTop([0.02, 0.118, -0.215]);
   const ak: RigSetup = {
     id: "ak47", view: { p: [0, 0, 0], r: [0, 0, 0] },
-    right: firing([0.031, -0.052, 0.024]), left: akLeft,
+    right: firing([0.02, -0.018, 0.049], [-0.025, -0.004, -0.04]), left: akLeft,
     reload: {
       left: [...akSwap.left, { t: 0.76, pose: moved(akHandle, [-0.02, 0.03, 0], 0.3) }, { t: 0.81, pose: akHandle }, { t: 0.87, pose: moved(akHandle, [0, 0, 0.075]) }, { t: 0.9, pose: moved(akHandle, [-0.01, 0.02, 0.07], 0.2) }],
       body: [at(0.13, MAG_TILT), at(0.66, MAG_TILT), { t: 0.78, p: [-0.05, 0.03, 0.02], r: [0.14, 0.12, 0.62] }, { t: 0.9, p: [-0.05, 0.03, 0.03], r: [0.16, 0.12, 0.62] }],
@@ -718,12 +804,12 @@ function setups(): RigSetup[] {
   };
 
   // M4A1: straight magazine swap, then slap the bolt release.
-  const m4Left = support([-0.016, 0.01, -0.28]);
+  const m4Left = support([-0.016, 0.01, -0.28], [-0.033, 0.052, -0.35]);
   const m4Swap = magazineSwap(m4Left, sideGrasp([-0.03, -0.11, -0.118]), [0, -0.17, 0.012], [0.06, 0, 0], 0.66);
   const m4Slap = hand([-0.047, 0.05, -0.085], [0, 0.55, -0.83], [1, 0, 0], [0.12, 0.12, 0.15, 0.2, 0.1]);
   const m4: RigSetup = {
     id: "m4", view: { p: [0, 0, 0], r: [0, 0, 0] },
-    right: firing([0.031, -0.048, 0.006]), left: m4Left,
+    right: firing([0.02, -0.002, 0.048], [-0.027, 0.002, -0.038]), left: m4Left,
     reload: {
       left: [...m4Swap.left, { t: 0.76, pose: moved(m4Slap, [-0.07, 0, 0.02]) }, { t: 0.8, pose: m4Slap }, { t: 0.86, pose: moved(m4Slap, [-0.04, -0.01, 0]) }],
       body: [at(0.13, MAG_TILT), at(0.68, MAG_TILT), { t: 0.795, p: [-0.03, 0.03, 0.02], r: [0.16, 0.16, -0.24] }, { t: 0.82, p: [0, 0.028, 0.02], r: [0.15, 0.1, -0.12] }],
@@ -732,64 +818,109 @@ function setups(): RigSetup[] {
     },
   };
 
-  // FAMAS: the magazine sits behind the grip; the charging handle is under the carry handle.
-  const faLeft = support([-0.016, -0.014, -0.15]);
-  const faSwap = magazineSwap(faLeft, sideGrasp([-0.034, -0.11, 0.128]), [0, -0.19, 0.01], [0.05, 0, 0], 0.66);
-  const faHandle = hand([-0.036, 0.108, -0.052], [0.75, 0.3, -0.58], [0.55, -0.1, 0.83], [0.75, 0.75, 0.5, 0.4, 0.2]);
-  const faTilt: PartKey = { t: 0, p: [-0.06, 0.07, 0.0], r: [0.42, 0.3, -0.6] };
+  // FAMAS: the magazine sits behind the grip, below the bottom of the view, so the rifle is rolled onto its
+  // side to bring it up into sight; the charging handle is under the carrying handle.
+  // The handguard is a short, deep slab between the muzzle end of the body and the trigger guard: the
+  // supporting hand lies across under it, placed by hand, its thumb up the left side.
+  const faLeft: HandPose = { ...hand([-0.013, -0.003, -0.137], [0.85, 0.51, -0.15], [-0.5, 0.86, 0.16], [0.9, 0.92, 0.92, 0.85, 0.25]), thumb: [-0.037, 0.064, -0.204], cup: 0.006 };
+  // The magazine is taken low, clear of the firing hand in front of it.
+  const faGrasp = sideGrasp([-0.034, -0.14, 0.128]);
+  const faSwap = magazineSwap(faLeft, faGrasp, [0, -0.19, 0.01], [0.05, 0, 0], 0.56, [0.03, -0.445, 0.156]);
+  // The hand comes alongside the receiver as a fist, and its forefinger goes in under the carrying
+  // handle to hook the charging handle and draw it back.
+  const faHandle = hand([-0.1232, 0.07, -0.0616], [0.866, 0, -0.5], [0.5, 0, 0.866], [0.42, 1, 1, 1, 0.3]);
+  const faTilt: PartKey = { t: 0, p: [-0.05, 0.13, -0.06], r: [0.12, 0.15, -1] };
+  const faRack: PartKey = { t: 0, p: [-0.03, 0.03, 0.02], r: [0.14, 0.22, 0.2] };
   const famas: RigSetup = {
     id: "famas", view: { p: [0.0, 0, -0.13], r: [0, 0, 0] },
-    right: firing([0.032, -0.05, 0.008]), left: faLeft,
+    right: { ...firing([0.012, -0.006, 0.056], [-0.029, -0.026, -0.028], -0.05), curl: [0.6, 0.92, 0.96, 1, 0.5], cup: 0.028 }, left: faLeft,
     reload: {
-      left: [...faSwap.left, { t: 0.77, pose: moved(faHandle, [-0.03, 0.01, 0], 0.3) }, { t: 0.81, pose: faHandle }, { t: 0.87, pose: moved(faHandle, [0, 0, 0.08]) }, { t: 0.9, pose: moved(faHandle, [-0.02, 0, 0.07], 0.25) }],
-      body: [at(0.13, faTilt), at(0.67, faTilt), { t: 0.78, p: [-0.03, 0.03, 0.02], r: [0.14, 0.22, 0.2] }, { t: 0.9, p: [-0.03, 0.03, 0.025], r: [0.15, 0.22, 0.2] }],
-      parts: { mag: faSwap.mag, charge: [{ t: 0.81 }, { t: 0.87, p: [0, 0, 0.08] }, { t: 0.895 }], bolt: [{ t: 0.81 }, { t: 0.87, p: [0, 0, 0.05] }, { t: 0.895 }] },
-      sounds: [...faSwap.sounds, { t: 0.82, kind: "rack" }],
+      left: [
+        // Off the handguard: down, and out round the firing hand to the magazine behind it.
+        { t: 0.023, pose: moved(faLeft, [-0.02, -0.05, 0], [0.4, 0.4, 0.4, 0.4, 0.25]), via: true },
+        { t: 0.058, pose: moved(faGrasp, [-0.086, 0.02, -0.148], 0.3), via: true },
+        ...faSwap.left,
+        // Out to the left again and up to the charging handle.
+        { t: 0.673, pose: moved(faHandle, [-0.087, -0.1, 0.082], [0.4, 1, 1, 1, 0.3]), via: true },
+        { t: 0.706, pose: moved(faHandle, [-0.045, 0, -0.02], [0.05, 1, 1, 1, 0.2]), via: true },
+        { t: 0.73, pose: faHandle },
+        { t: 0.79, pose: moved(faHandle, [0, 0, 0.08]) },
+        { t: 0.825, pose: moved(faHandle, [-0.05, 0, 0.07], [0.05, 0.8, 0.8, 0.8, 0.2]) },
+        // Down the left side, and back under the handguard from below.
+        { t: 0.925, pose: hand([-0.15, -0.09, -0.09], faLeft.f, faLeft.n, [0.6, 0.65, 0.65, 0.6, 0.25]), via: true },
+        { t: 0.956, pose: moved(faLeft, [-0.025, -0.085, 0], [0.45, 0.45, 0.45, 0.45, 0.25]), via: true },
+      ],
+      body: [
+        at(0.12, faTilt), at(0.2, faTilt),
+        // The rifle gives as the magazine is pulled out of it, and again as the fresh one goes home.
+        { t: 0.245, p: [-0.058, 0.125, -0.06], r: [0.12, 0.15, -1.03] }, at(0.31, faTilt), at(0.515, faTilt),
+        { t: 0.546, p: [-0.043, 0.135, -0.06], r: [0.12, 0.15, -0.97] }, at(0.575, faTilt),
+        at(0.69, faRack), at(0.73, faRack), { t: 0.79, p: [-0.03, 0.032, 0.032], r: [0.165, 0.22, 0.2] }, { t: 0.825, p: [-0.03, 0.03, 0.02], r: [0.13, 0.22, 0.2] },
+      ],
+      parts: { mag: faSwap.mag, charge: [{ t: 0.73 }, { t: 0.79, p: [0, 0, 0.08] }, { t: 0.815 }], bolt: [{ t: 0.73 }, { t: 0.79, p: [0, 0, 0.05] }, { t: 0.815 }] },
+      sounds: [...faSwap.sounds, { t: 0.74, kind: "rack" }],
     },
   };
 
-  // Uzi: magazine through the grip, palm it home, then draw the cocking knob.
-  const uziLeft = support([-0.014, -0.048, -0.1]);
-  const uziSwap = magazineSwap(uziLeft, sideGrasp([-0.03, -0.2, -0.006]), [0, -0.2, 0], [0, 0, 0], 0.58);
+  // Uzi: magazine through the grip, palm it home, then draw the cocking knob. The foot of the grip is
+  // below the bottom of the view, so the gun is rolled onto its side to bring the magazine up into sight.
+  const uziLeft = support([-0.014, -0.048, -0.1], [-0.036, -0.005, -0.15]);
+  const uziSwap = magazineSwap(uziLeft, sideGrasp([-0.03, -0.2, -0.006]), [0, -0.2, 0], [0, 0, 0], 0.58, [0.113, -0.41, 0.066]);
   const uziPalm = hand([-0.015, -0.275, 0.0], [0.9, 0.4, 0], [-0.4, 0.9, 0], 0.15);
   const uziKnob = overTop([-0.01, 0.112, -0.075], 0.55);
-  const uziTilt: PartKey = { t: 0, p: [-0.06, 0.06, 0.02], r: [0.3, 0.25, -0.5] };
+  const uziTilt: PartKey = { t: 0, p: [-0.05, 0.13, -0.05], r: [0.12, 0.15, -1] };
   const uzi: RigSetup = {
     id: "uzi", view: { p: [-0.02, 0.015, -0.03], r: [0, 0, 0] },
-    right: firing([0.032, -0.052, 0.0], [0, -0.06, -1]), left: uziLeft,
+    right: firing([0.023, -0.02, 0.061], [-0.03, -0.014, -0.022], -0.06), left: uziLeft,
     reload: {
       left: [...uziSwap.left, { t: 0.63, pose: moved(uziPalm, [0, -0.06, 0]) }, { t: 0.67, pose: uziPalm }, { t: 0.72, pose: moved(uziPalm, [-0.02, -0.04, 0]) }, { t: 0.81, pose: moved(uziKnob, [-0.02, 0.02, 0], 0.3) }, { t: 0.85, pose: uziKnob }, { t: 0.9, pose: moved(uziKnob, [0, 0, 0.065]) }, { t: 0.93, pose: moved(uziKnob, [-0.02, 0.02, 0.06], 0.25) }],
-      body: [at(0.13, uziTilt), at(0.6, uziTilt), { t: 0.67, p: [-0.06, 0.075, 0.02], r: [0.34, 0.25, -0.5] }, at(0.72, uziTilt), { t: 0.82, p: [-0.04, 0.02, 0.02], r: [0.1, 0.16, 0.4] }, { t: 0.93, p: [-0.04, 0.02, 0.025], r: [0.11, 0.16, 0.4] }],
+      body: [at(0.13, uziTilt), at(0.6, uziTilt), { t: 0.67, p: [-0.037, 0.138, -0.05], r: [0.14, 0.15, -1] }, at(0.72, uziTilt), { t: 0.82, p: [-0.04, 0.02, 0.02], r: [0.1, 0.16, 0.4] }, { t: 0.93, p: [-0.04, 0.02, 0.025], r: [0.11, 0.16, 0.4] }],
       parts: { mag: uziSwap.mag, charge: [{ t: 0.85 }, { t: 0.9, p: [0, 0, 0.065] }, { t: 0.92 }], bolt: [{ t: 0.85 }, { t: 0.9, p: [0, 0, 0.04] }, { t: 0.92 }] },
       sounds: [...uziSwap.sounds, { t: 0.67, kind: "slap" }, { t: 0.86, kind: "rack" }],
     },
   };
 
   // Bolt-action: the firing hand works the bolt; reloading strips five rounds in from a clip.
-  const riRight = firing([0.03, -0.012, 0.035], [0, -0.5, -0.87]);
+  // The wrist of the stock is held from the side, with the thumb over the top of it.
+  const riRight: HandPose = { ...hand([0.03, -0.012, 0.035], [0, -0.5, -0.87], [-1, 0, 0.05], [0.42, 0.92, 0.96, 1, 0.55]), thumb: [-0.023, 0.022, 0.02] };
   const rifle: RigSetup = {
     id: "rifle", view: { p: [0.03, 0.01, 0.06], r: [0, -0.03, 0] },
-    right: riRight, left: support([-0.014, -0.028, -0.36]),
+    right: riRight, left: support([-0.014, -0.028, -0.36], [-0.026, 0.044, -0.41]),
     ...boltAction(riRight),
   };
-  // Knife: one hand on the blade's grip, the other held low and loose; a swing is the whole weapon moving.
-  const knifeRight = hand([0.031, -0.05, 0.022], GRIP_F, [-1, 0, 0.05], [0.9, 0.96, 0.98, 1, 0.7]);
-  const knifeLeft = hand([-0.24, -0.32, 0.07], [0.35, 0.3, -0.89], [0.75, 0.55, 0.37], [0.5, 0.55, 0.6, 0.6, 0.35]);
-  const knife: RigSetup = {
-    id: "knife", view: { p: [0.0, 0.005, -0.1], r: [-0.55, 0.3, 0.12] },
-    right: knifeRight, left: knifeLeft,
-    reload: {},
-    cycle: {
-      // Wind up to the right, cut across and down to the left, come back.
-      body: [
-        { t: 0.16, p: [0.06, 0.1, 0.03], r: [0.25, -0.35, -0.45] },
-        { t: 0.36, p: [-0.2, 0.1, -0.2], r: [-0.15, 0.7, 1.2] },
-        { t: 0.5, p: [-0.24, 0.07, -0.17], r: [-0.2, 0.78, 1.32] },
-        { t: 0.9, p: [0, 0, 0], r: [0, 0, 0] },
+  // Desert Eagle: held out in one hand. The empty magazine is dropped; the other hand brings a full one up
+  // from below, palms it home, then reaches over the slide and runs it.
+  const pull: V3 = [0, -0.165, 0.165 * DEAGLE.rake], below = add(pull, [-0.11, -0.2, 0.09]);
+  const deCup = hand([-0.008, DEAGLE.foot - 0.042, 0.026], [0.93, 0.28, -0.24], [-0.26, 0.96, 0.08], [0.5, 0.52, 0.55, 0.6, 0.3]);
+  const deSlide = overTop([-0.012, 0.087, 0.008], 0.62);
+  const deTilt: PartKey = { t: 0, p: [-0.07, 0.085, 0.03], r: [0.48, 0.3, -0.72] };
+  const deRack: PartKey = { t: 0, p: [-0.045, 0.02, 0.02], r: [0.1, 0.2, 0.42] };
+  const deagle: RigSetup = {
+    id: "deagle", view: { p: [-0.03, 0.04, -0.15], r: [-0.03, 0.11, 0.05] },
+    // The thumb lies along the frame under the slide.
+    right: firing([0.02, -0.01, 0.062], [-0.03, 0.008, -0.03], -0.12),
+    left: hand([-0.2, -0.44, 0.12], [0.35, 0.3, -0.89], [0.75, 0.55, 0.37], [0.5, 0.55, 0.6, 0.6, 0.35]),
+    reload: {
+      left: [
+        { t: 0.26, pose: moved(deCup, below) }, { t: 0.38, pose: moved(deCup, pull) }, { t: 0.42, pose: moved(deCup, pull) }, { t: 0.5, pose: moved(deCup, [0, 0.004, 0]) }, { t: 0.53, pose: deCup },
+        { t: 0.6, pose: moved(deCup, [-0.03, -0.05, 0.01], 0.2) },
+        { t: 0.69, pose: moved(deSlide, [-0.03, 0.03, 0], 0.3) }, { t: 0.74, pose: deSlide }, { t: 0.8, pose: moved(deSlide, [0, 0, DEAGLE.travel]) }, { t: 0.83, pose: moved(deSlide, [-0.02, 0.025, DEAGLE.travel], 0.25) },
       ],
+      body: [at(0.09, deTilt), at(0.46, deTilt), { t: 0.5, p: [-0.07, 0.098, 0.03], r: [0.52, 0.3, -0.72] }, at(0.56, deTilt), at(0.7, deRack), { t: 0.8, p: [-0.045, 0.02, 0.028], r: [0.12, 0.2, 0.42] }, at(0.84, deRack)],
+      parts: {
+        // Dropped free: it slides out along the grip, then falls away.
+        mag: [{ t: 0.11 }, { t: 0.17, p: [0, -0.07, 0.07 * DEAGLE.rake] }, { t: 0.24, p: [0.02, -0.4, 0.14], r: [0.6, 0, 0.3], hide: true }, { t: 0.26, p: below }, { t: 0.38, p: pull }, { t: 0.42, p: pull }, { t: 0.5, p: [0, 0.004, 0] }, { t: 0.53 }],
+        bolt: [{ t: 0.74 }, { t: 0.8, p: [0, 0, DEAGLE.travel] }, { t: 0.825 }],
+      },
+      sounds: [{ t: 0.04, kind: "cloth" }, { t: 0.11, kind: "magOut" }, { t: 0.49, kind: "magIn" }, { t: 0.52, kind: "slap" }, { t: 0.75, kind: "rack" }],
+    },
+    // Every shot throws the slide back and flips the muzzle up about the wrist.
+    cycle: {
+      body: [{ t: 0 }, { t: 0.2, p: [0, 0.008, 0.012], r: [0.2, 0, 0] }, { t: 1 }],
+      parts: { bolt: [{ t: 0 }, { t: 0.17, p: [0, 0, DEAGLE.travel] }, { t: 0.62 }] },
     },
   };
-  return [ak, m4, famas, uzi, rifle, knife];
+  return [ak, m4, famas, uzi, rifle, deagle];
 }
 
 const identityKey: PartKey = { t: 0 };
@@ -814,15 +945,19 @@ function sampleKeys(keys: PartKey[] | undefined, t: number, outP: THREE.Vector3,
   return Boolean(a.hide);
 }
 
-function sampleHand(keys: Array<{ t: number; pose: ResolvedPose }>, rest: ResolvedPose, t: number, out: ResolvedPose, sampled = false) {
-  let a = { t: 0, pose: rest }, b = { t: 1, pose: rest };
+type PosedKey = { t: number; pose: ResolvedPose; via?: boolean };
+
+function sampleHand(keys: PosedKey[], rest: ResolvedPose, t: number, out: ResolvedPose, sampled = false) {
+  let a: PosedKey = { t: 0, pose: rest }, b: PosedKey = { t: 1, pose: rest };
   for (const key of keys) {
     if (key.t <= t) a = key;
     else { b = key; break; }
   }
   if (b.t <= a.t) b = { t: 1, pose: rest };
   const along = THREE.MathUtils.clamp((t - a.t) / (b.t - a.t), 0, 1);
-  blendPose(a.pose, b.pose, sampled ? along : ease(along), out);
+  // The hand stops at a key, except one it only passes through: it carries its speed into and out of that.
+  const k = sampled || (a.via && b.via) ? along : a.via ? along * (2 - along) : b.via ? along * along : ease(along);
+  blendPose(a.pose, b.pose, k, out);
 }
 
 export function createArsenal(anisotropy: number, manager: THREE.LoadingManager, isDisposed: () => boolean): Arsenal {
@@ -846,12 +981,12 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
       disposers.push(built.dispose);
     }
     const restRight = resolvePose(setup.right), restLeft = resolvePose(setup.left);
-    const resolved = new Map<HandKey[], Array<{ t: number; pose: ResolvedPose }>>();
+    const resolved = new Map<HandKey[], PosedKey[]>();
     const track = (keys: HandKey[] | undefined, rest: ResolvedPose) => {
       if (!keys) return null;
       let list = resolved.get(keys);
       if (!list) {
-        list = keys.map((key) => { const pose = resolvePose(key.pose); return { t: key.t, pose: key.toRest ? blendPose(pose, rest, key.toRest, pose) : pose }; });
+        list = keys.map((key) => { const pose = resolvePose(key.pose); return { t: key.t, pose: key.toRest ? blendPose(pose, rest, key.toRest, pose) : pose, via: key.via }; });
         resolved.set(keys, list);
       }
       return list;
@@ -894,7 +1029,7 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
     if (setup.id === "m4") return makeRig(setup, buildM4(kit));
     if (setup.id === "famas") return makeRig(setup, buildFamas(kit));
     if (setup.id === "uzi") return makeRig(setup, buildUzi(kit));
-    if (setup.id === "knife") return makeRig(setup, buildKnife(kit));
+    if (setup.id === "deagle") return makeRig(setup, buildDeagle(kit));
     return makeRig(setup, null);
   });
   const byId = (id: WeaponId) => rigs.find((rig) => rig.spec.id === id)!;
@@ -903,7 +1038,7 @@ export function createArsenal(anisotropy: number, manager: THREE.LoadingManager,
   loader.load("/models/ak-platform.glb", ({ scene: object }) => {
     if (isDisposed()) return;
     const rig = byId("ak47") as WeaponRig & { adopt: (parts: Map<string, THREE.Object3D[]>) => void };
-    const surfacing = surfaceWeapon(object, anisotropy, manager);
+    const surfacing = surfaceWeapon(object, anisotropy);
     disposers.push(surfacing.dispose);
     rig.adopt(mountAuthored(rig.root, object, surfacing, [0, 0.065, -0.656], { mag: /^AK-47[ _]2[ _]Mag[ _]1$/, bolt: /^AK-47[ _]2[ _]Bolt[ _]Carrier[ _]1$/ }));
     rig.muzzle.position.set(0, 0.065, -0.66);

@@ -19,7 +19,7 @@ Stadium upgrade:
 - The stadium reuses the existing concrete PBR maps for terracing and concourses.
 - Seats, fans, roof trusses, the football pattern and flags are generated in code.
 
-Rifle furniture:
+Lacquered timber (Underline and Bazaar):
 
 - `lacquered_cherry_wood-2k/`: 2K diffuse, OpenGL normal and roughness from
   [Lacquered Cherry Wood](https://polyhaven.com/a/lacquered_cherry_wood), CC0. The AO map is not used and not kept.

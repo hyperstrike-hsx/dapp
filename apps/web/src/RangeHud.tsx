@@ -13,11 +13,11 @@ export type WeaponHud = {
   reloading: boolean;
   /** Aiming is through an optic rather than over the sights. */
   scope: boolean;
-  /** A knife: nothing to load. */
-  blade: boolean;
+  /** Which slots are still carried: a dropped weapon is not, until it is picked up again. */
+  owned: boolean[];
 };
 
-const SLOTS = ["AK-47", "M4A1", "FAMAS", "UZI", "BOLT", "KNIFE"];
+const SLOTS = ["AK-47", "M4A1", "FAMAS", "UZI", "BOLT", "DEAGLE"];
 
 /** The last YES / NO target struck, with the contracts now staged on that market. */
 export type StrikeHud = { id: number; market: IndexMarket; side: VoteSide; streak: number; count: VoteCount };
@@ -71,7 +71,7 @@ export function RangeHud({ weapon, horde, strike }: { weapon: WeaponHud | null; 
         <div className="weapon-hud">
           <ol>
             {SLOTS.map((label, index) => (
-              <li key={label} className={index === weapon.slot ? "is-active" : undefined}>
+              <li key={label} className={index === weapon.slot ? "is-active" : weapon.owned[index] ? undefined : "is-gone"}>
                 <kbd>{index + 1}</kbd>
                 {label}
               </li>
@@ -91,7 +91,7 @@ export function RangeHud({ weapon, horde, strike }: { weapon: WeaponHud | null; 
           </div>
           <div className="weapon-hud-mode">
             <i>{weapon.scope ? "SCOPE" : "AIM"}</i>
-            <kbd>SPACE</kbd>
+            <kbd>RMB</kbd>
           </div>
         </div>
       )}

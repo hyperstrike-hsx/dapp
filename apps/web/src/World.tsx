@@ -976,6 +976,15 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     viewWeapon.scale.setScalar(VIEW_SCALE);
     const shoulder = new THREE.Vector3(0.41, -0.45, -0.96);
     const weaponRotation = new THREE.Euler(0.03, 0.065, 0.015);
+    // On a narrow screen the weapon comes in toward the middle: the firing hand is held within
+    // `HAND_REACH` of the way from the centre of the view to its edge, which a wide screen never reaches.
+    const HAND_REACH = 0.79;
+    let inward = 1;
+    const frameWeapon = () => {
+      const halfWidth = Math.tan(THREE.MathUtils.degToRad(viewModelCamera.fov / 2)) * viewModelCamera.aspect * -shoulder.z;
+      inward = Math.min(1, (HAND_REACH * halfWidth) / shoulder.x);
+    };
+    frameWeapon();
     viewWeapon.position.copy(shoulder);
     viewWeapon.rotation.copy(weaponRotation);
     viewModelScene.add(viewWeapon);
@@ -988,6 +997,20 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     viewWeapon.add(arms.sleeves);
     arsenal.rigs.forEach((rig, index) => { rig.root.visible = index === 0; weaponBody.add(rig.root); });
     const contacts = new Map<WeaponRig, Contact>();
+    /** What the hands collide with on a weapon. Built once, and the resting grips are seated on it then. */
+    const contactOf = (rig: WeaponRig) => {
+      let contact = contacts.get(rig);
+      if (contact || !rig.ready || !arms.ready()) return contact;
+      const stowed = !rig.root.visible;
+      rig.root.visible = true;
+      rig.pose(null, 0, rigPose);
+      contact = buildContact(rig.root, arms.hands, rig.movers());
+      rig.root.visible = !stowed;
+      contacts.set(rig, contact);
+      const built = contact;
+      rig.fit((pose, left) => arms.fit(pose, left, built));
+      return contact;
+    };
     const rigPose: RigPose = { left: emptyPose(), right: emptyPose(), bodyPosition: new THREE.Vector3(), bodyRotation: new THREE.Euler() };
     const muzzleAnchor = new THREE.Object3D();
     muzzleAnchor.scale.setScalar(1 / VIEW_SCALE);
@@ -1070,13 +1093,32 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     let cycleStartedAt = -1;
     let cycleCursor = 0;
     let cycleEjected = false;
-    let slashLandsAt = -1;
     let autoReloadAt = -1;
     let climbDebt = 0;
     let forceFire = false;
     let lastStride = 0;
-    // Aiming: held on Space. `aim` eases 0→1; looking slows by the magnification.
-    let forceScope = false, aim = 0, lookScale = 1, throughScope = false;
+    // Aiming: held on the right mouse button. `aim` eases 0→1; looking slows by the magnification.
+    let forceScope = false, aim = 0, lookScale = 1, throughScope = false, aimHeld = false;
+    // Stance: eye height standing and ducked, and a jump (height off the floor, and how fast it is changing).
+    const EYE = 1.62, DUCK = 1.1, JUMP = 4.1, GRAVITY = 13.5;
+    const RUN = 5.1, WALK = 2.65, CREEP = 1.9;
+    let eye = EYE, lift = 0, rise = 0, airborne = false, landedAt = -1e6, gait = 0;
+    // Looking a weapon over (F): how far it is turned, eased so whatever interrupts it lets go gently.
+    const INSPECT_MS = 3400;
+    let inspectStartedAt = -1;
+    const inspect = { turn: 0, roll: 0, tip: 0, up: 0 };
+    // Weapons can be dropped (G) and picked up again; the last one carried is never let go.
+    type Dropped = {
+      index: number; model: THREE.Group; from: THREE.Vector3; velocity: THREE.Vector3; at: number;
+      /** How long the flight lasts, and the heading and pitch it starts and ends with. */
+      lands: number; turn: [number, number]; tip: number;
+      resting: boolean;
+      /** Walking over it picks it up, but only once the player has stepped away from where they let it go. */
+      armed: boolean;
+    };
+    const owned = arsenal.rigs.map(() => true);
+    const dropped: Dropped[] = [];
+    const FLOOR = 0.035, DROP_GRAVITY = 12;
     let frozenReload: number | null = null;
 
     /**
@@ -1153,8 +1195,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const moveDirection = new THREE.Vector3();
     const reportWeapon = () => {
       const spec = arsenal.rigs[current].spec;
-      ammoRef.current(spec.reach ? -1 : magazines[current], reserve, reloading);
-      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope, blade: Boolean(spec.reach) });
+      ammoRef.current(magazines[current], reserve, reloading);
+      setWeaponHud({ slot: current, name: spec.name, calibre: spec.calibre, mode: modes[current], modes: spec.modes, magazine: magazines[current], capacity: spec.magazine, reloading, scope: spec.scope, owned: owned.slice() });
     };
     reportWeapon();
 
@@ -1204,25 +1246,93 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     };
 
     const startReload = () => {
-      if (reloading || switchingTo >= 0 || arsenal.rigs[current].spec.reach || magazines[current] === arsenal.rigs[current].spec.magazine) return;
+      if (reloading || switchingTo >= 0 || magazines[current] === arsenal.rigs[current].spec.magazine) return;
       reloading = true;
       reloadStartedAt = performance.now();
       reloadCursor = 0;
       cycleStartedAt = -1;
       autoReloadAt = -1;
+      inspectStartedAt = -1;
       resetTrigger(trigger);
       reportWeapon();
     };
     const switchWeapon = (index: number) => {
-      if (index === current || index < 0 || index >= arsenal.rigs.length || switchingTo >= 0) return;
+      if (index === current || index < 0 || index >= arsenal.rigs.length || !owned[index] || switchingTo >= 0) return;
       reloading = false;
       cycleStartedAt = -1;
       autoReloadAt = -1;
+      inspectStartedAt = -1;
       resetTrigger(trigger);
       switchingTo = index;
       switchStartedAt = performance.now();
       playAction("draw");
-      if (arsenal.rigs[index].spec.reach) sound.knife("draw");
+    };
+    /** The next weapon still carried, going up (1) or down (-1) the slots. */
+    const cycleWeapon = (way: 1 | -1) => {
+      const count = arsenal.rigs.length;
+      for (let step = 1; step < count; step += 1) {
+        const index = (current + way * step + count * step) % count;
+        if (owned[index]) { switchWeapon(index); return; }
+      }
+    };
+    /** Lets go of the weapon in hand: it is tossed ahead, lands on the floor and can be picked up again. */
+    const dropWeapon = (now: number) => {
+      const index = current, rig = arsenal.rigs[index];
+      if (switchingTo >= 0 || owned.filter(Boolean).length < 2) return;
+      owned[index] = false;
+      reloading = false;
+      cycleStartedAt = -1;
+      autoReloadAt = -1;
+      inspectStartedAt = -1;
+      resetTrigger(trigger);
+      // The weapon the world sees is the one that was in view, at its true size, without the hands.
+      const model = new THREE.Group(), copy = rig.root.clone(true);
+      copy.visible = true;
+      copy.traverse((child) => { child.castShadow = false; child.frustumCulled = true; });
+      model.add(copy);
+      // A little over life size, as things on the floor of a shooter are: it has to be found again.
+      model.scale.setScalar(1.25);
+      camera.updateMatrixWorld(true);
+      const from = camera.localToWorld(new THREE.Vector3(0.26, -0.3, -0.75));
+      // Thrown the way the player faces, whatever they are looking at: it always lands a few steps ahead.
+      const velocity = new THREE.Vector3(-Math.sin(yaw) * 4.2, 1.9 + pitch * 1.4, -Math.cos(yaw) * 4.2);
+      const fall = Math.max(0, from.y - FLOOR);
+      const item: Dropped = {
+        index, model, from, velocity, at: now, turn: [yaw, yaw + 1.5 + Math.random() * 1.6], tip: pitch, resting: false, armed: false,
+        lands: ((velocity.y + Math.sqrt(velocity.y * velocity.y + 2 * DROP_GRAVITY * fall)) / DROP_GRAVITY) * 1000,
+      };
+      model.position.copy(from);
+      model.rotation.order = "YXZ";
+      model.rotation.set(pitch, yaw, 0);
+      dropped.push(item);
+      // Its shaders are built for the room's lights before it is shown, so letting go does not stall a frame.
+      void warm(model).then(() => { if (!disposed && dropped.includes(item)) scene.add(model); });
+      playAction("cloth");
+      // Bring up what is left: the weapon held before, else the next one along.
+      let next = owned[previous] && previous !== index ? previous : -1;
+      for (let step = 1; next < 0 && step < owned.length; step += 1) if (owned[(index + step) % owned.length]) next = (index + step) % owned.length;
+      rig.root.visible = false;
+      switchingTo = next;
+      switchStartedAt = now - SWITCH_DOWN;
+    };
+    const pickUp = (item: Dropped) => {
+      dropped.splice(dropped.indexOf(item), 1);
+      scene.remove(item.model);
+      owned[item.index] = true;
+      playAction("draw");
+      // It is slung: the weapon in hand stays up.
+      reportWeapon();
+    };
+    /** The nearest dropped weapon lying within reach of the player; `underfoot` asks for one they have walked back onto. */
+    const withinReach = (reach: number, underfoot: boolean) => {
+      let found: Dropped | null = null, best = reach;
+      for (const item of dropped) {
+        if (!item.resting) continue;
+        const distance = Math.hypot(item.model.position.x - camera.position.x, item.model.position.z - camera.position.z);
+        if (distance > 1.3) item.armed = true;
+        if (distance < best && (item.armed || !underfoot)) { best = distance; found = item; }
+      }
+      return found;
     };
     const cycleMode = () => {
       const spec = arsenal.rigs[current].spec;
@@ -1261,7 +1371,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     /** Brings the scene, the sound and the app shell in line with whether the player is playing. */
     const syncPlay = () => {
       const on = wanted();
-      if (!on) { releaseTrigger(trigger); resetTrigger(trigger); stick.x = stick.y = 0; touchAim = false; }
+      if (!on) { releaseTrigger(trigger); resetTrigger(trigger); stick.x = stick.y = 0; touchAim = false; aimHeld = false; keys.clear(); }
       // Taking the pointer follows a click or a tap, which is what lets a browser start audio.
       if (on && live) ambience.start();
       ambience.setActive(on && live);
@@ -1284,42 +1394,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       lookKickY = THREE.MathUtils.clamp(lookKickY + event.movementY * 0.00026, -0.028, 0.028);
       pitch = THREE.MathUtils.clamp(pitch, -1.28, 1.28);
     };
-    /** A knife swing: no round leaves, the cut lands on whatever is within reach. */
-    const slash = (now: number, spec: WeaponSpec) => {
-      recoil = spec.kick;
-      cycleStartedAt = now; cycleCursor = 0; cycleEjected = true;
-      sound.knife("swing");
-      // The cut lands when the blade crosses the view, not when the arm starts moving.
-      slashLandsAt = now + spec.cycleMs * 0.27;
-    };
-    const slashPoint = new THREE.Vector3(), slashScreen = new THREE.Vector3(), slashAim = new THREE.Vector3();
-    const landSlash = (now: number, spec: WeaponSpec) => {
-      // A blade sweeps an arc: it cuts the zombie nearest the middle of the view among those within arm's reach,
-      // rather than only what sits exactly under the crosshair.
-      let victim: THREE.Object3D | null = null, best = Infinity;
-      if (horde.active) for (const part of horde.targets) {
-        part.getWorldPosition(slashPoint);
-        if (slashPoint.distanceTo(camera.position) > spec.reach!) continue;
-        slashScreen.copy(slashPoint).project(camera);
-        if (slashScreen.z > 1 || Math.abs(slashScreen.x) > 0.62 || Math.abs(slashScreen.y) > 0.75) continue;
-        const off = Math.hypot(slashScreen.x, slashScreen.y * 0.6);
-        if (off < best) { best = off; victim = part; }
-      }
-      if (victim) {
-        victim.getWorldPosition(slashPoint);
-        camera.getWorldDirection(slashAim);
-        if (horde.hit(victim, slashPoint, slashAim, spec.damage, spec.headshot, now)) { sound.knife("flesh"); return; }
-      }
-      // Otherwise the blade may ring off whatever solid thing is right ahead.
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      raycaster.far = spec.reach!;
-      const solid = raycaster.intersectObjects([...shootableObjects, ...interactiveMeshes, ...targetMeshes, ...voteMeshes], false)[0];
-      raycaster.far = 60;
-      if (solid) sound.knife("hard");
-    };
     const fireShot = (now: number) => {
       const rig = arsenal.rigs[current], spec = rig.spec;
-      if (spec.reach) { slash(now, spec); return; }
+      inspectStartedAt = -1;
       magazines[current] -= 1;
       reportWeapon();
       recoil = spec.kick;
@@ -1365,21 +1442,44 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       // A map can own what was hit (a chicken, a hanging lamp): then it reacts and no hole is left in the air.
       const claimed = hit !== undefined && range.shootable.includes(hit.object) && range.struck?.(hit.object, hit.point) === true;
       spawnShotEffects(now, endpoint, claimed ? undefined : hit, modes[current] !== "BOLT");
-      if (modes[current] === "BOLT" && magazines[current] > 0) { cycleStartedAt = now; cycleCursor = 0; cycleEjected = false; }
-      if (magazines[current] === 0) { autoReloadAt = now + (modes[current] === "BOLT" ? 420 : 160); resetTrigger(trigger); }
+      // What the action does after the shot. A bolt is only worked if there is a round to chamber, and throws
+      // its case out as it opens; a self-loader has already thrown its own.
+      const manual = modes[current] === "BOLT";
+      if (rig.cycle && (!manual || magazines[current] > 0)) { cycleStartedAt = now; cycleCursor = 0; cycleEjected = !manual; }
+      // An empty magazine is changed once the action has come to rest.
+      if (magazines[current] === 0) { autoReloadAt = now + (manual ? 420 : rig.cycle ? spec.cycleMs : 160); resetTrigger(trigger); }
     };
     const onMouseDown = (event: MouseEvent) => {
-      if (event.button !== 0 || touch || !playing()) return;
+      if (touch || !playing()) return;
+      // The right button is the secondary: sights, or the optic.
+      if (event.button === 2) { aimHeld = true; inspectStartedAt = -1; return; }
+      if (event.button !== 0) return;
       wake();
       pressTrigger(trigger);
     };
     const onMouseUp = (event: MouseEvent) => {
       if (event.button === 0) releaseTrigger(trigger);
+      if (event.button === 2) aimHeld = false;
     };
+    /** The right button belongs to the range while it is being played, not to the browser's menu. */
+    const onContextMenu = (event: MouseEvent) => {
+      if (playing() || (enteredRef.current && event.target instanceof Node && mount.contains(event.target))) event.preventDefault();
+    };
+    // The wheel changes weapon one step for each deliberate turn of it: travel adds up to a notch
+    // before anything happens, so a brush of a trackpad does nothing, and one gesture (with the
+    // coasting a trackpad adds after it) moves a single slot however long it runs.
+    const WHEEL_NOTCH = 60, WHEEL_GAP = 180;
+    let wheelRun = 0, wheelAt = -1e6, wheelSpent = false;
     const onWheel = (event: WheelEvent) => {
       if (!playing() || event.deltaY === 0) return;
-      const count = arsenal.rigs.length;
-      switchWeapon((current + (event.deltaY > 0 ? 1 : count - 1)) % count);
+      const now = performance.now();
+      if (now - wheelAt > WHEEL_GAP || Math.sign(event.deltaY) !== Math.sign(wheelRun)) { wheelRun = 0; wheelSpent = false; }
+      wheelAt = now;
+      // Lines and pages are reported by some mice; both are turned into pixels.
+      wheelRun += event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 100 : 1);
+      if (wheelSpent || Math.abs(wheelRun) < WHEEL_NOTCH || switchingTo >= 0) return;
+      wheelSpent = true;
+      cycleWeapon(wheelRun > 0 ? 1 : -1);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       // Letters are matched by what the key prints, so B and A work on AZERTY and other layouts.
@@ -1391,19 +1491,33 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       }
       if (!playing()) return;
       keys.add(event.code);
-      if (event.code === "Space") event.preventDefault();
+      // Space jumps rather than scrolling the page, and Ctrl is the crouch: with it held, the browser's
+      // own Ctrl shortcuts (save, find, bookmark) are kept from firing where the browser allows that.
+      if (event.code === "Space" || (event.ctrlKey && !event.metaKey)) event.preventDefault();
       if (event.repeat) return;
+      const now = performance.now();
+      if (event.code === "Space" && !airborne) { airborne = true; rise = JUMP; }
       if (event.code === "KeyR") startReload();
       if (event.code === "KeyV") cycleMode();
       if (typed === "KeyM") toggleRangeMute();
       if (event.code === "KeyQ") switchWeapon(previous);
-      if (/^Digit[1-6]$/.test(event.code)) switchWeapon(Number(event.code.slice(5)) - 1);
+      // 1 to 0 are the ten slots; the weapons fill the first of them.
+      if (/^Digit[0-9]$/.test(event.code)) switchWeapon((Number(event.code.slice(5)) + 9) % 10);
       if (event.code === "KeyE") use();
+      if (event.code === "KeyG") dropWeapon(now);
+      if (event.code === "KeyF" && !reloading && switchingTo < 0) inspectStartedAt = inspectStartedAt >= 0 ? -1 : now;
     };
     const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
+    /** Ctrl+W closes a tab and no page can stop that key; with Ctrl held to crouch, the browser is at least made to ask first. */
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (playing() && (keys.has("ControlLeft") || keys.has("ControlRight"))) event.preventDefault();
+    };
     /** Opens what the player is standing at, and frees the pointer for it. */
     const use = () => {
       if (!playing()) return;
+      // A weapon lying at the player's feet comes first: picking it up does not free the pointer.
+      const lying = withinReach(2.3, false);
+      if (lying) { pickUp(lying); return; }
       if (furnaceTargeted) furnaceRef.current();
       else if (chartTargeted) chartRef.current();
       else if (lastTargeted >= 0) selectRef.current(markets[lastTargeted]);
@@ -1429,7 +1543,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       },
       aim: (on) => { touchAim = on; },
       reload: () => { if (playing()) startReload(); },
-      nextWeapon: () => { if (playing()) switchWeapon((current + 1) % arsenal.rigs.length); },
+      nextWeapon: () => { if (playing()) cycleWeapon(1); },
       mode: () => { if (playing()) cycleMode(); },
       pause: release,
       wake,
@@ -1443,8 +1557,10 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     document.addEventListener("visibilitychange", onHidden);
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("wheel", onWheel, { passive: true });
+    document.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
+    window.addEventListener("beforeunload", onBeforeUnload);
 
     let frame = 0;
     let fpsFrames = 0;
@@ -1477,6 +1593,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       const dt = Math.min((now - lastFrameTime) / 1000, 0.033);
       lastFrameTime = now;
       let moving = false;
+      // Running is the default pace; Shift walks, and Ctrl (or C) ducks, which is slower still.
+      const ducking = playing() && (keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("KeyC"));
+      const walking = !ducking && (keys.has("ShiftLeft") || keys.has("ShiftRight"));
       if (playing()) {
         moveDirection.set(stick.x, 0, stick.y);
         if (keys.has("KeyW")) moveDirection.z -= 1;
@@ -1489,7 +1608,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
           const pace = Math.min(1, moveDirection.length());
           moveDirection.normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
           const fromX = camera.position.x, fromZ = camera.position.z;
-          camera.position.addScaledVector(moveDirection, (keys.has("ShiftLeft") ? 7.4 : 5.1) * pace * dt);
+          camera.position.addScaledVector(moveDirection, (ducking ? CREEP : walking ? WALK : RUN) * pace * dt);
           camera.position.x = THREE.MathUtils.clamp(camera.position.x, -8.6, 8.6);
           // The far limit stops short of the control desk, whose front edge is at z = -24.4.
           camera.position.z = THREE.MathUtils.clamp(camera.position.z, -24.4 - BODY, 8);
@@ -1502,17 +1621,26 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
           }
         }
       }
-      const sprinting = moving && keys.has("ShiftLeft");
-      const gait = now * (sprinting ? 0.0125 : 0.0092);
-      // A foot lands at each low point of the bob: that is when the ground is heard.
+      // A jump: up at a fixed speed, down under gravity, and heard when the feet come back.
+      if (airborne) {
+        rise -= GRAVITY * dt;
+        lift += rise * dt;
+        if (lift <= 0) { lift = 0; rise = 0; airborne = false; landedAt = now; ambience.step(true); }
+      }
+      eye += ((ducking ? DUCK : EYE) - eye) * Math.min(1, dt * 11);
+      const quiet = ducking || walking, grounded = moving && !airborne;
+      gait += dt * 1000 * (ducking ? 0.0052 : walking ? 0.0064 : 0.0092);
+      // A foot lands at each low point of the bob: that is when the ground is heard. Walking and ducking are silent.
       const stride = Math.floor(gait / Math.PI);
-      if (moving && stride !== lastStride) ambience.step(sprinting);
+      if (grounded && !quiet && stride !== lastStride) ambience.step(false);
       lastStride = stride;
-      const bodyBob = moving ? Math.abs(Math.sin(gait)) * (sprinting ? 0.075 : 0.052) : Math.sin(now * 0.0015) * 0.007;
-      const bodyRoll = moving ? Math.sin(gait * 0.5) * (sprinting ? 0.022 : 0.013) : Math.sin(now * 0.0012) * 0.0025;
+      const bodyBob = grounded ? Math.abs(Math.sin(gait)) * (ducking ? 0.02 : walking ? 0.03 : 0.052) : Math.sin(now * 0.0015) * 0.007;
+      const bodyRoll = grounded ? Math.sin(gait * 0.5) * (quiet ? 0.007 : 0.013) : Math.sin(now * 0.0012) * 0.0025;
+      // The knees give as the feet land.
+      const landing = Math.max(0, 1 - (now - landedAt) / 190);
       lookKickX = THREE.MathUtils.lerp(lookKickX, 0, Math.min(1, dt * 8));
       lookKickY = THREE.MathUtils.lerp(lookKickY, 0, Math.min(1, dt * 8));
-      camera.position.y = 1.62 + bodyBob;
+      camera.position.y = eye + lift + bodyBob - Math.sin(landing * Math.PI) * 0.05;
       shake = THREE.MathUtils.lerp(shake, 0, Math.min(1, dt * 7));
       camera.rotation.set(
         pitch + lookKickY * 0.2 + Math.sin(now * 0.09) * shake * 0.03,
@@ -1549,7 +1677,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         const elapsed = now - switchStartedAt;
         if (elapsed >= SWITCH_DOWN && switchingTo !== current) {
           arsenal.rigs[current].root.visible = false;
-          previous = current;
+          if (owned[current]) previous = current;
           current = switchingTo;
           arsenal.rigs[current].root.visible = true;
           reportWeapon();
@@ -1584,7 +1712,6 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
           }
         }
       }
-      if (slashLandsAt >= 0 && now >= slashLandsAt) { slashLandsAt = -1; if (spec.reach && switchingTo < 0) landSlash(now, spec); }
       if (autoReloadAt >= 0 && now >= autoReloadAt) startReload();
       const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || playing());
       if (armed && takeShot(spec, modes[current], trigger, now)) {
@@ -1597,8 +1724,8 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
 
       recoil = THREE.MathUtils.lerp(recoil, 0, Math.min(1, dt * 14));
       muzzleEnergy = THREE.MathUtils.lerp(muzzleEnergy, 0, Math.min(1, dt * 25));
-      // Aim down the sights while Space is held; an optic takes over the whole view once it is up.
-      const aiming = enteredRef.current && (forceScope || ((keys.has("Space") || touchAim) && playing())) && !reloading && switchingTo < 0 && cycleStartedAt < 0;
+      // Aim down the sights while the right button is held; an optic takes over the whole view once it is up.
+      const aiming = enteredRef.current && (forceScope || ((aimHeld || touchAim) && playing())) && !reloading && switchingTo < 0 && !(cycleStartedAt >= 0 && modes[current] === "BOLT");
       aim += ((aiming ? 1 : 0) - aim) * Math.min(1, dt * 13);
       if (Math.abs(aim - (aiming ? 1 : 0)) < 0.003) aim = aiming ? 1 : 0;
       const sighted = smooth01(aim), magnification = THREE.MathUtils.lerp(1, spec.zoom, sighted);
@@ -1616,23 +1743,29 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       roomMuzzleLight.intensity = muzzleEnergy * 72;
       const walkBob = moving ? Math.sin(now * 0.011) * 0.018 : Math.sin(now * 0.0022) * 0.004;
       const lateralBob = moving ? Math.cos(now * 0.0055) * 0.012 : Math.sin(now * 0.0017) * 0.003;
-      let contact = contacts.get(rig);
-      if (!contact && rig.ready && arms.ready()) {
-        // Once per weapon: build what the hands collide with, and seat the resting grips on it.
-        rig.pose(null, 0, rigPose);
-        contact = buildContact(rig.root, arms.hands, rig.movers());
-        contacts.set(rig, contact);
-        const built = contact;
-        rig.fit((pose, left) => arms.fit(pose, left, built));
-      }
+      const contact = contactOf(rig);
       rig.pose(timeline, progress, rigPose);
+      // Looking the weapon over: turned to show one side, then the other. Anything else asked of the hands ends it.
+      let showing = 0;
+      if (inspectStartedAt >= 0) {
+        const t = (now - inspectStartedAt) / INSPECT_MS;
+        if (t >= 1 || reloading || switchingTo >= 0 || cycleStartedAt >= 0 || aiming) inspectStartedAt = -1;
+        else showing = t < 0.5 ? 1 : t < 0.93 ? -1 : 0;
+      }
+      const turning = Math.min(1, dt * 6.5);
+      inspect.turn += ((showing > 0 ? 0.9 : showing < 0 ? -0.42 : 0) - inspect.turn) * turning;
+      inspect.roll += ((showing > 0 ? 0.32 : showing < 0 ? -0.8 : 0) - inspect.roll) * turning;
+      inspect.tip += ((showing > 0 ? 0.14 : showing < 0 ? 0.2 : 0) - inspect.tip) * turning;
+      inspect.up += ((showing !== 0 ? 1 : 0) - inspect.up) * turning;
       weaponBody.position.copy(rigPose.bodyPosition);
-      weaponBody.rotation.copy(rigPose.bodyRotation);
+      weaponBody.position.x -= 0.03 * inspect.up;
+      weaponBody.position.y += 0.035 * inspect.up;
+      weaponBody.rotation.set(rigPose.bodyRotation.x + inspect.tip, rigPose.bodyRotation.y + inspect.turn, rigPose.bodyRotation.z + inspect.roll);
       arms.left.apply(rigPose.left);
       arms.right.apply(rigPose.right);
       muzzleAnchor.position.copy(rig.muzzle.position);
       viewWeapon.position.set(
-        (shoulder.x + rig.view.p[0] * VIEW_SCALE) * (1 - 0.82 * sighted) + (lateralBob - lookKickX * 0.9) * (1 - 0.6 * sighted),
+        (shoulder.x + rig.view.p[0] * VIEW_SCALE) * inward * (1 - 0.82 * sighted) + (lateralBob - lookKickX * 0.9) * (1 - 0.6 * sighted),
         shoulder.y + rig.view.p[1] * VIEW_SCALE + 0.1 * sighted + walkBob * (1 - 0.6 * sighted) + recoil * 0.35 + lookKickY * 0.7 - lowered * 0.75,
         shoulder.z + rig.view.p[2] * VIEW_SCALE + recoil * 0.9,
       );
@@ -1690,6 +1823,20 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         target.scale.setScalar(1 + flare * 0.07 - spring * 0.05);
         target.position.z = 0.52 - spring * 0.07;
       });
+
+      // Dropped weapons: thrown clear, they turn over once in the air and come to rest on their side.
+      for (const item of dropped) {
+        if (item.resting) continue;
+        const t = Math.min(now - item.at, item.lands) / 1000, u = (t * 1000) / item.lands;
+        const x = item.from.x + item.velocity.x * t, z = item.from.z + item.velocity.z * t;
+        // A wall stops it going further; it falls where it met it.
+        if (Math.abs(x) <= 8.6 && z >= -24.4 - BODY && z <= 8 && !(solids?.blocked(x, z))) { item.model.position.x = x; item.model.position.z = z; }
+        item.model.position.y = Math.max(FLOOR, item.from.y + item.velocity.y * t - 0.5 * DROP_GRAVITY * t * t);
+        item.model.rotation.set((1 - u) * item.tip, THREE.MathUtils.lerp(item.turn[0], item.turn[1], u), u * Math.PI / 2);
+        if (u >= 1) { item.resting = true; playAction("slap"); }
+      }
+      // Walking over one picks it up again.
+      if (playing() && dropped.length) { const underfoot = withinReach(0.95, true); if (underfoot) pickUp(underfoot); }
 
       range.update(now);
       ballistics.update(now, dt);
@@ -1751,6 +1898,12 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         hold: (down: boolean) => { forceFire = down; if (down) pressTrigger(trigger); else releaseTrigger(trigger); },
         weapon: (index: number) => switchWeapon(index),
         mode: () => cycleMode(),
+        drop: () => dropWeapon(performance.now()),
+        inspect: (on = true) => { inspectStartedAt = on ? performance.now() : -1; },
+        jump: () => { if (!airborne) { airborne = true; rise = JUMP; } },
+        key: (code: string, down: boolean) => { if (down) keys.add(code); else keys.delete(code); },
+        wheel: (deltaY: number, deltaMode = 0) => onWheel({ deltaY, deltaMode } as WheelEvent),
+        state: () => ({ current, owned: owned.slice(), dropped: dropped.map((item) => ({ index: item.index, resting: item.resting, shown: item.model.parent === scene, at: item.model.position.toArray() })), eye: camera.position.y, airborne, aim, inspect: { ...inspect } }),
         arsenal, arms, weaponBody, viewWeapon, contacts,
         freeze: (at: number | null) => { frozenReload = at; },
         scope: (on: boolean) => { forceScope = on; },
@@ -1776,6 +1929,22 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       }
       viewModelScene.environment = roomProbe!.texture;
       viewModelScene.environmentIntensity = 1.15;
+      // Each weapon's skin is its own shader and its own textures. Have the driver build and take
+      // them all now, in the background, rather than on the frame that first draws a weapon.
+      const stowed = arsenal.rigs.filter((rig) => !rig.root.visible);
+      stowed.forEach((rig) => { rig.root.visible = true; });
+      renderer.setRenderTarget(composer.renderTarget1);
+      renderer.compile(viewModelScene, viewModelCamera);
+      renderer.setRenderTarget(null);
+      stowed.forEach((rig) => rig.root.traverse((object) => {
+        for (const material of [(object as THREE.Mesh).material ?? []].flat()) {
+          for (const value of Object.values(material)) if ((value as THREE.Texture | null)?.isTexture) renderer.initTexture(value as THREE.Texture);
+        }
+      }));
+      stowed.forEach((rig) => { rig.root.visible = false; });
+      // The hands are fitted to every weapon now as well: laying a thumb in place is a search, and
+      // too long a one for the frame that first draws a weapon.
+      arsenal.rigs.forEach(contactOf);
       pmrem.dispose();
       renderer.shadowMap.needsUpdate = true;
       solids = surveySolids(
@@ -1804,6 +1973,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       camera.updateProjectionMatrix();
       viewModelCamera.aspect = mount.clientWidth / mount.clientHeight;
       viewModelCamera.updateProjectionMatrix();
+      frameWeapon();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setSize(mount.clientWidth, mount.clientHeight);
       range.reflection.setSize(mount.clientWidth * adaptivePixelRatio * 0.6, mount.clientHeight * adaptivePixelRatio * 0.6);
@@ -1831,9 +2001,13 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       touchApiRef.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("wheel", onWheel);
+      document.removeEventListener("contextmenu", onContextMenu);
       document.documentElement.removeAttribute("data-scoped");
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      // Dropped weapons share their geometry and materials with the rigs, which dispose of them.
+      dropped.splice(0).forEach((item) => scene.remove(item.model));
       furnaceProximityRef.current(false);
       offVolume();
       ambience.dispose();

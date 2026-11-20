@@ -1,16 +1,17 @@
 import * as THREE from "three";
-import { polymer, steel, timber, type PbrSet } from "./pbr";
-import { photoRoot } from "./touch";
+import { polymer, steel, type PbrSet } from "./pbr";
+import { AK_SKINS, NOISE_GLSL, RIFLE_SKINS, SKIN_COATS, SKIN_PARS, SKIN_VERTEX, SKIN_VERTEX_PARS, skinApply, type Skin } from "./skins";
 
 // Weapon surfacing.
 //
 // The source model ships with flat colours and no usable UV layout, so the
 // rifle is re-surfaced at load:
 //   1. Every mesh is unwrapped by box projection in rifle space, giving all
-//      parts the same texel density for tiling steel / timber / polymer sets.
+//      parts the same texel density for tiling steel and polymer sets.
 //   2. Hard convex edges are found geometrically and stored per triangle. The
-//      shader turns the distance to those edges into wear: bluing rubbed back
-//      to bright steel on corners, varnish worn to raw timber on the furniture.
+//      shader turns the distance to those edges into wear: black oxide rubbed
+//      back to bright steel on corners, paint worn through where it is handled.
+//   3. A skin (see skins.ts) is painted over the finish and under that wear.
 // This is the curvature-driven "smart material" approach used for hero props,
 // computed in a few milliseconds instead of being baked into textures.
 
@@ -21,18 +22,47 @@ export type Finish = {
   wearMetalness: number;
   wearAmount: number;
   options: THREE.MeshPhysicalMaterialParameters;
+  /** Paint over the finish. */
+  skin?: Skin;
 };
 
 export type WeaponSurfacing = {
   /** Muzzle crown and bore direction in the rifle root's local space. */
   muzzle: THREE.Vector3;
   bore: THREE.Vector3;
+  /** Takes the model's own space into weapon space, for its skin. Set once the model is mounted. */
+  frame: THREE.Matrix4;
   dispose: () => void;
 };
 
-const WEAR_KEY = "hyperstrike-weapon-wear-v1";
+const WEAR_KEY = "hyperstrike-weapon-wear-v2";
 
-function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number) {
+function skinUniforms(skin: Skin, frame: THREE.Matrix4) {
+  const coats = Array.from({ length: SKIN_COATS }, (_, index) => skin.coats[index] ?? skin.coats[0]);
+  return {
+    skinFrame: { value: frame },
+    skinColor: { value: coats.map((coat) => new THREE.Color(coat.color)) },
+    skinFinish: { value: coats.map((coat) => new THREE.Vector2(coat.roughness, coat.metalness)) },
+  };
+}
+
+/** Paints a skin over a material that keeps its own baked maps. Its meshes need an `aRifle` attribute. */
+function skinMaterial(material: THREE.MeshStandardMaterial, skin: Skin, frame: THREE.Matrix4) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, skinUniforms(skin, frame));
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", `#include <common>\nattribute vec3 aRifle;\n${SKIN_VERTEX_PARS}`)
+      .replace("#include <begin_vertex>", `#include <begin_vertex>\n${SKIN_VERTEX}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>\n${NOISE_GLSL}${SKIN_PARS}`)
+      .replace("#include <metalnessmap_fragment>", `#include <metalnessmap_fragment>\n${skinApply(skin.paint)}`);
+  };
+  material.customProgramCacheKey = () => `hyperstrike-skin:${skin.key}`;
+  material.needsUpdate = true;
+}
+
+function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number, frame: THREE.Matrix4) {
+  const skin = finish.skin;
   const material = new THREE.MeshPhysicalMaterial({
     map: finish.set.map,
     normalMap: finish.set.normalMap,
@@ -46,6 +76,7 @@ function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number) {
     shader.uniforms.wearColor = { value: finish.wearColor };
     shader.uniforms.wearSurface = { value: new THREE.Vector4(finish.wearRoughness, finish.wearMetalness, finish.wearAmount, wearWidth) };
     shader.uniforms.wearNoiseScale = { value: noiseScale };
+    if (skin) Object.assign(shader.uniforms, skinUniforms(skin, frame));
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", /* glsl */`#include <common>
         attribute vec3 aBary;
@@ -56,8 +87,9 @@ function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number) {
         varying vec3 vEdge;
         varying vec3 vEdgeHeight;
         varying vec3 vRifle;
+        ${skin ? SKIN_VERTEX_PARS : ""}
       `)
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvBary = aBary; vEdge = aEdge; vEdgeHeight = aEdgeHeight; vRifle = aRifle;");
+      .replace("#include <begin_vertex>", `#include <begin_vertex>\nvBary = aBary; vEdge = aEdge; vEdgeHeight = aEdgeHeight; vRifle = aRifle; ${skin ? SKIN_VERTEX : ""}`);
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", /* glsl */`#include <common>
         uniform vec3 wearColor;
@@ -67,18 +99,11 @@ function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number) {
         varying vec3 vEdge;
         varying vec3 vEdgeHeight;
         varying vec3 vRifle;
-        float wearHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-        float wearNoise(vec3 p) {
-          vec3 i = floor(p), f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          return mix(
-            mix(mix(wearHash(i), wearHash(i + vec3(1, 0, 0)), f.x), mix(wearHash(i + vec3(0, 1, 0)), wearHash(i + vec3(1, 1, 0)), f.x), f.y),
-            mix(mix(wearHash(i + vec3(0, 0, 1)), wearHash(i + vec3(1, 0, 1)), f.x), mix(wearHash(i + vec3(0, 1, 1)), wearHash(i + vec3(1, 1, 1)), f.x), f.y),
-            f.z);
-        }
-        float wearFbm(vec3 p) { return wearNoise(p) * 0.55 + wearNoise(p * 2.7 + 9.1) * 0.3 + wearNoise(p * 7.1 + 3.7) * 0.15; }
+        ${NOISE_GLSL}
+        ${skin ? SKIN_PARS : ""}
       `)
       .replace("#include <metalnessmap_fragment>", /* glsl */`#include <metalnessmap_fragment>
+        ${skin ? skinApply(skin.paint) : ""}
         {
           vec3 distanceToEdge = vBary * vEdgeHeight;
           // Small parts get proportionally thinner wear so they are never worn all over.
@@ -98,7 +123,7 @@ function wearMaterial(finish: Finish, wearWidth: number, noiseScale: number) {
         }
       `);
   };
-  material.customProgramCacheKey = () => WEAR_KEY;
+  material.customProgramCacheKey = () => `${WEAR_KEY}:${skin?.key ?? ""}`;
   return material;
 }
 
@@ -178,7 +203,7 @@ function surfaceGeometry(mesh: THREE.Mesh, toRifle: THREE.Matrix4, uvScale: numb
 }
 
 /** Re-surfaces the loaded rifle in place. `root` must not yet be parented. */
-export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?: THREE.LoadingManager): WeaponSurfacing {
+export function surfaceWeapon(root: THREE.Object3D, anisotropy: number): WeaponSurfacing {
   root.updateMatrixWorld(true);
   const length = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
   const span = Math.max(length.x, length.y, length.z);
@@ -187,28 +212,26 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
   const noiseScale = 46 / span;
 
   const sets = {
-    blued: steel(anisotropy, [0.2, 0.21, 0.235], 0.46, 101),
-    bright: steel(anisotropy, [0.42, 0.42, 0.41], 0.32, 103),
-    timber: timber(anisotropy, [0.13, 0.036, 0.012], [0.3, 0.098, 0.03], 0, 107),
-    polymer: polymer(anisotropy, [0.035, 0.028, 0.024], 109),
+    black: steel(anisotropy, [0.034, 0.036, 0.041], 0.5, 101),
+    bright: steel(anisotropy, [0.2, 0.205, 0.21], 0.36, 103),
+    polymer: polymer(anisotropy, [0.026, 0.026, 0.028], 109),
     brass: steel(anisotropy, [0.72, 0.52, 0.2], 0.3, 113, 256),
     copper: steel(anisotropy, [0.66, 0.33, 0.17], 0.34, 127, 256),
   };
-  // Grain runs along the bore, not across it.
-  for (const texture of [sets.timber.map, sets.timber.normalMap, sets.timber.ormMap]) { texture.center.set(0.5, 0.5); texture.rotation = Math.PI / 2; }
+  const moulded = { metalness: 0, envMapIntensity: 0.85, normalScale: new THREE.Vector2(0.45, 0.45) };
   const finishes: Record<string, Finish> = {
-    // Receiver, barrel, magazine: blued steel rubbed bright on its corners.
-    Material_1: { set: sets.blued, wearColor: new THREE.Color(0.62, 0.62, 0.6), wearRoughness: 0.3, wearMetalness: 1, wearAmount: 1, options: { envMapIntensity: 1.15 } },
-    // Furniture: varnished laminate, worn back to pale raw wood.
-    Material_2: { set: sets.timber, wearColor: new THREE.Color(0.3, 0.165, 0.08), wearRoughness: 0.8, wearMetalness: 0, wearAmount: 0.5, options: { metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.28, envMapIntensity: 0.9 } },
-    Material_3: { set: sets.blued, wearColor: new THREE.Color(0.44, 0.44, 0.43), wearRoughness: 0.34, wearMetalness: 1, wearAmount: 0.85, options: { envMapIntensity: 1.1 } },
-    // Pistol grip: moulded polymer polished smooth where it is held.
-    Material_4: { set: sets.polymer, wearColor: new THREE.Color(0.075, 0.06, 0.05), wearRoughness: 0.36, wearMetalness: 0, wearAmount: 0.8, options: { metalness: 0, envMapIntensity: 0.8 } },
+    // Receiver, barrel, magazine: black oxide rubbed bright on its corners.
+    Material_1: { set: sets.black, wearColor: new THREE.Color(0.52, 0.52, 0.5), wearRoughness: 0.3, wearMetalness: 1, wearAmount: 0.95, options: { envMapIntensity: 1.15 }, skin: AK_SKINS.Material_1 },
+    // Furniture: black moulded panels, polished smooth where they are held.
+    Material_2: { set: sets.polymer, wearColor: new THREE.Color(0.1, 0.1, 0.1), wearRoughness: 0.34, wearMetalness: 0, wearAmount: 0.75, options: moulded, skin: AK_SKINS.Material_2 },
+    Material_3: { set: sets.black, wearColor: new THREE.Color(0.44, 0.44, 0.43), wearRoughness: 0.34, wearMetalness: 1, wearAmount: 0.85, options: { envMapIntensity: 1.1 }, skin: AK_SKINS.Material_3 },
+    Material_4: { set: sets.polymer, wearColor: new THREE.Color(0.075, 0.07, 0.065), wearRoughness: 0.36, wearMetalness: 0, wearAmount: 0.8, options: moulded },
     // Bolt carrier: bare machined steel.
-    Material_5: { set: sets.bright, wearColor: new THREE.Color(0.72, 0.72, 0.7), wearRoughness: 0.22, wearMetalness: 1, wearAmount: 0.7, options: { envMapIntensity: 1.25 } },
+    Material_5: { set: sets.bright, wearColor: new THREE.Color(0.66, 0.66, 0.64), wearRoughness: 0.22, wearMetalness: 1, wearAmount: 0.7, options: { envMapIntensity: 1.25 }, skin: AK_SKINS.Material_5 },
     Round_1_Material_1: { set: sets.brass, wearColor: new THREE.Color(0.86, 0.68, 0.34), wearRoughness: 0.22, wearMetalness: 1, wearAmount: 0.4, options: {} },
     Round_1_Material_2: { set: sets.copper, wearColor: new THREE.Color(0.8, 0.46, 0.26), wearRoughness: 0.25, wearMetalness: 1, wearAmount: 0.4, options: {} },
   };
+  const frame = new THREE.Matrix4();
   const materials = new Map<string, THREE.MeshPhysicalMaterial>();
   const geometries: THREE.BufferGeometry[] = [];
   const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -219,7 +242,7 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
     const name = Object.keys(finishes).sort((x, y) => y.length - x.length).find((suffix) => original.name.endsWith(suffix)) ?? "Material_1";
     let material = materials.get(name);
     if (!material) {
-      material = wearMaterial(finishes[name], wearWidth, noiseScale);
+      material = wearMaterial(finishes[name], wearWidth, noiseScale, frame);
       material.name = original.name;
       materials.set(name, material);
     }
@@ -233,26 +256,6 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
     child.receiveShadow = true;
     geometries.push(geometry);
   });
-  // Furniture: a scanned lacquered hardwood replaces the generated grain once it has loaded.
-  const scanned: THREE.Texture[] = [];
-  const furniture = materials.get("Material_2");
-  if (furniture) {
-    const loader = new THREE.TextureLoader(manager);
-    const load = (file: string, srgb: boolean, apply: (texture: THREE.Texture) => void) => loader.load(`${photoRoot("/textures/lacquered_cherry_wood-2k")}/${file}.jpg`, (texture) => {
-      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-      texture.center.set(0.5, 0.5);
-      texture.rotation = Math.PI / 2;
-      texture.repeat.set(0.34, 0.34);
-      texture.anisotropy = anisotropy;
-      if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
-      scanned.push(texture);
-      apply(texture);
-      furniture.needsUpdate = true;
-    });
-    load("diffuse", true, (texture) => { furniture.map = texture; furniture.color.setRGB(1, 0.74, 0.58); });
-    load("normal-gl", false, (texture) => { furniture.normalMap = texture; furniture.normalScale.set(1.4, 1.4); });
-    load("roughness", false, (texture) => { furniture.roughnessMap = texture; });
-  }
   // Locate the muzzle: the rifle's long axis, at whichever end is the slimmer one.
   const bounds = new THREE.Box3();
   geometries.forEach((geometry) => bounds.union(new THREE.Box3().setFromBufferAttribute(geometry.attributes.aRifle as THREE.BufferAttribute)));
@@ -277,10 +280,10 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
   return {
     muzzle,
     bore,
+    frame,
     dispose() {
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
-      scanned.forEach((texture) => texture.dispose());
       Object.values(sets).forEach((set) => { set.map.dispose(); set.normalMap.dispose(); set.ormMap.dispose(); });
     },
   };
@@ -288,12 +291,13 @@ export function surfaceWeapon(root: THREE.Object3D, anisotropy: number, manager?
 
 /**
  * Prepares an authored rifle (baked PBR textures) for the viewmodel: shadows,
- * texture filtering, and the muzzle crown found geometrically — the long axis,
- * at whichever end is the slimmer one. Display-only props are removed.
+ * texture filtering, its skin, and the muzzle crown found geometrically — the
+ * long axis, at whichever end is the slimmer one. Display-only props and the
+ * cloth wrap that would hide the lacquered stock are removed.
  */
 export function prepareRifle(root: THREE.Object3D, anisotropy: number): WeaponSurfacing {
   const props: THREE.Object3D[] = [];
-  root.traverse((child) => { if (/bullet/i.test(child.name)) props.push(child); });
+  root.traverse((child) => { if (/bullet|wrap/i.test(child.name)) props.push(child); });
   props.forEach((prop) => prop.removeFromParent());
   root.updateMatrixWorld(true);
   const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -322,6 +326,19 @@ export function prepareRifle(root: THREE.Object3D, anisotropy: number): WeaponSu
     const position = mesh.geometry.attributes.position;
     for (let i = 0; i < position.count; i += 1) visit(point.fromBufferAttribute(position, i).applyMatrix4(toRoot));
   });
+  // The skin is painted in the rifle's own space: every vertex carries where it rests there.
+  const frame = new THREE.Matrix4();
+  meshes.forEach((mesh) => {
+    toRoot.multiplyMatrices(inverseRoot, mesh.matrixWorld);
+    const position = mesh.geometry.attributes.position;
+    const rest = new Float32Array(position.count * 3);
+    for (let i = 0; i < position.count; i += 1) point.fromBufferAttribute(position, i).applyMatrix4(toRoot).toArray(rest, i * 3);
+    mesh.geometry.setAttribute("aRifle", new THREE.BufferAttribute(rest, 3));
+  });
+  materials.forEach((material) => {
+    const skin = RIFLE_SKINS[material.name];
+    if (skin && material instanceof THREE.MeshStandardMaterial) skinMaterial(material, skin, frame);
+  });
   each((p) => bounds.expandByPoint(p));
   const extent = bounds.getSize(new THREE.Vector3());
   const span = Math.max(extent.x, extent.y, extent.z);
@@ -340,6 +357,7 @@ export function prepareRifle(root: THREE.Object3D, anisotropy: number): WeaponSu
   return {
     muzzle,
     bore,
+    frame,
     dispose() {
       meshes.forEach((mesh) => mesh.geometry.dispose());
       materials.forEach((material) => material.dispose());
@@ -353,12 +371,12 @@ export type FinishKit = { finishes: Record<string, Finish>; dispose: () => void 
 
 export function createFinishKit(anisotropy: number): FinishKit {
   const sets = {
-    anodized: steel(anisotropy, [0.075, 0.078, 0.084], 0.56, 201),
-    parkerized: steel(anisotropy, [0.13, 0.135, 0.14], 0.64, 203),
-    blued: steel(anisotropy, [0.05, 0.052, 0.06], 0.42, 205),
+    anodized: steel(anisotropy, [0.04, 0.042, 0.047], 0.54, 201),
+    parkerized: steel(anisotropy, [0.058, 0.06, 0.064], 0.62, 203),
+    blued: steel(anisotropy, [0.04, 0.042, 0.05], 0.42, 205),
     bright: steel(anisotropy, [0.46, 0.46, 0.45], 0.3, 207, 256),
-    polymer: polymer(anisotropy, [0.03, 0.03, 0.032], 209),
-    grey: polymer(anisotropy, [0.075, 0.08, 0.078], 211),
+    polymer: polymer(anisotropy, [0.026, 0.026, 0.028], 209),
+    grey: polymer(anisotropy, [0.034, 0.036, 0.037], 211),
     rubber: polymer(anisotropy, [0.018, 0.018, 0.018], 213),
     brass: steel(anisotropy, [0.72, 0.52, 0.2], 0.3, 215, 256),
   };
@@ -371,7 +389,7 @@ export function createFinishKit(anisotropy: number): FinishKit {
       blued: metal(sets.blued, 0.5, 0.9, 1.2),
       bright: metal(sets.bright, 0.75, 0.6, 1.3),
       polymer: plastic(sets.polymer, 0.09, 0.7),
-      grey: plastic(sets.grey, 0.17, 0.75),
+      grey: plastic(sets.grey, 0.12, 0.75),
       rubber: plastic(sets.rubber, 0.05, 0.4),
       brass: metal(sets.brass, 0.85, 0.3),
     },
@@ -379,11 +397,13 @@ export function createFinishKit(anisotropy: number): FinishKit {
   };
 }
 
-/** Surfaces every mesh under `root` that names a finish. `root` must not yet be parented. */
-export function surfaceBuilt(root: THREE.Object3D, kit: FinishKit) {
+/**
+ * Surfaces every mesh under `root` that names a finish, painting `skins` (by finish name)
+ * over them. `root` is the weapon's own space and must not yet be parented.
+ */
+export function surfaceBuilt(root: THREE.Object3D, kit: FinishKit, skins: Record<string, Skin> = {}) {
   root.updateMatrixWorld(true);
-  const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
-  const span = Math.max(size.x, size.y, size.z);
+  const frame = new THREE.Matrix4();
   const materials = new Map<string, THREE.MeshPhysicalMaterial>();
   const geometries: THREE.BufferGeometry[] = [];
   const inverseRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -392,7 +412,7 @@ export function surfaceBuilt(root: THREE.Object3D, kit: FinishKit) {
     if (!(child instanceof THREE.Mesh) || !child.userData.finish) return;
     const name = child.userData.finish as string;
     let material = materials.get(name);
-    if (!material) { material = wearMaterial(kit.finishes[name], 0.0055, 60); materials.set(name, material); }
+    if (!material) { material = wearMaterial(skins[name] ? { ...kit.finishes[name], skin: skins[name] } : kit.finishes[name], 0.0055, 60, frame); materials.set(name, material); }
     toRoot.multiplyMatrices(inverseRoot, child.matrixWorld);
     const geometry = surfaceGeometry(child, toRoot, 7);
     child.geometry.dispose();
@@ -402,6 +422,5 @@ export function surfaceBuilt(root: THREE.Object3D, kit: FinishKit) {
     child.receiveShadow = true;
     geometries.push(geometry);
   });
-  void span;
   return { dispose() { geometries.forEach((geometry) => geometry.dispose()); materials.forEach((material) => material.dispose()); } };
 }

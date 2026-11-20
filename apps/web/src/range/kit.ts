@@ -67,7 +67,7 @@ export type RangeEnvironment = {
   /** Something loud happened at `at` (a shot: loudness 1): birds take off, animals bolt. */
   startle?: (at: THREE.Vector3, loudness: number) => void;
   /**
-   * A bullet or blade struck one of this map's `shootable` objects. Return true when the map dealt
+   * A bullet struck one of this map's `shootable` objects. Return true when the map dealt
    * with it itself (an animal that bursts into feathers), so no bullet hole is left in mid-air.
    */
   struck?: (object: THREE.Object3D, point: THREE.Vector3) => boolean;
