@@ -5,6 +5,7 @@ import { createProps } from "../props";
 import { createLife } from "../life";
 import { createTrees, type TreeItem } from "../trees";
 import { createWind } from "../wind";
+import { fallMaterial, waterMaterial } from "../water";
 import type { Glow } from "../volumetric";
 
 // Spillway: the apron at the foot of a dam in a rock gorge.
@@ -524,97 +525,39 @@ function signAtlas() {
   return { texture, rects, aspect };
 }
 
-/** Running water seen from above: milky green where it is whole, white where it is torn, streaming toward +z. */
-const RIVER_SHADER = {
-  vertexShader: /* glsl */`
-    #include <common>
-    #include <fog_pars_vertex>
-    varying vec3 vWorld;
-    void main() {
-      vec4 world = modelMatrix * vec4(position, 1.0);
-      vWorld = world.xyz;
-      vec4 mvPosition = viewMatrix * world;
-      gl_Position = projectionMatrix * mvPosition;
-      #include <fog_vertex>
-    }
-  `,
-  fragmentShader: /* glsl */`
-    #include <common>
-    #include <fog_pars_fragment>
-    uniform float time;
-    uniform vec3 toSun;
-    varying vec3 vWorld;
-    ${NOISE_GLSL}
-    void main() {
-      vec2 p = vWorld.xz;
-      // How torn the water is: the hydraulic jump under the running gate, then the race easing off downstream.
-      float jump = exp(-pow((p.x + 20.0) / 9.0, 2.0)) * (1.0 - smoothstep(-52.0, -44.0, p.y)) + 0.35 * (1.0 - smoothstep(-66.0, -42.0, p.y)) * exp(-pow((p.x + 20.0) / 20.0, 2.0));
-      float race = step(-44.0, p.y) * (0.2 + 0.42 * exp(-(p.y + 44.0) / 40.0));
-      float churn = clamp(max(jump, race), 0.0, 1.0);
-      float speed = mix(2.2, 6.5, clamp(churn * 1.6, 0.0, 1.0));
-      float flow = p.y - time * speed;
-      float a = damFbm(vec2(p.x * 0.5, flow * 0.15));
-      float b = damFbm(vec2(p.x * 1.6 + 7.0, (p.y - time * speed * 1.3) * 0.4));
-      float c = damNoise(vec2(p.x * 4.5, (p.y - time * speed * 1.6) * 1.2));
-      // Boils that well up and spread where the jump is.
-      float boil = damNoise(vec2(p.x * 0.35 + sin(time * 0.6) * 0.4, p.y * 0.35 - time * 0.9)) * jump;
-      float foam = smoothstep(0.66 - churn * 0.5, 0.86 - churn * 0.38, a * 0.5 + b * 0.34 + c * 0.16 + boil * 0.3);
-      vec3 view = normalize(cameraPosition - vWorld);
-      vec3 normal = normalize(vec3((b - 0.5) * 0.7 + (c - 0.5) * 0.25, 1.0, (a - 0.5) * 0.7));
-      float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(view, normal), 0.0), 5.0);
-      vec3 water = mix(vec3(0.04, 0.072, 0.066), vec3(0.14, 0.21, 0.185), b * 0.7 + churn * 0.4);
-      vec3 sky = mix(vec3(0.42, 0.48, 0.52), vec3(0.24, 0.38, 0.7), max(reflect(-view, normal).y, 0.0));
-      vec3 colour = mix(water, sky, fresnel * 0.7);
-      vec3 halfway = normalize(view + toSun);
-      colour += vec3(1.0, 0.95, 0.85) * pow(max(dot(normal, halfway), 0.0), 180.0) * 5.0 * (1.0 - foam);
-      vec3 white = vec3(0.86, 0.9, 0.92) * (0.72 + 0.4 * c) * (0.8 + 0.2 * b);
-      colour = mix(colour, white, foam);
-      gl_FragColor = vec4(colour, 1.0);
-      #include <fog_fragment>
-    }
-  `,
-};
-
-/** The sheet of water on the chute: glassy over the sill, then white, torn into streaks that run down the face. */
-const CHUTE_SHADER = {
-  vertexShader: /* glsl */`
-    #include <common>
-    #include <fog_pars_vertex>
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mvPosition;
-      #include <fog_vertex>
-    }
-  `,
-  fragmentShader: /* glsl */`
-    #include <common>
-    #include <fog_pars_fragment>
-    uniform float time;
-    varying vec2 vUv;
-    ${NOISE_GLSL}
-    void main() {
-      float across = vUv.x, along = vUv.y;
-      // The water speeds up as it falls.
-      float run = along - time * (9.0 + along * 0.12);
-      float streaks = damFbm(vec2(across * 9.0, run * 0.055));
-      float rolls = damNoise(vec2(across * 3.0 + damNoise(vec2(across * 6.0, run * 0.1)) * 0.8, run * 0.22));
-      float grain = damNoise(vec2(across * 34.0, run * 0.6));
-      float aerated = smoothstep(1.0, 12.0, along + (streaks - 0.5) * 8.0);
-      float body = 0.5 * streaks + 0.3 * rolls + 0.2 * grain;
-      vec3 glass = mix(vec3(0.05, 0.17, 0.17), vec3(0.3, 0.48, 0.48), streaks);
-      vec3 white = mix(vec3(0.5, 0.6, 0.68), vec3(1.0, 1.0, 0.98), smoothstep(0.3, 0.72, body)) * 1.12;
-      vec3 colour = mix(glass, white, aerated);
-      // Ragged edges, thin enough near them for the concrete to show.
-      float edge = min(across, 1.0 - across);
-      float alpha = smoothstep(0.0, 0.07 + 0.06 * rolls, edge + (streaks - 0.5) * 0.05) * mix(0.9, 1.0, aerated);
-      alpha *= 1.0 - 0.4 * aerated * smoothstep(0.5, 0.25, body);
-      gl_FragColor = vec4(colour, alpha);
-      #include <fog_fragment>
-    }
-  `,
-};
+/**
+ * The stilling basin and the tailrace, for the shared water: where the chute comes in (x -20, z -64) the
+ * water is thrown outward in a boil, folds over in a roller a few metres on, then gathers and runs out of
+ * the basin's mouth and away down the channel beside the range.
+ */
+const glsl = (value: number) => value.toFixed(4);
+const RIVER_FIELD = /* glsl */`
+  void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+    float channel = smoothstep(${glsl(APRON_END - 5)}, ${glsl(APRON_END + 1)}, p.y);
+    float basinBank = min(min(p.x - ${glsl(BASIN.x0 - 0.6)}, ${glsl(BASIN.x1 + 0.6)} - p.x), p.y - ${glsl(BASIN.z0)});
+    // The basin's downstream wall, either side of the mouth.
+    float mouth = min(p.x - ${glsl(CHANNEL.x0)}, ${glsl(CHANNEL.x1)} - p.x);
+    basinBank = min(basinBank, mouth > 0.0 ? 1e3 : ${glsl(APRON_END)} - p.y);
+    float channelBank = mouth;
+    shore = max(p.y < ${glsl(APRON_END)} ? basinBank : channelBank, 0.0);
+    depth = mix(3.2, 2.2, channel);
+    vec2 from = p - vec2(-20.0, -64.5);
+    float r = length(from) + 0.001;
+    float out_ = exp(-r / 8.0);
+    vec2 drain = normalize(vec2(${glsl((CHANNEL.x0 + CHANNEL.x1) / 2)} - p.x, ${glsl(APRON_END + 4)} - p.y));
+    vec2 inBasin = (from / r) * 6.5 * out_ + drain * (0.5 + 1.6 * smoothstep(${glsl(BASIN.z0)}, ${glsl(APRON_END)}, p.y)) * (1.0 - out_);
+    float race = 2.3 + 2.4 * exp(-(p.y - ${glsl(APRON_END)}) / 38.0);
+    vec2 inChannel = vec2(0.0, race * (0.5 + 0.5 * smoothstep(0.0, 3.0, max(mouth, 0.0))));
+    flow = mix(inBasin, inChannel, channel);
+    // Torn water: the boil under the chute, the roller round it, the streaks it sends off, the race in the channel.
+    float surge = 0.75 + 0.5 * wNoise(vec2(p.x * 0.09, p.y * 0.09 - t * 0.55));
+    float boil = exp(-pow(r / 6.0, 2.0)) * 1.15;
+    float roller = exp(-pow((r - 9.5 - 1.5 * wNoise(vec2(atan(from.y, from.x) * 2.0, t * 0.4))) / 2.6, 2.0)) * 0.62;
+    float wash = 0.5 * exp(-r / 17.0);
+    float rapids = channel * (0.1 + 0.22 * exp(-(p.y - ${glsl(APRON_END)}) / 44.0));
+    churn = clamp(max(max(boil, roller), max(wash, rapids)) * surge, 0.0, 1.0);
+  }
+`;
 
 type Ledge = { x: number; y: number; z: number; width: number };
 
@@ -1495,10 +1438,17 @@ export function buildDam(options: RangeOptions): RangeEnvironment {
   }
 
   // ---- Water -----------------------------------------------------------------
-  const fogUniforms = () => THREE.UniformsUtils.clone(THREE.UniformsLib.fog);
   {
-    const river = track(new THREE.ShaderMaterial({ ...RIVER_SHADER, uniforms: { ...fogUniforms(), time: clock, toSun: { value: TO_SUN } }, fog: true }));
+    // Glacier melt: milky, green where the sun gets into it, white where it is torn.
+    const river = track(waterMaterial({
+      time: clock, key: "dam-river", lean: !high, field: RIVER_FIELD,
+      wind: [0.2, 0.98], span: 2.4, steep: 0.03, rate: 0.6, ripple: 0.035, flowRipple: 0.11, lap: 0.035,
+      deep: 0x1d4a40, bed: 0x7d8a7a, clarity: 0.9, caustics: 0, bedGrain: 0.8,
+      foam: 0x929d9d, foamSize: 1.1, shoreReach: 0.7, shoreFoam: 0.5, driftFoam: 0.2,
+      roughness: 0.08, envMapIntensity: 1.1, toSun: TO_SUN, sunColour: 0xfff1d6,
+    }));
     const surface = mergeGeometries([flat(CHANNEL.x0, CHANNEL.x1, APRON_END, 230, WATER_Y), flat(BASIN.x0 - 0.6, BASIN.x1 + 0.6, BASIN.z0, APRON_END, WATER_Y)]);
+    // Not in the sun's shadow map, like everything else beyond the range: the map ends half-way across the basin.
     scene.add(new THREE.Mesh(surface, river));
     // The sheet on the chute under the raised gate: over the sill, down the parabola, down the face and out into the basin.
     const x = GATES[OPEN_GATE], path: Array<[number, number]> = [[-92.6, DAM.sill + 2.6], [-91, DAM.sill + 2.2]];
@@ -1508,7 +1458,8 @@ export function buildDam(options: RangeOptions): RangeEnvironment {
     const sheet = ribbon(path, x - 4.4, x + 4.4, 1, 1.1);
     const uv = sheet.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setX(i, i % 2);
-    const chute = new THREE.Mesh(sheet, track(new THREE.ShaderMaterial({ ...CHUTE_SHADER, uniforms: { ...fogUniforms(), time: clock }, fog: true, transparent: true, depthWrite: false })));
+    // Over the sill at a walk, then gathering speed all the way down the face: glass for the first few metres, white after.
+    const chute = new THREE.Mesh(sheet, track(fallMaterial({ time: clock, width: 9.4, speed: 6.5, gain: 5.6, glass: 1.5, breakup: 10, strand: 1.15, sheet: 0x1c4f4c, white: 0xffffff, shade: 0x7f95a9, gain2: 1.05, edge: 0.075, lean: !high })));
     chute.renderOrder = 1;
     scene.add(chute);
   }

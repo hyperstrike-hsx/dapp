@@ -64,6 +64,8 @@ export type RangeEnvironment = {
   /** Replaces the sky IBL with a probe of the lit map. */
   captureProbe: (pmrem: THREE.PMREMGenerator) => THREE.WebGLRenderTarget;
   update: (now: number) => void;
+  /** Called with the camera just before each frame is drawn, for whatever a map draws ahead of it. */
+  beforeRender: (camera: THREE.PerspectiveCamera) => void;
   /** Something loud happened at `at` (a shot: loudness 1): birds take off, animals bolt. */
   startle?: (at: THREE.Vector3, loudness: number) => void;
   /**
@@ -319,6 +321,8 @@ export function createKit(options: RangeOptions) {
   const disposables: Array<{ dispose: () => void }> = [];
   const sets: PbrSet[] = [];
   const updates: Array<(now: number) => void> = [];
+  /** Run with the camera just before each frame is drawn. */
+  const frames: Array<(camera: THREE.PerspectiveCamera) => void> = [];
   const probeHidden: THREE.Object3D[] = [];
   const loader = new THREE.TextureLoader(loadingManager);
 
@@ -522,6 +526,7 @@ export function createKit(options: RangeOptions) {
       return target;
     },
     update(now) { updates.forEach((update) => update(now)); },
+    beforeRender(camera) { frames.forEach((frame) => frame(camera)); },
     dispose() {
       sets.forEach(disposePbr);
       disposables.forEach((item) => item.dispose());
@@ -529,5 +534,5 @@ export function createKit(options: RangeOptions) {
     },
   });
 
-  return { scene, renderer, high, anisotropy, shootable, mirrorHidden, probeHidden, updates, keep, track, photoSet, place, instances, metals, floor, sunLight, motes, furnace, finish };
+  return { scene, renderer, high, anisotropy, shootable, mirrorHidden, probeHidden, updates, frames, keep, track, photoSet, place, instances, metals, floor, sunLight, motes, furnace, finish };
 }

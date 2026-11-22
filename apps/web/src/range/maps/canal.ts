@@ -5,6 +5,7 @@ import { canvasTexture, createKit, projectUv, sunlitFromBoxes, type RangeEnviron
 import { createLife } from "../life";
 import { createProps, type PropItem, type PropKind } from "../props";
 import { createTrees, type TreeItem } from "../trees";
+import { causticMaterial, waterMaterial, waterMirror } from "../water";
 import { createWind } from "../wind";
 import type { Cue, CueName } from "../cues";
 import type { Glow } from "../volumetric";
@@ -543,108 +544,41 @@ const NOISE_GLSL = /* glsl */`
   }
 `;
 
-/** Canal water, added to a standard material so it takes the sun, its shadows and the fog like everything else. */
-const WATER_PARS = /* glsl */`
-  varying vec3 vWaterWorld;
-  uniform float waterTime;
-  uniform vec4 waterRings[3];
-  ${NOISE_GLSL}
-  void cWave(vec2 p, vec2 heading, float span, float steep, float rate, float footprint, inout vec2 slope, inout float lost) {
-    // A train too fine for the pixel it lands in stops rippling and roughens the mirror instead.
-    float seen = 1.0 - smoothstep(0.22 * span, 0.7 * span, footprint);
-    slope += heading * steep * seen * cos(dot(heading, p) * 6.2832 / span - rate * waterTime);
-    lost += (1.0 - seen * seen) * steep * steep * 0.5;
+/** The canal's waves: which way they go on the ground, crest to crest of the longest, how steep, how fast. The mirror breaks on the same ones. */
+const SEA = { wind: new THREE.Vector2(0.34, -0.94).normalize(), span: 2.1, steep: 0.024, rate: 0.55 };
+/** Metres a second the current carries what floats on it, up the canal (toward -z). */
+const DRIFT = 0.18;
+/**
+ * Scum and old foam lying on the canal in rafts, for the water and for the mirror laid over it. A raft goes
+ * with the current at one speed everywhere, so its place is the clock times a constant: it travels the
+ * length of the canal and never shears. Needs the shared water's noise.
+ */
+const SCUM_GLSL = /* glsl */`
+  /** Where a point of the water was when the clock started. */
+  vec2 canalAdrift(vec2 p, float t) { return vec2(p.x, p.y + ${glsl(DRIFT)} * t); }
+  /** How much scum lies at a point, 0..1: long rafts drawn out along the canal. */
+  float canalScum(vec2 p, float t) {
+    vec2 q = canalAdrift(p, t);
+    float rafts = wNoise(q * vec2(0.38, 0.15) + 2.0) * 0.64 + wNoise(q * vec2(1.05, 0.46) + 9.0) * 0.36;
+    return smoothstep(0.55, 0.8, rafts);
   }
 `;
-const WATER_NORMAL = /* glsl */`
-  {
-    vec2 p = vWaterWorld.xz;
-    float footprint = max(length(dFdx(p)), length(dFdy(p)));
-    vec2 q = p + (vec2(cNoise(p * 0.21 + waterTime * 0.03), cNoise(p * 0.21 + 31.7 - waterTime * 0.026)) - 0.5) * 2.6;
-    vec2 slope = vec2(0.0);
-    float lost = 0.0;
-    cWave(q, vec2(0.342, -0.94), 2.7, 0.03, 0.9, footprint, slope, lost);
-    cWave(q, vec2(-0.5, -0.866), 1.45, 0.036, 1.3, footprint, slope, lost);
-    cWave(q, vec2(0.866, -0.5), 0.83, 0.038, 1.9, footprint, slope, lost);
-    cWave(p, vec2(-0.199, 0.98), 0.47, 0.036, 2.6, footprint, slope, lost);
-    cWave(p, vec2(0.94, 0.342), 0.27, 0.03, 3.4, footprint, slope, lost);
-    cWave(p, vec2(-0.766, -0.643), 0.15, 0.024, 4.6, footprint, slope, lost);
-    // Rings spreading from a drip, a fish or a hull.
-    for (int i = 0; i < 3; i++) {
-      vec4 ring = waterRings[i];
-      float age = waterTime - ring.z;
-      if (age > 0.0 && age < 8.0) {
-        vec2 d = p - ring.xy;
-        float r = length(d) + 0.001, front = age * 0.55, band = (r - front) / 0.4;
-        slope += (d / r) * cos((r - front) * 15.0) * exp(-band * band) * ring.w * (1.0 - age / 8.0) / (1.0 + front * 1.4);
-      }
-    }
-    normal = normalize((viewMatrix * vec4(normalize(vec3(-slope.x, 1.0, -slope.y)), 0.0)).xyz);
-    roughnessFactor = clamp(roughnessFactor + sqrt(lost) * 1.5, 0.0, 1.0);
-  }
-`;
-/** Mist lying on the water, in banks that drift up the canal: it thickens with distance faster than the air does. */
+
+/**
+ * Mist lying on the water, in banks that drift along the canal: it thickens with distance faster than the air
+ * does. Added to the shared water material after its fog, so it reads that material's own names.
+ */
 const WATER_MIST = /* glsl */`
   #ifdef USE_FOG
   {
     vec2 p = vWaterWorld.xz;
     float away = length(cameraPosition - vWaterWorld);
-    float bank = cNoise(p * 0.1 + vec2(waterTime * 0.04, -waterTime * 0.07)) * 0.62 + cNoise(p * 0.31 - vec2(waterTime * 0.08, waterTime * 0.05)) * 0.38;
+    float bank = wNoise(p * 0.1 + vec2(waterTime * 0.04, -waterTime * 0.07)) * 0.62 + wNoise(p * 0.31 - vec2(waterTime * 0.08, waterTime * 0.05)) * 0.38;
     float mist = smoothstep(0.3, 0.72, bank) * smoothstep(8.0, 34.0, away) * 0.3;
     gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, mist);
   }
   #endif
 `;
-
-/**
- * The far bank mirrored in the canal. Each vertex is slid along the line from the eye to its mirror image
- * until it lies on the water, so the reflection is right from wherever the player stands and nearer things
- * hide it by ordinary depth testing; ripples break it into dashes.
- */
-const MIRROR_SHADER = {
-  vertexShader: /* glsl */`
-    uniform vec3 mirrorSun;
-    uniform vec3 mirrorLight;
-    uniform vec3 mirrorShade;
-    varying vec3 vColour;
-    varying vec2 vPlane;
-    varying float vLift;
-    #include <fog_pars_vertex>
-    void main() {
-      float lift = max(position.y - ${glsl(WATER_Y)}, 0.0);
-      float eye = max(cameraPosition.y - ${glsl(WATER_Y)}, 0.4);
-      vec2 p = mix(cameraPosition.xz, position.xz, eye / (eye + lift));
-      vColour = color * (mirrorShade + mirrorLight * max(dot(normal, mirrorSun), 0.0));
-      vPlane = p;
-      vLift = lift;
-      gl_Position = projectionMatrix * viewMatrix * vec4(p.x, ${glsl(WATER_Y + 0.012)}, p.y, 1.0);
-      #ifdef USE_FOG
-        vFogDepth = length(vec3(position.x, ${glsl(2 * WATER_Y)} - position.y, position.z) - cameraPosition);
-      #endif
-    }
-  `,
-  fragmentShader: /* glsl */`
-    uniform float time;
-    varying vec3 vColour;
-    varying vec2 vPlane;
-    varying float vLift;
-    #include <fog_pars_fragment>
-    ${NOISE_GLSL}
-    void main() {
-      float footprint = max(length(dFdx(vPlane)), length(dFdy(vPlane)));
-      vec2 drift = vec2(time * 0.22, time * 0.13);
-      // Ripples lie across the line of sight, so the image shivers along it.
-      vec2 q = vec2(vPlane.x * 6.5, vPlane.y * 0.9);
-      float ripple = cNoise(q + drift) * 0.6 + cNoise(q * 2.3 - drift * 1.6) * 0.4;
-      float kept = mix(smoothstep(0.24, 0.5, ripple), 0.86, smoothstep(0.12, 0.9, footprint));
-      float away = length(vPlane - cameraPosition.xz), eye = max(cameraPosition.y - ${glsl(WATER_Y)}, 0.4);
-      float cosine = eye / sqrt(eye * eye + away * away);
-      float fresnel = 0.02 + 0.98 * pow(1.0 - cosine, 5.0);
-      gl_FragColor = vec4(vColour, clamp(fresnel * 3.6 + 0.12, 0.0, 0.94) * kept / (1.0 + vLift * 0.015));
-      #include <fog_fragment>
-    }
-  `,
-};
 
 /** Sheets of mist a little above the water: thin seen from above, thick seen edge-on. */
 const MIST_SHADER = {
@@ -667,7 +601,7 @@ const MIST_SHADER = {
       float n = cNoise(p * 0.1 + drift * 0.3 + sheet) * 0.62 + cNoise(p * 0.29 + drift + sheet * 2.1) * 0.38;
       vec3 toEye = cameraPosition - vWorld;
       float away = length(toEye);
-      float thick = clamp(0.04 / max(abs(toEye.y) / away, 0.03), 0.0, 0.4);
+      float thick = clamp(0.03 / max(abs(toEye.y) / away, 0.03), 0.0, 0.24);
       float banks = smoothstep(${glsl(QUAY_X - 0.2)}, ${glsl(QUAY_X - 2.6)}, vWorld.x) * smoothstep(${glsl(FAR_QUAY - 2.5)}, ${glsl(FAR_QUAY + 1.5)}, vWorld.x);
       gl_FragColor = vec4(mistColour, smoothstep(0.4, 0.82, n) * thick * smoothstep(4.0, 12.0, away) * banks);
     }
@@ -1104,6 +1038,8 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
 
   // Bollards, mooring rings, a post-and-chain rail and two lamps, still lit, along the open edge.
   const RAIL_X = -9.7, COPING = 0.075;
+  /** The water stairs, built against the quay wall: they go down northward from `head` and end in a landing at `foot`. */
+  const STAIRS = { head: 1.5, foot: -2.94, going: 0.28, drop: 0.2, steps: 8, wide: 1, landing: 2.2 };
   const LAMPS: V3[] = [[RAIL_X, COPING + 4.25, 3.5], [RAIL_X, COPING + 4.25, -7.7]];
   /** A four-sided lantern standing on y = 0: lit panes in an iron frame under a cap. */
   const lantern = (add: Add, x: number, y: number, z: number, size = 1) => {
@@ -1145,12 +1081,12 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
     }
 
     // Steps down to the water, built against the wall, and a landing a hand above it.
-    const STEP = 0.28, wet = frame(new THREE.Matrix4(), { shadow: true });
-    for (let i = 0; i < 8; i += 1) {
-      const top = COPING - 0.2 * (i + 1);
-      wet(damp(box(1, top + 2.4, STEP, 1.6).translate(QUAY_X - 0.5, (top - 2.4) / 2, 1.5 - (i + 0.5) * STEP)), STONE);
+    const wet = frame(new THREE.Matrix4(), { shadow: true });
+    for (let i = 0; i < STAIRS.steps; i += 1) {
+      const top = COPING - STAIRS.drop * (i + 1);
+      wet(damp(box(STAIRS.wide, top + 2.4, STAIRS.going, 1.6).translate(QUAY_X - STAIRS.wide / 2, (top - 2.4) / 2, STAIRS.head - (i + 0.5) * STAIRS.going)), STONE);
     }
-    wet(damp(box(1, 0.875, 2.2, 1.6).translate(QUAY_X - 0.5, -1.9625, -1.84)), STONE);
+    wet(damp(box(STAIRS.wide, 0.875, STAIRS.landing, 1.6).translate(QUAY_X - STAIRS.wide / 2, -1.9625, STAIRS.foot + STAIRS.landing / 2)), STONE);
     put(rod([QUAY_X - 0.07, COPING + 0.72, 1.45], [QUAY_X - 0.07, -0.78, -0.8], 0.018, 5), IRON);
     for (const t of [0.04, 0.5, 0.96]) put(cyl(0.012, 0.07, "x", 5), IRON, QUAY_X - 0.035, COPING + 0.72 - 1.575 * t, 1.45 - 2.25 * t);
     put(sign("stepsName", 0.62), M.sign, RAIL_X + 0.03, COPING + 0.52, 2.02, [0, Math.PI / 2, 0]);
@@ -1166,11 +1102,11 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
   // ---- The footbridge ---------------------------------------------------------------------
   // Stone, stepped, one arch: it springs from the quay and lands on the far bank. Built in its own frame,
   // x running from the quay across the water.
-  const SPAN = QUAY_X - FAR_QUAY, BRIDGE = { half: 1.15, top: 2.4, run: 5.12, parapet: 0.95, wall: 0.26 };
+  const SPAN = QUAY_X - FAR_QUAY, BRIDGE = { half: 1.15, top: 2.4, run: 5.12, parapet: 0.95, wall: 0.26, foot: 0.98, spring: -1.7, rise: 3.6 };
   const BRIDGE_LAMP = new THREE.Vector3(QUAY_X - SPAN / 2, BRIDGE.top + BRIDGE.parapet + 2.18, BRIDGE_Z);
   {
     const { half, top, run, parapet, wall } = BRIDGE, STEPS = 16, RISE = top / STEPS, GOING = run / STEPS;
-    const A = SPAN / 2 - 0.98, B = 3.6, SPRING = -1.7, FOOT = -2.4;
+    const A = SPAN / 2 - BRIDGE.foot, B = BRIDGE.rise, SPRING = BRIDGE.spring, FOOT = -2.4;
     const at = mat4(QUAY_X, 0, BRIDGE_Z, [0, Math.PI, 0]);
     const stone = both(frame(at, { shadow: true, hit: true }), reflectFrame(at)), dress = frame(at), iron = frame(at);
     const elevation = (over: Array<[number, number]>) => {
@@ -1655,24 +1591,191 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
   // ---- The canal ------------------------------------------------------------------------------
   const clock = { value: 0 };
   const rings = { value: [new THREE.Vector4(0, 0, -100, 0), new THREE.Vector4(0, 0, -100, 0), new THREE.Vector4(0, 0, -100, 0)] };
-  const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x141e19, roughness: 0.1, metalness: 0, envMapIntensity: 1.15 });
-  waterMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.waterTime = clock;
-    shader.uniforms.waterRings = rings;
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vWaterWorld;")
-      .replace("#include <project_vertex>", "#include <project_vertex>\nvWaterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${WATER_PARS}`)
-      .replace("#include <normal_fragment_maps>", WATER_NORMAL)
-      .replace("#include <fog_fragment>", `#include <fog_fragment>\n${WATER_MIST}`);
+  // What the water is told of its surroundings, in plan: where stone, timber and hulls stand in it, how deep
+  // it lies and which way it runs. The boats range on their ropes, so where each lies is a uniform.
+  const afloat = [new THREE.Vector4(0, 0, 1, 0), new THREE.Vector4(0, 0, 1, 0)];
+  /** Mid-channel, the warehouse's wall on the water, and the boat arch in its end wall. */
+  const MID = QUAY_X - SPAN / 2, WARE_FACE = WARE.x0 - WALL_T, DOCK = { x: (WARE.x0 - WALL_X) / 2 + 1.2, half: 1.3 };
+  const CANAL_FIELD = /* glsl */`
+    float canalBox(vec2 p, vec2 centre, vec2 size) {
+      vec2 d = abs(p - centre) - size;
+      return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    }
+    /** Near enough the distance to an oval. */
+    float canalOval(vec2 q, vec2 radii) {
+      float k = length(q / radii);
+      return k * (k - 1.0) / max(length(q / (radii * radii)), 0.001);
+    }
+    /** A point in a boat's own frame, x along the keel toward the bow. \`boat\` is where it lies (x, z) and the cosine and sine of its heading. */
+    vec2 canalAboard(vec2 p, vec4 boat) {
+      vec2 q = p - boat.xy;
+      return vec2(q.x * boat.z - q.y * boat.w, q.x * boat.w + q.y * boat.z);
+    }
+    /** Distance to the nearest masonry: the two quays, the warehouse with its boat arch, the feet of both bridges, the water stairs. */
+    float canalStone(vec2 p) {
+      float d = min(${glsl(QUAY_X)} - p.x, p.x - ${glsl(FAR_QUAY)});
+      vec2 w = vec2(${glsl(WARE_FACE)} - p.x, p.y - ${glsl(WARE.z1)});
+      float ware = length(max(w, 0.0)) + min(max(w.x, w.y), 0.0);
+      d = min(d, max(ware, ${glsl(DOCK.half)} - abs(p.x - ${glsl(DOCK.x)})));
+      // A bridge's two feet stand the same distance either side of mid-channel, so one box does for both:
+      // the footbridge first, then the bridge far down the canal.
+      vec2 folded = vec2(abs(p.x - ${glsl(MID)}), p.y);
+      d = min(d, canalBox(folded, vec2(${glsl(SPAN / 2 - BRIDGE.foot / 2)}, ${glsl(BRIDGE_Z)}), vec2(${glsl(BRIDGE.foot / 2)}, ${glsl(BRIDGE.half)})));
+      d = min(d, canalBox(folded, vec2(${glsl(SPAN / 2 - 0.5)}, 48.4), vec2(0.5, 1.6)));
+      return min(d, canalBox(p, vec2(${glsl(QUAY_X - STAIRS.wide / 2)}, ${glsl((STAIRS.head + STAIRS.foot) / 2)}), vec2(${glsl(STAIRS.wide / 2)}, ${glsl((STAIRS.head - STAIRS.foot) / 2)})));
+    }
+    /** Distance to the nearest pile or hull. */
+    float canalAfloat(vec2 p) {
+      float d = 1e3;
+      ${PILES.map(([x, , z]) => `d = min(d, length(p - vec2(${glsl(x)}, ${glsl(z)})) - 0.12);`).join("\n      ")}
+      // The skiff's waterline is a lens; the barge is slab-sided with a round bow.
+      d = min(d, canalOval(canalAboard(p, canalSkiff) + vec2(0.2, 0.0), vec2(1.72, 0.47)));
+      vec2 b = canalAboard(p, canalBarge);
+      return min(d, min(canalBox(b, vec2(-0.65, 0.0), vec2(2.65, 1.25)), canalOval(b - vec2(2.0, 0.0), vec2(1.3, 1.25))));
+    }
+    void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+      float stone = canalStone(p);
+      shore = max(min(stone, canalAfloat(p)), 0.0);
+      // Silt lies against the walls in long bars and shows through the water; mid-channel is kept dredged.
+      float silt = wNoise(vec2(p.x * 0.42, p.y * 0.14) + 3.1) - 0.5;
+      depth = mix(0.25, 2.9, smoothstep(0.0, 6.2, stone + silt * 2.6));
+      // The current goes up the canal with the air: slack against the banks, in the lee of whatever stands
+      // in it, and still in the dock under the warehouse.
+      float dock = step(${glsl(WARE_FACE)}, p.x) * (1.0 - smoothstep(${glsl(WARE.z1 - 1.5)}, ${glsl(WARE.z1 + 0.5)}, p.y));
+      flow = vec2(0.0, -${glsl(DRIFT)} * (0.35 + 0.85 * smoothstep(0.0, 3.2, shore)) * (1.0 - dock));
+      churn = 0.0;
+    }
+  `;
+  // Where the sun gets down to the water. The low sun comes over the far bank; on this side the warehouse and
+  // the footbridge stand in its way, and under the warehouse it never comes at all.
+  const CANAL_SUN = /* glsl */`
+    /** 1 where the footbridge is solid, seen in elevation: x across the canal, y up. */
+    float canalBridge(float x, float y) {
+      float end = min(x - ${glsl(FAR_QUAY)}, ${glsl(QUAY_X)} - x);
+      float top = ${glsl(BRIDGE.parapet)} + ${glsl(BRIDGE.top)} * clamp(end / ${glsl(BRIDGE.run)}, 0.0, 1.0);
+      float arch = length(vec2((x - ${glsl(MID)}) / ${glsl(SPAN / 2 - BRIDGE.foot)}, (y - ${glsl(BRIDGE.spring)}) / ${glsl(BRIDGE.rise)}));
+      return smoothstep(-0.2, 0.2, end) * smoothstep(-0.2, 0.2, top - y) * smoothstep(0.95, 1.05, arch);
+    }
+    /** How much of the sun reaches the water at a point. */
+    float canalSun(vec2 p) {
+      // Followed toward the sun from the water: to the plane of the warehouse's end wall, then to each face of the bridge.
+      float s = max(p.y - ${glsl(WARE.z1)}, 0.0) / ${glsl(-TO_SUN.z)};
+      float lit = smoothstep(-0.2 - 0.03 * s, 0.2 + 0.03 * s, ${glsl(WARE_FACE)} - p.x - ${glsl(TO_SUN.x)} * s);
+      for (int i = 0; i < 2; i++) {
+        s = (p.y - (i == 0 ? ${glsl(BRIDGE_Z + BRIDGE.half)} : ${glsl(BRIDGE_Z - BRIDGE.half)})) / ${glsl(-TO_SUN.z)};
+        lit *= 1.0 - step(0.0, s) * canalBridge(p.x + ${glsl(TO_SUN.x)} * s, ${glsl(WATER_Y)} + ${glsl(TO_SUN.y)} * s);
+      }
+      return lit;
+    }
+  `;
+  const BED = new THREE.Color(0x8a6a48), CLARITY = 1.5, SCUM = new THREE.Color(0x8a8468);
+  // The far bank, the bridge and the piles as the canal mirrors them. The low sun is behind that bank, so the
+  // fronts it shows the water stand in shade, lit by the sky.
+  const mirror = track(waterMirror({ level: WATER_Y, toSun: TO_SUN, light: new THREE.Color(0xffcf9a).multiplyScalar(1.6), shade: new THREE.Color(0.62, 0.66, 0.7), bend: 0.8, gain: 1.8 }));
+  kit.frames.push((camera) => mirror.render(kit.renderer, camera));
+  const surface = track(waterMaterial({
+    time: clock, key: "canal", lean: !high, field: SCUM_GLSL + CANAL_SUN + CANAL_FIELD, rings, mirror,
+    uniforms: { canalSkiff: { type: "vec4", value: afloat[0] }, canalBarge: { type: "vec4", value: afloat[1] } },
+    wind: [SEA.wind.x, SEA.wind.y], span: SEA.span, steep: SEA.steep, rate: SEA.rate, ripple: 0.03, rippleSize: 0.3, flowRipple: 0.06, lap: 0.045,
+    // The net of light on the bed and the scum are drawn below instead: the one keeps to where the sun is,
+    // the other has to be the same scum the mirror lets show through.
+    deep: 0x1d2b1e, bed: BED, clarity: CLARITY, caustics: 0, bedGrain: 0.4,
+    foam: 0xa5a593, foamSize: 0.16, shoreReach: 0.3, shoreFoam: 0.45, driftFoam: 0,
+    roughness: 0.06, glare: 1.4, envMapIntensity: 1.15, toSun: TO_SUN, sunColour: 0xffcf9a,
+    // Run in a block of its own inside the material's water block: it reads that block's p, t, depth and foam.
+    finish: /* glsl */`
+    {
+      float pixel = max(length(dFdx(p)), length(dFdy(p)));
+      #ifndef W_LEAN
+        // The net of light on the bed, as long as its lines are wider than a pixel. The bed is seen where the
+        // eye's ray, bent at the surface, comes down on it.
+        vec3 up = normalize(normal * mat3(viewMatrix));
+        vec3 down = refract(normalize(vWaterWorld - cameraPosition), up, 0.75);
+        float through = depth / max(-down.y, 0.25);
+        vec2 under = p + down.xz * through;
+        float sun = depth < 2.4 ? canalSun(under) * (1.0 - smoothstep(0.05, 0.2, pixel)) : 0.0;
+        if (sun > 0.01) diffuseColor.rgb += vec3(${glsl(BED.r)}, ${glsl(BED.g)}, ${glsl(BED.b)}) * wThrough(through + depth, ${glsl(CLARITY)}) * wCaustic(under / 0.55, t) * sun * (1.0 - foam) * 0.45;
+      #endif
+      // The dock under the warehouse has no sky to mirror.
+      float dock = step(${glsl(WARE_FACE)}, p.x) * (1.0 - smoothstep(${glsl(WARE.z1 - 1.0)}, ${glsl(WARE.z1)}, p.y));
+      diffuseColor.rgb *= 1.0 - 0.8 * dock;
+      roughnessFactor = mix(roughnessFactor, 1.0, dock);
+      // Scum in rafts on the current, its bubbles drawn out into strings along it. Too far off for them to be
+      // made out, a raft is an even grey.
+      float rafts = canalScum(p, t) * (1.0 - dock);
+      if (rafts > 0.01) {
+        float fine = 1.0 - smoothstep(0.11, 0.42, pixel);
+        float lying = wFoamBody(canalAdrift(p, t) * vec2(1.0, 0.42) / 0.16);
+        float cover = mix(rafts * 0.34, wFoamCover(lying, rafts * 0.68) * 0.72, fine);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${glsl(SCUM.r)}, ${glsl(SCUM.g)}, ${glsl(SCUM.b)}) * mix(0.75, 0.5 + 0.55 * lying, fine), cover);
+        roughnessFactor = mix(roughnessFactor, 0.85, cover);
+      }
+    }
+    `,
+  }));
+  // The mist goes on after the material's own fog.
+  const compileWater = surface.onBeforeCompile;
+  surface.onBeforeCompile = (shader, renderer) => {
+    compileWater.call(surface, shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace("#include <fog_fragment>", `#include <fog_fragment>\n${WATER_MIST}`);
   };
-  waterMaterial.customProgramCacheKey = () => "canal-water";
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR.x0 - FAR_QUAY + 1.4, 236).rotateX(-Math.PI / 2), waterMaterial);
+  surface.customProgramCacheKey = () => `canal-water:${high ? 1 : 0}`;
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR.x0 - FAR_QUAY + 1.4, 236).rotateX(-Math.PI / 2), surface);
   water.position.set((FLOOR.x0 + FAR_QUAY) / 2 + 0.3, WATER_Y, 8);
   water.receiveShadow = true;
   scene.add(water);
   kit.mirrorHidden.push(water);
+
+  // Light the water throws back up onto what stands over it: a moving net under the arch of the bridge, on both
+  // quay walls, the side of the water stairs and the piles. One mesh, laid a hair proud of the stone. Each
+  // corner says how much of the light it takes, so that it dies away up a wall and toward the ends of one, and
+  // only water the sun is on gives any.
+  {
+    const positions: number[] = [], normals: number[] = [], shares: number[] = [];
+    /** A four-sided patch: each corner is its place and its share of the light. `facing` says how the net is laid: flat for [0, -1, 0], up a wall otherwise. */
+    const patch = (corners: Array<[number, number, number, number]>, facing: V3) => {
+      for (const i of [0, 1, 2, 0, 2, 3]) { positions.push(corners[i][0], corners[i][1], corners[i][2]); normals.push(...facing); shares.push(corners[i][3]); }
+    };
+    /** A strip of wall from the water up `rise` metres, between two points on the ground; `from` and `to` are its share at either end. */
+    const wall = (x0: number, z0: number, x1: number, z1: number, rise: number, from: number, to: number, facing: V3) =>
+      patch([[x0, WATER_Y, z0, from], [x1, WATER_Y, z1, to], [x1, WATER_Y + rise, z1, 0], [x0, WATER_Y + rise, z0, 0]], facing);
+    // Under the arch, from one springing over the crown to the other.
+    const A = SPAN / 2 - BRIDGE.foot - 0.006, B = BRIDGE.rise - 0.006, N = 28, from = Math.asin((WATER_Y - BRIDGE.spring) / B);
+    for (let i = 0; i < N; i += 1) {
+      const [a, b] = [i, i + 1].map((k) => from + (Math.PI - 2 * from) * k / N);
+      const [xa, ya, xb, yb] = [MID + A * Math.cos(a), BRIDGE.spring + B * Math.sin(a), MID + A * Math.cos(b), BRIDGE.spring + B * Math.sin(b)];
+      patch([[xa, ya, BRIDGE_Z - BRIDGE.half, 1], [xb, yb, BRIDGE_Z - BRIDGE.half, 1], [xb, yb, BRIDGE_Z + BRIDGE.half, 1], [xa, ya, BRIDGE_Z + BRIDGE.half, 1]], [0, -1, 0]);
+    }
+    // The near quay wall, and the far one for as far along it as the net can be made out.
+    wall(QUAY_X - 0.006, WARE.z1, QUAY_X - 0.006, BACK_Z + 0.4, 1.5, 1, 1, [-1, 0, 0]);
+    for (const [z0, z1, s0, s1] of [[-34, -24, 0, 0.35], [-24, 16, 0.35, 0.35], [16, 26, 0.35, 0]]) wall(FAR_QUAY + 0.006, z0, FAR_QUAY + 0.006, z1, 1.4, s0, s1, [1, 0, 0]);
+    // The side of the water stairs, step by step.
+    for (let i = 0; i < STAIRS.steps; i += 1) {
+      const z0 = STAIRS.head - (i + 1) * STAIRS.going, z1 = z0 + STAIRS.going, x = QUAY_X - STAIRS.wide - 0.006, top = COPING - STAIRS.drop * (i + 1), fade = Math.max(0, 1 - (top - WATER_Y) / 1.5);
+      patch([[x, WATER_Y, z0, 1], [x, WATER_Y, z1, 1], [x, top, z1, fade], [x, top, z0, fade]], [-1, 0, 0]);
+    }
+    // The piles.
+    for (const [x, top, z] of PILES) {
+      const rise = Math.min(1.3, top - 0.02 - WATER_Y);
+      for (let k = 0; k < 8; k += 1) {
+        const [a, b] = [k, k + 1].map((n) => n * TAU / 8), mid = (k + 0.5) * TAU / 8;
+        wall(x + 0.132 * Math.cos(a), z + 0.132 * Math.sin(a), x + 0.132 * Math.cos(b), z + 0.132 * Math.sin(b), rise, 0.6, 0.6, [Math.cos(mid), 0, Math.sin(mid)]);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute("share", new THREE.Float32BufferAttribute(shares, 1));
+    // Each corner's share and the sun's reach are the material's own to work in.
+    const thrown = track(causticMaterial({
+      time: clock, level: WATER_Y, reach: 6, size: 0.6, strength: 0.34, colour: 0xffd9a8, lean: !high, share: true,
+      lit: `${CANAL_SUN}\nfloat wLit(vec2 p) { return canalSun(p); }`,
+    }));
+    thrown.side = THREE.DoubleSide;
+    const net = new THREE.Mesh(track(geometry), thrown);
+    scene.add(net);
+    unreflected([net]);
+  }
   /** Starts a ring spreading on the water. */
   let ringAt = 0;
   const ripple = (x: number, z: number, strength: number) => { rings.value[ringAt].set(x, z, clock.value, strength); ringAt = (ringAt + 1) % rings.value.length; };
@@ -1690,7 +1793,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
   // ---- Boats ----------------------------------------------------------------------------------
   // A work barge and a skiff lie along the quay. Each is a group that rides the water: it heaves and rolls,
   // ranges on its ropes until they snub it, and comes back against the wall.
-  type Boat = { group: THREE.Group; x: number; z: number; yaw: number; slack: number; roll: number; heave: number; phase: number; lines: Array<{ rope: THREE.Mesh; cleat: THREE.Vector3; ring: THREE.Vector3 }>; turn: number };
+  type Boat = { group: THREE.Group; lies: THREE.Vector4; x: number; z: number; yaw: number; slack: number; roll: number; heave: number; phase: number; lines: Array<{ rope: THREE.Mesh; cleat: THREE.Vector3; ring: THREE.Vector3 }>; turn: number };
   const boats: Boat[] = [];
   const ropeMaterial = new THREE.MeshStandardMaterial({ color: 0x8f7a58, roughness: 1, metalness: 0 });
   const ropeGeometry = new THREE.CylinderGeometry(0.016, 0.016, 1, 5).translate(0, 0.5, 0);
@@ -1700,7 +1803,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
     group.rotation.y = yaw;
     scene.add(group);
     const boat: Boat = {
-      group, x, z, yaw, slack, roll, heave, phase: boats.length * 2.4 + 0.7, turn: 0,
+      group, lies: afloat[boats.length].set(x, z, Math.cos(yaw), Math.sin(yaw)), x, z, yaw, slack, roll, heave, phase: boats.length * 2.4 + 0.7, turn: 0,
       lines: lines.map(([cleat, ring]) => {
         const rope = new THREE.Mesh(ropeGeometry, ropeMaterial);
         rope.userData.walkThrough = true;
@@ -1829,6 +1932,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
         boat.group.position.set(boat.x - out, WATER_Y + boat.heave * (Math.sin(t * 1.15 + p) + 0.5 * Math.sin(t * 1.9 + p * 1.7)), boat.z + boat.slack * 0.7 * Math.sin(t * 0.16 + p * 0.6));
         boat.group.rotation.set(boat.roll * (Math.sin(t * 0.95 + p) + 0.4 * Math.sin(t * 1.63 + p * 3)) + gust * boat.roll * 0.6, boat.yaw + boat.slack * 0.18 * Math.sin(t * 0.13 + p), boat.roll * 0.35 * Math.sin(t * 0.8 + p * 1.3), "YXZ");
         boat.group.updateMatrixWorld();
+        boat.lies.set(boat.group.position.x, boat.group.position.z, Math.cos(boat.group.rotation.y), Math.sin(boat.group.rotation.y));
         for (const line of boat.lines) {
           from.copy(line.cleat).applyMatrix4(boat.group.matrixWorld);
           reach.copy(line.ring).sub(from);
@@ -1837,7 +1941,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
           line.rope.quaternion.copy(turn.setFromUnitVectors(UP, reach.divideScalar(length)));
           line.rope.scale.set(1, length, 1);
         }
-        // It says so at each end of its range: a rope snubbing, or the hull coming onto the wall.
+        // It says so at each end of its range: a rope snubbing, or a ring on the water where the hull comes onto the wall.
         const half = Math.floor((t * 0.21 + p) / Math.PI - 0.5);
         if (half !== boat.turn) {
           const first = boat.turn === 0;
@@ -1942,7 +2046,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
 
   flush();
 
-  // The far bank as one mesh, and the same triangles again as its picture in the water.
+  // The far bank as one mesh, and the same triangles again for the water to mirror.
   {
     const direct = mergeGeometries(far.direct)!;
     const bank = new THREE.Mesh(direct, M.far);
@@ -1952,19 +2056,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
     kit.mirrorHidden.push(bank);
     const lamps = mergeGeometries(far.lamps);
     if (lamps) unreflected([scene.add(new THREE.Mesh(lamps, M.glow)).children[scene.children.length - 1]]);
-    const mirrorMaterial = new THREE.ShaderMaterial({
-      ...MIRROR_SHADER,
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        mirrorSun: { value: TO_SUN.clone() }, mirrorLight: { value: new THREE.Color(0xffcf9a).multiplyScalar(1.6) }, mirrorShade: { value: new THREE.Color(0.62, 0.66, 0.7) },
-      }]),
-      vertexColors: true, fog: true, transparent: true, depthWrite: false, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-    });
-    mirrorMaterial.uniforms.time = clock;
-    const mirrored = new THREE.Mesh(mergeGeometries([...far.mirrored, ...far.near])!, mirrorMaterial);
-    mirrored.frustumCulled = false;
-    mirrored.renderOrder = 2;
-    scene.add(mirrored);
-    unreflected([mirrored]);
+    mirror.show(mergeGeometries([...far.mirrored, ...far.near])!);
     far.direct.forEach((part) => part.dispose());
     far.lamps.forEach((part) => part.dispose());
     far.near.forEach((part) => part.dispose());
@@ -1984,7 +2076,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
     // The air follows the game's mood: when the range is restaged its fog darkens, and the sky and the mist with it.
     kit.updates.push(() => {
       const fog = scene.fog as THREE.FogExp2 | null;
-      if (fog) { domeUniforms.domeFog.value.copy(fog.color); mistUniforms.mistColour.value.copy(fog.color); }
+      if (fog) { domeUniforms.domeFog.value.copy(fog.color); mistUniforms.mistColour.value.copy(fog.color); mirror.haze(fog.color, fog.density); }
       domeUniforms.domeGain.value = scene.backgroundIntensity / SKY_INTENSITY;
     });
   }

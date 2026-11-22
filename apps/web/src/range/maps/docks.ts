@@ -4,6 +4,7 @@ import { paintedSteel, pbrMaterial } from "../pbr";
 import { createLife } from "../life";
 import { createProps, type PropItem, type PropKind } from "../props";
 import { createTrees, type TreeItem } from "../trees";
+import { WATER_GLSL } from "../water";
 import { createWind } from "../wind";
 import {
   BRAND, STRIKE_ORANGE, canvasTexture, createKit, hazardTexture, jerseyBarrier, projectUv, softBox, softDiscTexture, sunlitFromBoxes, worldBox,
@@ -33,6 +34,8 @@ const FLAT_U = 0.0625, FLAT_V = 0.5;
 const QUAY_EDGE = 25;
 const WATER_Y = -2.2;
 const DECK_Y = 11.6;
+/** One sea breeze for the whole quay, as a turn of the compass: in through the harbour mouth astern of the ship and away down the lane. */
+const BREEZE = 0.35;
 
 type V3 = [number, number, number];
 
@@ -1112,19 +1115,185 @@ const HAZE_SHADER = {
   `,
 };
 
-/** Harbour water: travelling ripples, the sky and the haze mirrored at a grazing angle, dark where a ripple faces the eye. */
+/** The wind sea the breeze raises in the basin, as `wSea` takes it: the way it runs, crest to crest of its longest train, how steep, how fast against life. */
+const SEA = { wind: [-Math.sin(BREEZE), -Math.cos(BREEZE)], span: 9, steep: 0.028, rate: 0.6 };
+/** A low swell that finds its way in through the harbour mouth: the way each train runs and its length from crest to crest. */
+const SWELL: Array<{ heading: [number, number]; span: number; steep: number }> = [
+  { heading: [-0.77, -0.638], span: 27, steep: 0.012 },
+  { heading: [-0.5, -0.866], span: 16, steep: 0.015 },
+];
+/**
+ * The tug's beat: up the leg close in, round off the end of the shed, back down the leg outside and round again
+ * under the ship's quarter. Two straights along z and a half-turn at each end, so the water can work out for
+ * itself how long ago she passed any place on it.
+ */
+const BEAT = { near: 67, far: 78, from: -44, to: 50, way: 3.3 };
+const BEAT_TURN = (BEAT.far - BEAT.near) / 2, BEAT_RUN = BEAT.to - BEAT.from, BEAT_BEND = Math.PI * BEAT_TURN, BEAT_LAP = 2 * (BEAT_RUN + BEAT_BEND);
+/** The tug in plan, from the point she turns about: metres to her stem and to her counter. */
+const TUG_STEM = 12.5, TUG_STERN = 9;
+/** Crest to crest of the waves that keep station astern of a hull making the tug's way. */
+const WAKE_SPAN = 2 * Math.PI * BEAT.way ** 2 / 9.81;
+/** Half the angle of the V those waves lie in, as a tangent: the same for every hull on deep water. */
+const WAKE_EDGE = 0.35355;
+/** The ship alongside in plan: her sides, her transom, where she begins to fine toward the stem, the stem; and how high her deck edge stands off the water. */
+const BERTH = { port: 26.5, starboard: 48.5, stern: -4, shoulder: -98, stem: -126, side: DECK_Y - WATER_Y };
+/** The breakwater: its head, the turn it runs away at and how far. */
+const MOLE = { head: [119, 56] as [number, number], turn: Math.atan2(-48, 134), long: 150 };
+/** Channel buoys, the first close enough to be seen working in the swell. */
+const BUOYS = [[60, -1], [84, 34], [152, 50]] as const;
+
+/**
+ * What the water, the far shore mirrored in it and the lamps' paths on it have to agree about: where the gusts
+ * are, where the tug has been, and what stands close enough in the water to hide what would be mirrored.
+ * Needs AIR_GLSL.
+ */
+const HARBOUR_GLSL = /* glsl */`
+  // Where the tug is (x, z) and the way she heads (x, z); how far round her beat she has come, in metres.
+  uniform vec4 tug;
+  uniform float tugRound;
+
+  /** Gusts crossing the harbour, 0 in the smooth water between them: the very patches the wind sea ruffles its fine trains in. */
+  float gustAt(vec2 p, float t) {
+    return smoothstep(0.32, 0.74, noise2(p * ${glsl(0.2 / SEA.span)} - ${vec(SEA.wind)} * t * 0.11 + 4.0));
+  }
+
+  /**
+   * The tug's beat as it lies from a point: the nearest place on it is "at" metres round it and "off" metres
+   * away; she heads "ahead" there, and "away" leads straight off it toward the point.
+   */
+  struct Beat { float at; float off; vec2 ahead; vec2 away; float share; };
+  /**
+   * Abreast of the two legs a point has one on either hand and lies in the wake of both: "other" asks for the
+   * farther. A wake that has crossed the loop is let die toward its ends, where the turns take the water over.
+   */
+  Beat beatAt(vec2 p, bool other) {
+    vec2 q = p - ${vec([BEAT.near + BEAT_TURN, (BEAT.from + BEAT.to) / 2])};
+    Beat b;
+    if (abs(q.y) <= ${glsl(BEAT_RUN / 2)}) {
+      bool outer = (q.x > 0.0) != other;
+      float leg = outer ? 1.0 : -1.0, lateral = q.x - leg * ${glsl(BEAT_TURN)};
+      b.at = outer ? ${glsl(1.5 * BEAT_RUN + BEAT_BEND)} - q.y : q.y + ${glsl(BEAT_RUN / 2)};
+      b.off = abs(lateral);
+      b.ahead = vec2(0.0, -leg);
+      b.away = vec2(lateral < 0.0 ? -1.0 : 1.0, 0.0);
+      b.share = other ? 1.0 - smoothstep(${glsl(BEAT_RUN / 2 - 16)}, ${glsl(BEAT_RUN / 2 - 3)}, abs(q.y)) : 1.0;
+    } else {
+      float end = q.y > 0.0 ? 1.0 : -1.0;
+      vec2 v = q - vec2(0.0, end * ${glsl(BEAT_RUN / 2)});
+      float r = length(v) + 1e-4, a = atan(end * v.y, -end * v.x);
+      b.at = (end > 0.0 ? ${glsl(BEAT_RUN)} : ${glsl(2 * BEAT_RUN + BEAT_BEND)}) + ${glsl(BEAT_TURN)} * a;
+      b.off = abs(r - ${glsl(BEAT_TURN)});
+      b.ahead = end * vec2(sin(a), cos(a));
+      b.away = v / r * (r < ${glsl(BEAT_TURN)} ? -1.0 : 1.0);
+      b.share = other ? 0.0 : 1.0;
+    }
+    return b;
+  }
+  /**
+   * The water she has been through. x: how churned, white at 1 under her counter and thinning for half a
+   * minute; y: how smoothed, which outlasts the foam; z: metres astern of her.
+   */
+  vec3 trackAt(Beat b) {
+    float astern = mod(tugRound - ${glsl(TUG_STERN)} - b.at, ${glsl(BEAT_LAP)});
+    // All of it has gone before she comes round on it again.
+    float there = 1.0 - smoothstep(${glsl(BEAT_LAP * 0.62)}, ${glsl(BEAT_LAP * 0.86)}, astern);
+    float wide = min(3.3 + 0.03 * astern, 4.6);
+    float churn = (1.0 - smoothstep(0.55 * wide, wide, b.off)) * (1.1 * exp(-astern / 8.0) + 0.5 * exp(-astern / 60.0)) * there;
+    float lane = (1.0 - smoothstep(wide, wide + 3.5, b.off)) * there;
+    return vec3(churn, lane, astern);
+  }
+
+  /**
+   * One of the two families of wave a hull leaves. "u" is the tangent of the angle between her heading and
+   * the way these waves run, which fixes their length and where their crests lie.
+   */
+  void wakeTrain(Beat b, float astern, float bearing, float u, float steep, vec2 px, vec2 py, inout vec3 sum, inout float lost) {
+    float uu = 1.0 + u * u;
+    // On the edge of the V and outside it the crests run on straight.
+    float reach = bearing > ${glsl(WAKE_EDGE)} ? 1.22474 * astern - 0.86603 * b.off : astern * uu * sqrt(uu) / (1.0 + 2.0 * u * u);
+    vec2 heading = -(b.ahead + u * b.away) / sqrt(uu);
+    float span = ${glsl(WAKE_SPAN)} / uu;
+    // Too fine for the pixel across its own crests, it roughens the mirror instead.
+    float seen = 1.0 - smoothstep(0.22 * span, 0.7 * span, abs(dot(heading, px)) + abs(dot(heading, py)));
+    float a = reach * ${glsl(2 * Math.PI / WAKE_SPAN)};
+    sum.xy += heading * steep * seen * cos(a);
+    sum.z += steep * span * 0.159 * seen * sin(a);
+    lost += (1.0 - seen * seen) * steep * steep * 0.5;
+  }
+  /**
+   * The waves a hull leaves on deep water, as Kelvin worked them out: short ones fanning out in a V either side of
+   * her track, long ones square across it between them, and every crest keeping station with her. They are drawn
+   * against how far astern of her stem a place lies and how far off her track, so the pattern follows her round
+   * her turns and never shears. xy is the slope, z the height.
+   */
+  vec3 wakeWaves(Beat b, vec2 px, vec2 py, inout float lost) {
+    float astern = mod(tugRound + ${glsl(TUG_STEM)} - b.at, ${glsl(BEAT_LAP)});
+    // Spent in half a minute, and gone before she comes round on it again.
+    float live = b.share * exp(-astern / 90.0) * (1.0 - smoothstep(${glsl(BEAT_LAP * 0.5)}, ${glsl(BEAT_LAP * 0.72)}, astern));
+    if (live < 0.004) return vec3(0.0);
+    float bearing = b.off / max(astern, 0.5), inside = clamp(bearing, 0.002, ${glsl(WAKE_EDGE)});
+    float root = sqrt(max(1.0 - 8.0 * inside * inside, 0.0));
+    // Outside the V the waves die within a length or two.
+    float beyond = max(b.off - ${glsl(WAKE_EDGE)} * astern, 0.0);
+    live *= exp(-beyond * beyond / (1.5 + 0.03 * astern)) / sqrt(1.0 + astern / 25.0);
+    vec3 sum = vec3(0.0);
+    float across = bearing / ${glsl(WAKE_EDGE)};
+    // The fanned ones stand highest along the edges of the V, in a row of short crests down either arm.
+    wakeTrain(b, astern, bearing, (1.0 + root) / (4.0 * inside), live * (0.05 * smoothstep(0.0, 0.5, across) + 0.15 * smoothstep(0.55, 0.95, across)), px, py, sum, lost);
+    #ifndef W_LEAN
+      // The square ones start under her counter.
+      float following = 0.06 * live * (1.0 - smoothstep(0.45, 1.0, across)) * smoothstep(${glsl(TUG_STEM + TUG_STERN - 3)}, ${glsl(TUG_STEM + TUG_STERN + 8)}, astern);
+      wakeTrain(b, astern, bearing, 2.0 * inside / (1.0 + root), following, px, py, sum, lost);
+    #endif
+    return sum;
+  }
+
+  /**
+   * How much of the way up a ray from a point on the water is shut by a box standing in it: the box's low and
+   * high corners in plan and how tall it stands. Only what the ray meets within "within" of its own lengths counts.
+   */
+  float wallInWay(vec2 p, vec3 ray, vec2 lo, vec2 hi, float top, float within) {
+    vec2 run = ray.xz + (1.0 - step(1e-5, abs(ray.xz))) * 1e-5;
+    vec2 a = (lo - p) / run, b = (hi - p) / run;
+    vec2 first = min(a, b), last = max(a, b);
+    float enter = max(max(first.x, first.y), 0.0), leave = min(last.x, last.y);
+    // Soft where the ray only clips a corner, and at the top.
+    return enter < within ? smoothstep(0.0, 0.7, (leave - enter) * length(run)) * (1.0 - smoothstep(top * 0.93, top * 1.05 + 0.1, enter * ray.y)) : 0.0;
+  }
+  /** A point or a heading on the water in the tug's own frame: x abeam, y ahead. */
+  vec2 aboardTug(vec2 v) { return vec2(dot(v, vec2(tug.w, -tug.z)), dot(v, tug.zw)); }
+  float shipInWay(vec2 p, vec3 ray, float top, float within) {
+    return wallInWay(p, ray, ${vec([BERTH.port, BERTH.stem + 9])}, ${vec([BERTH.starboard, BERTH.stern])}, top, within);
+  }
+  /** The tug's hull (x) and her house (y) in the way of a ray. */
+  vec2 tugInWay(vec2 p, vec3 ray, float within) {
+    vec2 at = aboardTug(p - tug.xy);
+    vec3 turned = vec3(aboardTug(ray.xz), ray.y).xzy;
+    return vec2(
+      wallInWay(at, turned, vec2(-3.7, ${glsl(-TUG_STERN)}), vec2(3.7, ${glsl(TUG_STEM - 0.3)}), 2.3, within),
+      wallInWay(at, turned, vec2(-1.9, -1.0), vec2(1.9, 5.4), 5.6, within));
+  }
+  /** How much of what lies up a ray from the water the ship alongside and the tug hide between them. */
+  float hullsInWay(vec2 p, vec3 ray, float within) {
+    vec2 hers = tugInWay(p, ray, within);
+    return max(shipInWay(p, ray, ${glsl(BERTH.side)}, within), max(hers.x, hers.y));
+  }
+`;
+
+/**
+ * Harbour water. Its surface is a wind sea over a low swell, ruffled where a gust is on it and glassy between;
+ * the tug drags her wake round her beat through it, and it laps white against the quay, the ship and the
+ * breakwater. It mirrors the sky and the haze at a grazing angle, and the hulls that stand in it; looked down
+ * into, it is dark green.
+ */
 const WATER_SHADER = {
   vertexShader: PLAIN_VERTEX,
   fragmentShader: /* glsl */`
     uniform float time;
     varying vec3 vWorld;
     ${AIR_GLSL}
-    void wave(vec2 p, vec2 heading, float span, float steep, float rate, float footprint, inout vec2 slope, inout float lost) {
-      // A train too fine for the pixel it lands in stops rippling and roughens the mirror instead.
-      float seen = 1.0 - smoothstep(0.22 * span, 0.7 * span, footprint);
-      slope += heading * steep * seen * cos(dot(heading, p) * 6.2832 / span - rate * time);
-      lost += (1.0 - seen * seen) * steep * steep * 0.5;
-    }
+    ${WATER_GLSL}
+    ${HARBOUR_GLSL}
     vec3 skyAt(vec3 ray) {
       vec4 terms = airTerms(normalize(ray.xz + 1e-5));
       float elevation = degrees(asin(clamp(ray.y, 0.0, 1.0)));
@@ -1134,31 +1303,171 @@ const WATER_SHADER = {
       clear += vec3(1.5, 0.62, 0.3) * terms.x * (1.0 - smoothstep(0.0, 45.0, elevation)) * 0.5;
       return mix(clear, airColour(terms, elevation), cover);
     }
+    /** Metres to the tug's side from a point in her own frame. */
+    float tugSide(vec2 at) {
+      float wide = at.y < 4.0 ? 3.75 : 3.6 * (1.0 - pow(clamp((at.y - 4.0) / 8.5, 0.0, 1.0), 1.8));
+      vec2 d = vec2(abs(at.x) - wide, max(at.y - ${glsl(TUG_STEM)}, ${glsl(-TUG_STERN)} - at.y));
+      return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    }
+    /** Metres to the side of the ship alongside. */
+    float shipSide(vec2 p) {
+      float fined = clamp((${glsl(BERTH.shoulder)} - p.y) / ${glsl(BERTH.shoulder - BERTH.stem)}, 0.0, 1.0);
+      vec2 d = vec2(abs(p.x - ${glsl((BERTH.port + BERTH.starboard) / 2)}) - ${glsl((BERTH.starboard - BERTH.port) / 2)} * pow(1.0 - fined * fined, 0.8), max(p.y - ${glsl(BERTH.stern)}, ${glsl(BERTH.stem)} - p.y));
+      return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+    }
+    /** Metres to the stones of the breakwater. */
+    float moleSide(vec2 p) {
+      vec2 d = p - ${vec(MOLE.head)}, run = ${vec([Math.sin(MOLE.turn), Math.cos(MOLE.turn)])};
+      return min(length(d - run * clamp(dot(d, run), 0.0, ${glsl(MOLE.long)})) - 6.0, length(d) - 6.9);
+    }
+    float buoySide(vec2 p) {
+      return min(min(length(p - ${vec([...BUOYS[0]])}), length(p - ${vec([...BUOYS[1]])})), length(p - ${vec([...BUOYS[2]])})) - 1.15;
+    }
+
+    /** Waves of about a size and of no particular heading: their slope, or roughness once they are too fine to draw. */
+    vec2 chop(vec2 p, float t, float size, float steep, float footprint, inout float lost) {
+      float seen = 1.0 - smoothstep(0.25 * size, 0.9 * size, footprint);
+      lost += (1.0 - seen * seen) * steep * steep * 0.5;
+      return wRipples(p, t, size, footprint) * steep;
+    }
+
     void main() {
       vec3 toEye = cameraPosition - vWorld;
       float away = length(toEye);
       vec3 view = toEye / away;
       vec2 p = vWorld.xz;
-      float footprint = max(length(dFdx(p)), length(dFdy(p)));
-      // Long trains bend a little so no two crests run parallel for long.
-      vec2 q = p + (vec2(noise2(p * 0.06 + time * 0.02), noise2(p * 0.06 + 31.7 - time * 0.017)) - 0.5) * 6.0;
-      vec2 slope = vec2(0.0);
-      float lost = 0.0;
-      wave(q, vec2(-0.94, -0.342), 9.0, 0.022, 1.5, footprint, slope, lost);
-      wave(q, vec2(-0.77, 0.638), 5.3, 0.03, 2.0, footprint, slope, lost);
-      wave(q, vec2(-0.985, 0.174), 3.1, 0.04, 2.7, footprint, slope, lost);
-      wave(q, vec2(-0.6, -0.8), 1.9, 0.045, 3.4, footprint, slope, lost);
-      wave(p, vec2(-0.866, 0.5), 1.13, 0.045, 4.4, footprint, slope, lost);
-      wave(p, vec2(-0.199, -0.98), 0.71, 0.04, 5.5, footprint, slope, lost);
-      wave(p, vec2(-0.995, -0.1), 0.43, 0.035, 7.0, footprint, slope, lost);
+      vec2 px = dFdx(p), py = dFdy(p);
+      float footprint = max(length(px), length(py));
+
+      // ---- What stands in the water, and where the tug has been -------------------------------------
+      vec2 aboard = aboardTug(p - tug.xy);
+      float hull = tugSide(aboard);
+      float berth = min(p.x - ${glsl(QUAY_EDGE)}, shipSide(p)), mole = moleSide(p);
+      float shore = max(min(min(berth, hull), min(mole, buoySide(p))), 0.0);
+      Beat beat = beatAt(p, false);
+      // The edges of her track wander.
+      Beat frayed = beat;
+      frayed.off += (wNoise(p * 0.3) - 0.5) * 2.2;
+      vec3 track = trackAt(frayed);
+      float gust = gustAt(p, time);
+      // The wind sea lies down in the lee of the quay and the ship, and where her screws have beaten it flat.
+      float calm = max(0.75 * track.y, 0.55 * exp(-max(berth, 0.0) / 8.0));
+
+      // ---- The surface ------------------------------------------------------------------------------
+      float lost;
+      vec3 sea = wSea(p, time, ${vec(SEA.wind)}, ${glsl(SEA.span)}, ${glsl(SEA.steep)} * (1.0 - calm), ${glsl(SEA.rate)}, footprint, lost);
+      vec2 slope = sea.xy;
+      float height = sea.z;
+      // The swell under it, its crests bent so that none runs straight for long. Each train is judged against the
+      // pixel across its own crests, so one seen end-on is still drawn where one seen broadside has gone.
+      vec2 bent = p + (vec2(wNoise(p * 0.019 + time * 0.011), wNoise(p * 0.019 + 31.7 - time * 0.009)) - 0.5) * 16.0;
+      ${SWELL.map(({ heading, span, steep }) => `wTrain(bent, ${vec(heading)}, ${glsl(span)}, ${glsl(steep)}, ${glsl(SEA.rate * 7.85 / Math.sqrt(span))} * time, abs(dot(${vec(heading)}, px)) + abs(dot(${vec(heading)}, py)), slope, height, lost);`).join("\n      ")}
+      // Cat's paws: ripples a hand long wherever a gust is on the water, drawn close in and felt as roughness beyond.
+      float ruffle = (0.02 + 0.1 * gust) * (1.0 - calm);
+      #ifndef W_LEAN
+        slope += wRipples(p, time, 0.3, footprint) * ruffle * 0.6;
+        lost += ruffle * ruffle * (1.0 - 0.6 * (1.0 - smoothstep(0.075, 0.27, footprint)));
+        // Chop with no order in it, so the trains never show in ranks.
+        slope += chop(p, time, 1.5, 0.034 * (0.5 + 0.7 * gust) * (1.0 - calm), footprint, lost) + chop(p + 40.0, time * 0.7, 4.2, 0.022 * (1.0 - calm), footprint, lost);
+      #else
+        lost += ruffle * ruffle;
+      #endif
+      // Her wake. The ship alongside shuts it out of the water between her and the quay.
+      float open = max(smoothstep(${glsl(BERTH.starboard)}, ${glsl(BERTH.starboard + 3)}, p.x), smoothstep(${glsl(BERTH.stern - 2)}, ${glsl(BERTH.stern + 3)}, p.y));
+      beat.share *= open;
+      vec3 wake = wakeWaves(beat, px, py, lost);
+      #ifndef W_LEAN
+        // Between the legs of her beat the wake of the other leg comes across this one.
+        Beat crossing = beatAt(p, true);
+        crossing.share *= open;
+        if (crossing.share > 0.0) wake += wakeWaves(crossing, px, py, lost);
+      #endif
+      slope += wake.xy;
+      height += wake.z;
+      // The first crests off her bow stand steep enough to break.
+      float feathers = smoothstep(0.045, 0.1, wake.z) * exp(-mod(tugRound + ${glsl(TUG_STEM)} - beat.at, ${glsl(BEAT_LAP)}) / 24.0);
+      // Rings going out from the near buoy as it works in the swell.
+      {
+        vec2 d = p - ${vec([...BUOYS[0]])};
+        float r = length(d) + 0.001;
+        vec2 heading = d / r;
+        float seen = 1.0 - smoothstep(0.3, 1.0, abs(dot(heading, px)) + abs(dot(heading, py)));
+        slope += heading * cos(r * 4.4 - time * 3.6) * exp(-r / 4.5) * 0.09 * seen;
+      }
+      // Wavelets a wall or a hull throws back: they leave it square on and die within a few metres.
+      vec2 lead = wGradient(min(shore, 8.0), p);
+      float led = length(lead);
+      vec2 square = led > 0.01 ? lead / led : vec2(1.0, 0.0);
+      if (shore < 6.0) {
+        float seen = 1.0 - smoothstep(0.15, 0.5, footprint);
+        slope += square * cos(shore * 8.5 - time * 2.6 + wNoise(p * 0.8) * 5.0) * exp(-shore * 1.25) * 0.04 * seen;
+      }
+
+      // ---- What it mirrors ----------------------------------------------------------------------------
       vec3 normal = normalize(vec3(-slope.x, 1.0, -slope.y));
       float rough = sqrt(lost);
+      // Rough water shows the eye more of its own dark face and less of the sky, which is what makes a gust
+      // a dark patch on a bright harbour; what sky it does mirror comes from a little higher.
       vec3 bounce = reflect(-view, normal);
-      bounce.y = abs(bounce.y) + rough * 1.5;
+      bounce.y = abs(bounce.y) + min(rough * 1.5, 0.1);
       bounce = normalize(bounce);
-      float facing = clamp(dot(view, normal) + rough * 0.7, 0.0, 1.0);
-      float fresnel = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
-      vec3 colour = mix(vec3(0.012, 0.02, 0.028), skyAt(bounce), fresnel);
+      float facing = clamp(dot(view, normal) + rough * 0.9, 0.0, 1.0);
+      float fresnel = wFresnel(facing);
+      vec3 mirror = skyAt(bounce);
+      // The ship alongside stands in the sky's way: dark topsides over her boot-topping. So does the tug.
+      float side = shipInWay(p, bounce, ${glsl(BERTH.side)}, 1e6);
+      if (side > 0.0) mirror = mix(mirror, mix(vec3(0.012, 0.015, 0.024), vec3(0.045, 0.014, 0.012), shipInWay(p, bounce, 3.2, 1e6)), side);
+      vec2 hers = tugInWay(p, bounce, 1e6);
+      mirror = mix(mirror, mix(vec3(0.05, 0.048, 0.055), vec3(0.2, 0.14, 0.125), smoothstep(-0.2, 0.4, dot(normalize(bounce.xz + 1e-5), ${vec([-SUN_FLAT.x, -SUN_FLAT.y])}))), hers.y);
+      mirror = mix(mirror, vec3(0.012, 0.013, 0.016), hers.x);
+
+      // ---- Light on it, and in it -----------------------------------------------------------------------
+      // The afterglow still reaches the water clear of the shadows of the quay and of the ship, which lies soft-edged
+      // down the light from her quarter for a hundred metres and more; the tug's flood lights her wash.
+      vec2 quarter = p - ${vec([BERTH.starboard, BERTH.stern])};
+      float sunlit = smoothstep(${glsl(QUAY_EDGE + 7)}, ${glsl(QUAY_EDGE + 16)}, p.x) * max(smoothstep(-4.0, 10.0, dot(quarter, ${vec([SUN_FLAT.y, -SUN_FLAT.x])})), smoothstep(100.0, 150.0, dot(quarter, ${vec([-SUN_FLAT.x, -SUN_FLAT.y])})));
+      vec3 light = vec3(0.33, 0.28, 0.39) + vec3(0.17, 0.06, 0.03) * sunlit;
+      vec3 toLamp = vec3(aboard.x, 6.7, aboard.y + 0.2);
+      float lampAway = dot(toLamp, toLamp);
+      light += vec3(0.72, 0.84, 1.0) * (600.0 / (lampAway * sqrt(lampAway))) * (1.0 - smoothstep(-11.0, -7.0, aboard.y));
+      // Deep water sends a little of that light back, and sends it back dark green whatever its colour; where the
+      // screws have beaten air into it, paler. More comes back through a crest than through a trough.
+      vec3 body = mix(vec3(0.038, 0.08, 0.08), vec3(0.24, 0.42, 0.38), clamp(track.x * 0.7, 0.0, 0.8)) * dot(light, vec3(0.27)) * (1.0 + clamp(height * 2.5, -0.3, 0.6));
+      vec3 colour = mix(body, mirror, fresnel);
+      #ifndef W_LEAN
+        // Sparkle where a facet throws the afterglow at the eye.
+        colour += vec3(1.5, 0.62, 0.3) * min(wGlint(normal, view, ${vec([TO_SUN.x, TO_SUN.y, TO_SUN.z])}, max(rough * 2.0, 0.07)) * 0.006, 1.4) * sunlit;
+      #endif
+
+      // ---- Foam ---------------------------------------------------------------------------------------
+      const float cell = 0.5;
+      // Against walls, hulls and stones, coming and going as the water laps. A line of it is never drawn narrower
+      // than the pixel it lands in: it is widened to it, and thinned by as much.
+      float reach = mole <= shore ? 1.5 : 0.5, wide = max(reach, abs(dot(square, px)) + abs(dot(square, py)));
+      float lapping = 0.6 + 0.4 * sin(time * 1.1 + wNoise(p * 0.35) * 6.2832);
+      float amount = 0.6 * (reach / wide) * exp(-shore / wide * (1.6 - 0.8 * lapping)) * lapping;
+      // The bone in the tug's teeth and the white water down her sides; then her track, thick under her counter,
+      // in clots and with a line down either edge where her stern wave broke.
+      amount += exp(-max(hull, 0.0) / 0.7) * (0.3 + 0.7 * smoothstep(-2.0, 10.0, aboard.y)) + 0.8 * feathers;
+      float clots = wNoise(p * 0.21 + 7.0) * 0.6 + wNoise(p * 0.53 + 3.0) * 0.4;
+      amount += track.x * mix(1.0, 0.35 + 1.3 * clots, 1.0 - smoothstep(1.0, 3.0, footprint));
+      float verge = (frayed.off - 3.4) / 0.7;
+      amount += 0.3 * track.y * exp(-track.z / 45.0) * exp(-verge * verge);
+      vec2 drift = ${vec(SEA.wind)} * 0.12 - beat.ahead * 1.8 * track.y * exp(-track.z / 9.0);
+      #ifndef W_LEAN
+        // Old foam and scum the breeze has drawn out in windrows.
+        vec2 rows = vec2(dot(p, ${vec([-SEA.wind[1], SEA.wind[0]])}) / 5.0, dot(p, ${vec(SEA.wind)}) / 60.0 - time * 0.002);
+        float row = smoothstep(0.7, 0.9, wNoise(rows + 11.0)) * smoothstep(0.45, 0.7, wNoise(p * 0.045 + 5.0));
+        amount += 0.24 * row * (1.0 - calm) * (1.0 - smoothstep(1.7, 5.0, abs(dot(${vec([-SEA.wind[1], SEA.wind[0]])}, px)) + abs(dot(${vec([-SEA.wind[1], SEA.wind[0]])}, py))));
+      #endif
+      amount = clamp(amount, 0.0, 1.0);
+      // Too far off for its bubbles to be told apart, foam is a paleness on the water.
+      float told = 1.0 - smoothstep(0.6 * cell, 2.4 * cell, footprint);
+      vec2 froth = told > 0.0 ? wFoam(p, drift, time, cell, amount) : vec2(0.0);
+      // Thin foam lets the water show through it.
+      float foam = mix(clamp(amount * 0.75, 0.0, 1.0), froth.x, told) * mix(0.55, 1.0, smoothstep(0.15, 0.6, amount));
+      colour = mix(colour, vec3(0.84) * light * mix(0.86, 0.5 + 0.95 * froth.y, told), foam);
+
       vec3 air = airColour(airTerms(normalize(-view.xz)), 0.0);
       gl_FragColor = vec4(mix(colour, air, airAmount(away)), 1.0);
     }
@@ -1192,13 +1501,27 @@ const MIRROR_SHADER = {
     varying vec2 vPlane;
     varying float vLift;
     ${AIR_GLSL}
+    ${HARBOUR_GLSL}
     void main() {
       float footprint = max(length(dFdx(vPlane)), length(dFdy(vPlane)));
-      vec2 drift = vec2(time * 0.45, time * 0.2);
+      Beat beat = beatAt(vPlane, false);
+      vec3 track = trackAt(beat);
+      // The image holds together on the smooth water between gusts and in the tug's track, and goes to pieces
+      // where the wind is on it.
+      float ruffle = gustAt(vPlane, time) * (1.0 - 0.75 * track.y);
+      vec2 drift = ${vec(SEA.wind)} * time * -0.5;
       float ripple = noise2(vPlane * 0.5 + drift) * 0.6 + noise2(vPlane * 1.6 - drift * 1.5) * 0.4;
-      float kept = mix(smoothstep(0.36, 0.56, ripple), 0.62, smoothstep(0.4, 2.4, footprint));
+      float cut = 0.3 + 0.16 * ruffle;
+      float kept = mix(smoothstep(cut, cut + 0.2, ripple), mix(0.8, 0.44, ruffle), smoothstep(0.4, 2.4, footprint));
+      // The tug's wake throws the image off the faces of its waves that look at the eye, and blurs it where they are too fine to tell.
+      vec3 ray = normalize(vec3(vPlane.x, ${glsl(WATER_Y)}, vPlane.y) - cameraPosition);
+      float blurred = 0.0;
+      vec3 wake = wakeWaves(beat, dFdx(vPlane), dFdy(vPlane), blurred);
+      kept *= clamp(1.0 + dot(wake.xy, normalize(ray.xz)) * 10.0, 0.12, 1.5) * (1.0 - min(sqrt(blurred) * 5.0, 0.5));
+      // Foam mirrors nothing, and the hulls close by stand in front of the far shore.
+      kept *= (1.0 - 0.9 * min(track.x, 1.0)) * (1.0 - hullsInWay(vPlane, vec3(ray.x, -ray.y, ray.z), 1e6));
       // Tall things come off steeper ripples, and fainter.
-      gl_FragColor = vec4(vColour * 0.84, 0.9 * kept / (1.0 + vLift * 0.014));
+      gl_FragColor = vec4(vColour * 0.84, min(0.9 * kept / (1.0 + vLift * 0.014), 1.0));
     }
   `,
 };
@@ -1216,6 +1539,7 @@ const GLITTER_SHADER = {
     attribute vec3 corner;
     varying vec3 vColour;
     varying vec2 vPlane;
+    varying vec3 vLamp;
     varying vec3 vPath;
     ${AIR_GLSL}
     void main() {
@@ -1236,6 +1560,7 @@ const GLITTER_SHADER = {
       float flash = corner.z > 0.0 ? smoothstep(0.55, 0.9, sin(time * 6.2832 / corner.z + fract(dot(position.xz, vec2(0.137, 0.071))) * 6.2832)) : 1.0;
       vColour = color * (honest / wide) * flash * (1.0 - 0.8 * airAmount(span));
       vPlane = p;
+      vLamp = vec3(position.x, lift, position.z);
       vPath = vec3(corner.x, mirrored, eye);
       gl_Position = projectionMatrix * viewMatrix * vec4(p.x, ${glsl(WATER_Y + 0.03)}, p.y, 1.0);
     }
@@ -1244,18 +1569,34 @@ const GLITTER_SHADER = {
     uniform float time;
     varying vec3 vColour;
     varying vec2 vPlane;
+    varying vec3 vLamp;
     varying vec3 vPath;
     ${AIR_GLSL}
+    ${HARBOUR_GLSL}
     void main() {
       float d = length(vPlane - cameraPosition.xz);
-      float along = (atan(vPath.z, d) - vPath.y) / ${glsl(GLITTER)};
-      float across = vPath.x * 2.2;
-      float lobe = exp(-0.5 * along * along) * exp(-0.5 * across * across);
+      Beat beat = beatAt(vPlane, false);
+      vec3 track = trackAt(beat);
+      // On the smooth water between gusts and in the tug's track the path is drawn in to a short bright streak;
+      // where the wind is on the water it is smeared long and broken into sparks.
+      float ruffle = gustAt(vPlane, time) * (1.0 - 0.75 * track.y);
+      float smear = mix(0.55, 1.0, ruffle);
+      float along = (atan(vPath.z, d) - vPath.y) / (${glsl(GLITTER)} * smear);
+      float across = vPath.x * 2.2, rim = 1.0 - vPath.x * vPath.x;
+      // Let go to nothing at the sides of the strip, so its edges never show.
+      float lobe = exp(-0.5 * along * along) * exp(-0.5 * across * across) * rim * rim / smear;
       float footprint = max(length(dFdx(vPlane)), length(dFdy(vPlane)));
-      vec2 drift = vec2(time * 0.7, time * 0.33);
+      vec2 drift = ${vec(SEA.wind)} * time * -0.8;
       float ripple = noise2(vPlane * 0.9 + drift) * 0.55 + noise2(vPlane * 2.7 - drift * 1.7) * 0.45;
-      float sparkle = mix(smoothstep(0.46, 0.74, ripple) * 3.6, 1.0, smoothstep(0.3, 1.8, footprint));
-      gl_FragColor = vec4(vColour * lobe * sparkle * 0.34, 1.0);
+      float cut = 0.4 + 0.1 * ruffle;
+      float sparkle = mix(smoothstep(cut, cut + 0.28, ripple) * mix(2.8, 3.9, ruffle), 1.0, smoothstep(0.3, 1.8, footprint));
+      // The faces of the tug's wake that look at the eye throw the light elsewhere; the others gather it.
+      float blurred = 0.0;
+      vec3 wake = wakeWaves(beat, dFdx(vPlane), dFdy(vPlane), blurred);
+      sparkle *= clamp(1.0 + dot(wake.xy, vPlane - cameraPosition.xz) / d * 12.0, 0.1, 2.2);
+      // Foam scatters the light it is given, and a hull between a lamp and its place on the water hides it.
+      float shown = (1.0 - 0.85 * min(track.x, 1.0)) * (1.0 - hullsInWay(vPlane, vLamp - vec3(vPlane.x, 0.0, vPlane.y), 1.0));
+      gl_FragColor = vec4(vColour * lobe * sparkle * shown * 0.34, 1.0);
     }
   `,
 };
@@ -1297,9 +1638,7 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
   const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
   const metals = kit.metals();
   const random = rng(2077);
-  // One sea breeze for the whole quay: in through the harbour mouth astern of the ship and away down the lane.
-  // Flags, tarps, smoke, weeds, litter and the gusts in the rigging all read it.
-  const BREEZE = 0.35;
+  // Flags, tarps, smoke, weeds, litter and the gusts in the rigging all read the one breeze; so does the water.
   const wind = createWind({ heading: BREEZE, strength: 0.45, gustiness: 0.62 });
   const life = createLife(kit, options, { wind, seed: 2077 });
   const trees = createTrees(kit, { seed: 9, wind, sun: () => sun });
@@ -2148,7 +2487,10 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
   moor(7, [28.0, DECK_Y + 0.4, -4.75]); moor(18.5, [28.9, DECK_Y + 0.4, -4.75]); moor(7, [26.62, DECK_Y + 0.2, -7.85]); moor(-4.5, [26.62, DECK_Y + 0.2, -8.3]); moor(-16, [26.62, DECK_Y + 0.2, -11.65]);
   const clock = { value: 0 };
   kit.updates.push((now) => { clock.value = now / 1000; });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(540, 940), new THREE.ShaderMaterial({ ...WATER_SHADER, uniforms: { time: clock } }));
+  // Where the tug is, the way she heads and how far round her beat she has come: the water draws her wake from these,
+  // and the mirrored shore and the lamps' paths give way to it.
+  const tugAt = { value: new THREE.Vector4(BEAT.near, BEAT.from, 0, 1) }, tugRound = { value: 0 };
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(540, 940), new THREE.ShaderMaterial({ ...WATER_SHADER, uniforms: { time: clock, tug: tugAt, tugRound }, defines: high ? {} : { W_LEAN: "" } }));
   water.rotation.x = -Math.PI / 2;
   far(water, [QUAY_EDGE + 269.5, WATER_Y, 40]);
   kit.mirrorHidden.push(water);
@@ -3017,24 +3359,23 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
     set(B.glow, box(0.4, 0.1, 0.3, 0, 6.7, -0.2), COLD, 3.4);
     set(B.pools, quad(6, 8, 0, 2.19, -4.5, "y+"), COLD, 0.22);
     aboard.push({ position: [0, 6.6, -0.3], colour: COLD, gain: 0.9 });
-    // Hull, lamps and the light on her after deck ride the swell together; the wash lies flat on the water round her.
+    // Hull, lamps and the light on her after deck ride the swell together; her wash is the water's own work.
     const tug = new THREE.Group(), hull = new THREE.Group();
     const deckLight = new THREE.Mesh(merge(poolParts), poolMaterial);
-    const wash = new THREE.Mesh(merge([shade(quad(4.6, 26, 0, 0.06, -21, "y+"), 0.13, 0.15, 0.17), shade(quad(8.5, 4, 0, 0.06, 11.6, "y+"), 0.16, 0.18, 0.2)]), poolMaterial);
-    deckLight.renderOrder = wash.renderOrder = 2;
+    deckLight.renderOrder = 2;
     hull.add(new THREE.Mesh(projectUv(merge(hullParts), 3), paintAny), new THREE.Mesh(merge(lampParts), glowAny), deckLight);
     lampHalo(hull, aboard);
-    tug.add(hull, wash);
+    tug.add(hull);
     tug.traverse((child) => { child.castShadow = false; });
     scene.add(tug);
     for (const [x, y, z, colour, gain] of [[0, 6.7, -0.2, COLD, 1.4], [0, 12.5, 2.9, MASTHEAD, 0.8], [-2.2, 3.7, 2, WARM, 0.8]]) {
       afloat.push({ path: paths.length, star: -1, aboard: hull, at: new THREE.Vector3(x, y, z) });
       paths.push({ at: [67, WATER_Y + y, -30], colour, gain, flash: 0 });
     }
-    // Her beat: up past the stern of the ship close in, round off the end of the shed, back down outside the buoys and
-    // round again under the ship's quarter, a lap in a little over a minute. She sounds her whistle before she shows,
+    // Her beat (BEAT): up past the stern of the ship close in, round off the end of the shed, back down outside the buoys
+    // and round again under the ship's quarter, a lap in a little over a minute. She sounds her whistle before she shows,
     // and a few seconds after she has gone by her wash arrives at the quay wall.
-    const NEAR = 67, FAR = 78, FROM = -44, TO = 50, TURN = (FAR - NEAR) / 2, RUN = TO - FROM, BEND = Math.PI * TURN, WAY = 3.3;
+    const { near: NEAR, far: FAR, from: FROM, to: TO, way: WAY } = BEAT, TURN = BEAT_TURN, RUN = BEAT_RUN, BEND = BEAT_BEND;
     const heard = new THREE.Vector3();
     let begun = -1, showing = false, passed = false, slaps = 0, slapAt = 0;
     kit.updates.push((now) => {
@@ -3048,6 +3389,8 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
       hull.position.y = 0.07 * Math.sin(t * 1.3);
       hull.rotation.set(0.014 * Math.sin(t * 1.7), 0, 0.035 * Math.sin(t * 0.9 + 1));
       tug.updateMatrixWorld(true);
+      tugAt.value.set(tug.position.x, tug.position.z, Math.sin(tug.rotation.y), Math.cos(tug.rotation.y));
+      tugRound.value = along;
       const coming = along > 26 && along < RUN;
       if (coming && !showing) cue?.("shipHorn", heard.copy(tug.position).setY(6), { gain: 0.45, pitch: 1.5 + chance() * 0.15 });
       showing = coming;
@@ -3061,7 +3404,7 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
       }
     });
   }
-  for (const [x, z, colour, can, flash] of [[60, -1, RED, true, 2.5], [84, 34, GREEN, false, 4], [152, 50, RED, true, 3]] as const) {
+  for (const [x, z, colour, can, flash] of [[...BUOYS[0], RED, true, 2.5], [...BUOYS[1], GREEN, false, 4], [...BUOYS[2], RED, true, 3]] as const) {
     // The near one is close enough to be seen working in the swell, so it is a thing of its own; the others are scenery.
     const live = x === 60, own: THREE.BufferGeometry[] = [];
     const set = live ? stage(0, 0, 0, x) : stage(x, WATER_Y, z, x), paint = live ? own : B.paintFar;
@@ -3082,12 +3425,16 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
     stars.push({ at: [x, WATER_Y + 3.95, z], colour, gain: 1.5, size: 0.3, flash });
     paths.push({ at: [x, WATER_Y + 3.95, z], colour, gain: 1.2, flash });
     // It rocks to two swells that drift in and out of step and leans to the gusts; the bell speaks when it rocks hard.
-    const heard = new THREE.Vector3(x, 1, z);
+    // The tug passes close inside it on her way up, and it tumbles in her wake once the V of it has spread this far.
+    const heard = new THREE.Vector3(x, 1, z), abeam = BEAT.near - x;
     let rang = 0, over = false;
     kit.updates.push((now) => {
-      const t = now / 1000, roll = 0.085 * Math.sin(t * 1.9) + 0.05 * Math.sin(t * 2.6 + 1) + wind.at(x, z) * 0.05;
-      buoy.rotation.set(0.06 * Math.sin(t * 1.5 + 2) + 0.035 * Math.sin(t * 2.3), 0, roll);
-      buoy.position.y = WATER_Y + 0.07 * Math.sin(t * 1.4 + 0.5);
+      const t = now / 1000;
+      const astern = (tugRound.value + TUG_STEM - (z - BEAT.from) + BEAT_LAP) % BEAT_LAP;
+      const wash = ease(abeam - 1.5, abeam + 3, astern * WAKE_EDGE) * Math.exp(-astern / 45) / Math.sqrt(1 + astern / 10);
+      const roll = 0.085 * Math.sin(t * 1.9) + 0.05 * Math.sin(t * 2.6 + 1) + wind.at(x, z) * 0.05 + 0.3 * wash * Math.sin(t * 2.9);
+      buoy.rotation.set(0.06 * Math.sin(t * 1.5 + 2) + 0.035 * Math.sin(t * 2.3) + 0.12 * wash * Math.sin(t * 2.9 + 1.3), 0, roll);
+      buoy.position.y = WATER_Y + 0.07 * Math.sin(t * 1.4 + 0.5) + 0.16 * wash * Math.sin(t * 2.9 + 0.6);
       buoy.updateMatrixWorld();
       const hard = Math.abs(roll) > 0.125;
       if (hard && !over && t - rang > 2.2) { rang = t; cue?.("buoyBell", heard, { gain: 0.5 + chance() * 0.3, pitch: 0.96 + chance() * 0.08 }); }
@@ -3704,7 +4051,7 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
     kit.probeHidden.push(object);
   };
   if (high) {
-    const mirrored = new THREE.Mesh(farSide.geometry, new THREE.ShaderMaterial({ ...MIRROR_SHADER, uniforms: { time: clock }, vertexColors: true, transparent: true, depthWrite: false, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    const mirrored = new THREE.Mesh(farSide.geometry, new THREE.ShaderMaterial({ ...MIRROR_SHADER, uniforms: { time: clock, tug: tugAt, tugRound }, vertexColors: true, transparent: true, depthWrite: false, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
     mirrored.renderOrder = -8;
     mirrored.frustumCulled = false;
     mirrored.matrixAutoUpdate = false;
@@ -3737,7 +4084,7 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
       }
       lit.needsUpdate = true;
     });
-    const material = new THREE.ShaderMaterial({ ...GLITTER_SHADER, uniforms: { time: clock, viewHeight: { value: 1080 } }, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const material = new THREE.ShaderMaterial({ ...GLITTER_SHADER, uniforms: { time: clock, viewHeight: { value: 1080 }, tug: tugAt, tugRound }, defines: high ? {} : { W_LEAN: "" }, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     const glitter = new THREE.Mesh(geometry, material);
     glitter.renderOrder = -7;
     sized(glitter, material);

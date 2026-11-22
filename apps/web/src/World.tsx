@@ -1887,6 +1887,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       const dome = backdrop?.ready() && skyMap ? backdrop : null;
       if (dome) { scene.background = skyMap; dome.mesh.visible = false; }
       range.reflection.render(scene, camera, range.mirrorHidden);
+      range.beforeRender(camera);
       if (dome) { scene.background = flatBackground; dome.setIntensity(scene.backgroundIntensity); dome.mesh.visible = true; }
       renderer.clear();
       composer.render(dt);

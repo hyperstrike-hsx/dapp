@@ -5,6 +5,7 @@ import { createTrees, type TreeItem } from "../trees";
 import { createLife } from "../life";
 import { createProps } from "../props";
 import { applyWind, createWind } from "../wind";
+import { fallMaterial, waterMaterial } from "../water";
 
 // Canopy: the paved court of a stone ruin that the forest has taken back.
 //
@@ -1174,7 +1175,6 @@ export function buildRuin(options: RangeOptions): RangeEnvironment {
   // ---- The spout and its basin -----------------------------------------------------------
   // On the west wall at z = -3: a carved panel, a stone lip, a thread of water and a trough that never fills.
   const SPOUT = new THREE.Vector3(-WALL + 0.37, 1.97, -3), BASIN = 0.592;
-  const stream = new THREE.MeshBasicMaterial({ color: 0xdcefe6, transparent: true, opacity: 0.7, depthWrite: false });
   {
     stone(buff, 1.18, 1.62, 0.3, onFace(WEST, 3, 2.09, -0.2), 0.02);
     stone(buff, 0.86, 0.86, 0.08, onFace(WEST, 3, 2.3, -0.02), 0.02);
@@ -1187,28 +1187,39 @@ export function buildRuin(options: RangeOptions): RangeEnvironment {
     stone(ashlar, 1.34, 0.68, 0.09, onFace(WEST, 3, 0.34, 0.06), 0.03);
     for (const side of [-1, 1]) stone(ashlar, 0.11, 0.68, 0.48, onFace(WEST, 3 + side * 0.615, 0.34, 0.345), 0.035);
     add(voidDark, new THREE.PlaneGeometry(1.12, 0.48).rotateX(-Math.PI / 2).applyMatrix4(onFace(WEST, 3, 0.3, 0.345)), { shadow: false });
-    const water = standard({ color: 0x1a2a20, roughness: 0.05, envMapIntensity: 1.7, transparent: true, opacity: 0.86 });
+    // A hand's depth of still water over silted stone. The thread rings it where it lands and beats a coin of it
+    // white; what light gets down through the leaves nets the floor.
+    const troughTime = { value: 0 }, lands = { x: SPOUT.x + 0.04, z: SPOUT.z };
+    const water = track(waterMaterial({
+      time: troughTime, key: "ruin-trough", lean: !high,
+      field: /* glsl */`
+        void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+          shore = max(min(min(p.x - ${(-WALL + 0.105).toFixed(3)}, ${(-WALL + 0.585).toFixed(3)} - p.x), min(p.y - ${(-3.56).toFixed(3)}, ${(-2.44).toFixed(3)} - p.y)), 0.0);
+          depth = 0.14 + 0.15 * smoothstep(0.0, 0.12, shore);
+          vec2 from = p - vec2(${lands.x.toFixed(3)}, ${lands.z.toFixed(3)});
+          float r = length(from) + 0.001;
+          flow = (from / r) * 0.16 * exp(-r / 0.22);
+          churn = exp(-pow(r / 0.034, 2.0)) * (0.8 + 0.2 * sin(t * 13.0)) + 0.24 * exp(-r / 0.075) * (0.7 + 0.6 * wNoise(p * 19.0 - t * vec2(0.8, 0.5)));
+        }
+      `,
+      steep: 0, ripple: 0.016, rippleSize: 0.1, lap: 0.016, flowRipple: 0.03,
+      deep: 0x0a1810, bed: 0x2c3024, bedGrain: 0.07, clarity: 2.6, caustics: 0.55, causticSize: 0.15,
+      foam: 0x8c9890, foamSize: 0.028, shoreReach: 0.025, shoreFoam: 0.22,
+      sources: [new THREE.Vector4(lands.x, lands.z, 0.5, 0.34)],
+      roughness: 0.04, envMapIntensity: 1.7, glare: 2,
+    }));
     const surface = new THREE.Mesh(track(new THREE.PlaneGeometry(0.48, 1.12).rotateX(-Math.PI / 2)), water);
     surface.position.set(-WALL + 0.345, BASIN - 0.004, -3);
     surface.receiveShadow = true;
     scene.add(surface);
     kit.mirrorHidden.push(surface);
-    // The thread of water: a thin tube whose streaks run down it.
-    const streaks = track(canvasTexture(32, 128, (c) => {
-      const ink = rng(8);
-      c.fillStyle = "rgba(255,255,255,.42)"; c.fillRect(0, 0, 32, 128);
-      for (let k = 0; k < 26; k += 1) {
-        const x = ink() * 32, y = ink() * 128, long = 30 + ink() * 70, fade = c.createLinearGradient(0, y, 0, y + long);
-        fade.addColorStop(0, "rgba(255,255,255,0)"); fade.addColorStop(0.5, `rgba(255,255,255,${(0.2 + ink() * 0.4).toFixed(2)})`); fade.addColorStop(1, "rgba(255,255,255,0)");
-        c.fillStyle = fade;
-        for (const wrap of [0, -128]) { c.save(); c.translate(0, wrap); c.fillRect(x, y, 2 + ink() * 4, long); c.restore(); }
-      }
-    }, true));
-    stream.map = streaks;
-    const fallen = new THREE.Mesh(track(limb([[SPOUT.x - 0.03, SPOUT.y + 0.05, SPOUT.z], [SPOUT.x + 0.01, SPOUT.y + 0.02, SPOUT.z], [SPOUT.x + 0.035, SPOUT.y - 0.5, SPOUT.z], [SPOUT.x + 0.04, BASIN, SPOUT.z]], [0.016, 0.014, 0.017, 0.024], 6, 10, 0.5)), stream);
+    // The thread of water: a thin rope that leaves the lip glassy and is drawn out and broken as it gathers speed.
+    const stream = track(fallMaterial({ time: troughTime, round: true, width: 0.11, speed: 0.8, gain: 9, glass: 0.3, breakup: 1.3, strand: 0.02, sheet: 0x58786f, white: 0xe4f1ea, shade: 0x8ea69d, opacity: 0.8, lean: !high }));
+    const fallen = new THREE.Mesh(track(limb([[SPOUT.x - 0.03, SPOUT.y + 0.05, SPOUT.z], [SPOUT.x + 0.01, SPOUT.y + 0.02, SPOUT.z], [SPOUT.x + 0.035, SPOUT.y - 0.5, SPOUT.z], [SPOUT.x + 0.04, BASIN, SPOUT.z]], [0.016, 0.014, 0.017, 0.024], 6, 10, 1)), stream);
     scene.add(fallen);
     kit.mirrorHidden.push(fallen);
-    kit.updates.push((now) => { streaks.offset.y = -((now * 0.0021) % 1); });
+    let began = -1;
+    kit.updates.push((now) => { if (began < 0) began = now; troughTime.value = (now - began) / 1000; });
   }
 
   // ---- The passage in the east wall -------------------------------------------------------
@@ -1360,16 +1371,15 @@ export function buildRuin(options: RangeOptions): RangeEnvironment {
   life.soaring("swift", { centre: [3, DECK, -52], radius: 11, height: 15, count: 5 });
   life.plume("smoke", [9.28, 6.62, -12.65], { rise: 7, size: [0.5, 2.4], opacity: 0.32, color: 0xa8a89a, lean: 1.2 });
 
-  // Drips: water gathers on the leaves overhead and lets go, a drop at a time, into the pools below (and
-  // the thread from the spout rings the basin). Each landing spreads two rings; now and then one is heard.
+  // Drips: water gathers on the leaves overhead and lets go, a drop at a time, into the pools below.
+  // Each landing spreads two rings; now and then one is heard.
   {
     const count = high ? 14 : 8, FALL = 1.5, FROM = 11;
-    type Drop = { x: number; y: number; z: number; period: number; phase: number; last: number; thread: boolean };
+    type Drop = { x: number; y: number; z: number; period: number; phase: number; last: number };
     const drops: Drop[] = Array.from({ length: count }, (_, k) => {
       const pool = POOLS[k % POOLS.length], turn = random() * 6.28, out = Math.sqrt(random()) * pool[2] * 0.5;
-      return { x: pool[0] + Math.cos(turn) * out, y: 0.012, z: pool[1] + Math.sin(turn) * out, period: 2.8 + random() * 4.6, phase: random() * 9, last: 0, thread: false };
+      return { x: pool[0] + Math.cos(turn) * out, y: 0.012, z: pool[1] + Math.sin(turn) * out, period: 2.8 + random() * 4.6, phase: random() * 9, last: 0 };
     });
-    for (const phase of [0, 0.42]) drops.push({ x: SPOUT.x + 0.04, y: BASIN, z: SPOUT.z, period: 0.84, phase, last: 0, thread: true });
     const bead = new THREE.InstancedMesh(track(new THREE.BoxGeometry(0.014, 0.15, 0.014)), new THREE.MeshBasicMaterial({ color: 0xd6e6dc, transparent: true, opacity: 0.55, depthWrite: false }), count);
     const rings = new THREE.InstancedMesh(track(new THREE.RingGeometry(0.86, 1, 28).rotateX(-Math.PI / 2)), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), drops.length * 2);
     const matrix = new THREE.Matrix4(), tint = new THREE.Color(), where = new THREE.Vector3();
@@ -1378,21 +1388,19 @@ export function buildRuin(options: RangeOptions): RangeEnvironment {
     kit.updates.push((now) => {
       const seconds = now / 1000;
       for (let k = 0; k < drops.length; k += 1) {
-        const drop = drops[k], t = (seconds + drop.phase) % drop.period, landed = drop.thread ? t : t - FALL, lasts = drop.thread ? 0.84 : 1.5;
-        if (k < count) {
-          if (t < FALL) matrix.makeScale(1, 1 + t * 2.4, 1).setPosition(drop.x, Math.max(0.05, FROM - 4.9 * t * t), drop.z); else matrix.makeScale(0, 0, 0);
-          bead.setMatrixAt(k, matrix);
-        }
+        const drop = drops[k], t = (seconds + drop.phase) % drop.period, landed = t - FALL, lasts = 1.5;
+        if (t < FALL) matrix.makeScale(1, 1 + t * 2.4, 1).setPosition(drop.x, Math.max(0.05, FROM - 4.9 * t * t), drop.z); else matrix.makeScale(0, 0, 0);
+        bead.setMatrixAt(k, matrix);
         for (let ring = 0; ring < 2; ring += 1) {
           const age = landed - ring * 0.24;
           if (age > 0 && age < lasts) {
-            const size = drop.thread ? 0.03 + age * 0.22 : 0.05 + age * 0.3;
+            const size = 0.05 + age * 0.3;
             matrix.makeScale(size, 1, size).setPosition(drop.x, drop.y, drop.z);
-            tint.setScalar(Math.pow(1 - age / lasts, 2) * (drop.thread ? 0.2 : 0.3));
+            tint.setScalar(Math.pow(1 - age / lasts, 2) * 0.3);
           } else { matrix.makeScale(0, 0, 0); tint.setScalar(0); }
           rings.setMatrixAt(k * 2 + ring, matrix); rings.setColorAt(k * 2 + ring, tint);
         }
-        if (!drop.thread && drop.last < FALL && t >= FALL && now - heard > 2300) { heard = now; options.cue?.("drip", where.set(drop.x, 0, drop.z), { gain: 0.4, pitch: 0.9 + (k % 5) * 0.06 }); }
+        if (drop.last < FALL && t >= FALL && now - heard > 2300) { heard = now; options.cue?.("drip", where.set(drop.x, 0, drop.z), { gain: 0.4, pitch: 0.9 + (k % 5) * 0.06 }); }
         drop.last = t;
       }
       bead.instanceMatrix.needsUpdate = true; rings.instanceMatrix.needsUpdate = true;
