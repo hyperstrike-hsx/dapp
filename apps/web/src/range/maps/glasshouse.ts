@@ -7,6 +7,7 @@ import { createTrees, type TreeItem } from "../trees";
 import { shrinkRgba } from "../touch";
 import type { Glow } from "../volumetric";
 import { applyWind, createWind } from "../wind";
+import { fallMaterial, waterMaterial } from "../water";
 
 // Glasshouse: the nave of a nineteenth-century palm house, white iron and glass, with the range laid down it.
 //
@@ -266,17 +267,6 @@ function grilleTexture() {
     }
     c.fillStyle = "rgba(0,0,0,.55)"; c.fillRect(0, 0, 3, 128); c.fillRect(125, 0, 3, 128);
     c.fillStyle = "rgba(226,220,204,.22)"; c.fillRect(3, 0, 3, 128); c.fillRect(122, 0, 3, 128);
-  }, true);
-}
-
-/** Falling water: streaks that scroll down the jet of the wall fountain. */
-function streakTexture() {
-  const random = rng(71);
-  return canvasTexture(32, 128, (c) => {
-    c.clearRect(0, 0, 32, 128);
-    c.fillStyle = "rgba(226,240,238,.5)"; c.fillRect(0, 0, 32, 128);
-    for (let i = 0; i < 26; i += 1) { c.fillStyle = `rgba(255,255,255,${0.25 + random() * 0.6})`; c.fillRect(random() * 32, random() * 128, 1 + random() * 3, 8 + random() * 30); }
-    for (let i = 0; i < 10; i += 1) { c.clearRect(random() * 32, random() * 128, 1 + random() * 2, 6 + random() * 16); }
   }, true);
 }
 
@@ -1236,7 +1226,6 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
 
   // ---- The wall fountain and its basin, beside the firing line -------------------------
   const fountainFall = new THREE.Vector2(WALL - 0.41, NICHE.z), waterTime = { value: 0 };
-  const streak = painted(streakTexture());
   {
     const at = onWall(1, NICHE.z, { shadow: true, hit: true }), face = onWall(1, NICHE.z, { shadow: false });
     at(stone, worldBox(1.7, 3.0, 0.1, 1.6), [0, 1.95, -0.47]);
@@ -1250,34 +1239,34 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
     // The basin: half a ring of stone against the wall.
     const rim = [[1.16, 0], [1.18, 0.07], [1.12, 0.11], [1.12, 0.42], [1.2, 0.47], [1.2, 0.56], [1.0, 0.56], [0.98, 0.3]].map(([x, y]) => new THREE.Vector2(x, y));
     solid(stone, scaleUv(new THREE.LatheGeometry(rim, high ? 24 : 14, Math.PI, Math.PI), 2.3, 0.7), [WALL, 0, NICHE.z]);
-    const water = track(new THREE.MeshStandardMaterial({ color: 0x24443a, roughness: 0.04, metalness: 0, envMapIntensity: 1.5, transparent: true, opacity: 0.86 }));
-    water.onBeforeCompile = (shader) => {
-      shader.uniforms.waterTime = waterTime;
-      shader.uniforms.waterFall = { value: fountainFall };
-      shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vWaterWorld;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWaterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-      shader.fragmentShader = shader.fragmentShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vWaterWorld;\nuniform float waterTime;\nuniform vec2 waterFall;")
-        .replace("#include <normal_fragment_maps>", /* glsl */`#include <normal_fragment_maps>
-          {
-            // Rings spreading from where the jet lands, over a slow cross swell.
-            vec2 away = vWaterWorld.xz - waterFall;
-            float reach = length(away);
-            float rings = sin(reach * 38.0 - waterTime * 7.5) * exp(-reach * 2.4) * 0.5;
-            vec2 swell = vec2(cos(vWaterWorld.x * 9.0 + waterTime * 1.3), cos(vWaterWorld.z * 11.0 - waterTime * 1.1)) * 0.04;
-            vec2 tilt = away / max(reach, 0.001) * rings + swell;
-            normal = normalize(normal + (viewMatrix * vec4(tilt.x, 0.0, tilt.y, 0.0)).xyz);
-          }`);
-    };
-    water.customProgramCacheKey = () => "glasshouse-water";
+    // The pool: a hand deep at the rim and a forearm in the middle, clear enough to show its bed and the net of
+    // light the roof glass throws on it. The jet keeps it ringing, and beads up white where it lands.
+    const water = track(waterMaterial({
+      time: waterTime, key: "glasshouse-pool", lean: !high,
+      field: /* glsl */`
+        void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+          shore = max(1.0 - length(p - vec2(${WALL.toFixed(3)}, ${NICHE.z.toFixed(3)})), 0.0);
+          depth = 0.1 + 0.24 * smoothstep(0.0, 0.55, shore);
+          vec2 from = p - vec2(${fountainFall.x.toFixed(3)}, ${fountainFall.y.toFixed(3)});
+          float r = length(from) + 0.001;
+          flow = (from / r) * 0.22 * exp(-r / 0.3);
+          churn = exp(-pow(r / 0.06, 2.0)) * (0.85 + 0.2 * sin(t * 11.0)) + 0.34 * exp(-r / 0.13) * (0.7 + 0.6 * wNoise(p * 14.0 - t * vec2(0.9, 0.6)));
+        }
+      `,
+      steep: 0, ripple: 0.02, rippleSize: 0.11, lap: 0.018, flowRipple: 0.03,
+      deep: 0x0c2219, bed: 0x545c44, bedGrain: 0.09, clarity: 3.2, caustics: 0.8, causticSize: 0.2,
+      foam: 0xb9c4c0, foamSize: 0.035, shoreReach: 0.035, shoreFoam: 0.3,
+      sources: [new THREE.Vector4(fountainFall.x, fountainFall.y, 0.6, 0.42)],
+      roughness: 0.04, envMapIntensity: 1.5,
+    }));
     const pool = new THREE.Mesh(track(new THREE.CircleGeometry(1.0, high ? 24 : 12, HALF, Math.PI).rotateX(-HALF)), water);
     pool.position.set(WALL, 0.43, NICHE.z);
     pool.receiveShadow = true; pool.userData.walkThrough = true;
     // The jet: a thin fall of water from the pipe to the pool.
     const jet: V3[] = Array.from({ length: 9 }, (_, i) => { const t = (0.487 * i) / 8; return [WALL + 0.2 - 1.25 * t, 1.6 - 4.9 * t * t, NICHE.z] as V3; });
-    const falling = track(new THREE.MeshStandardMaterial({ map: streak, color: 0xeaf6f4, emissive: 0x9fb8b4, emissiveIntensity: 0.6, roughness: 0.08, transparent: true, opacity: 0.8, depthWrite: false }));
-    const stream = new THREE.Mesh(track(scaleUv(sweep(path(jet), 0.015, 6), 1, 1.6)), falling);
+    // It leaves the pipe at a walk and is falling fast by the time it lands: a clear rod that frays toward the foot.
+    const falling = track(fallMaterial({ time: waterTime, round: true, width: 0.094, speed: 1.25, gain: 8.3, glass: 0.45, breakup: 1.6, strand: 0.02, sheet: 0x6f9a94, white: 0xf4fbfa, shade: 0x9fb8b6, opacity: 0.85, fog: false, lean: !high }));
+    const stream = new THREE.Mesh(track(sweep(path(jet), 0.015, 8)), falling);
     stream.userData.walkThrough = true;
     scene.add(pool, stream);
     kit.mirrorHidden.push(pool, stream);
@@ -1613,7 +1602,6 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
     kit.updates.push((now) => {
       const t = now / 1000;
       waterTime.value = t;
-      streak.offset.y = 1 - ((t * 2.3) % 1);
       const gust = wind.at(flapAt.x, flapAt.z), open = 0.34 + 0.13 * Math.sin(t * 0.83) + 0.05 * Math.sin(t * 2.1 + 1) + gust * 0.5;
       flap.rotation.z = SASH.mid - open;
       if (open > 0.5 && now > rattleNext) { rattleNext = now + 16000; options.cue?.("chainRattle", flapAt, { gain: 0.4, pitch: 1.1 }); }

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { drawnOnce } from "./memory";
 import type { Kit, Transform } from "./kit";
 import { leanCanvas, shrinkRgba } from "./touch";
 
@@ -627,7 +628,7 @@ const SCRIPT = '"Snell Roundhand", "Brush Script MT", "Segoe Script", cursive';
 
 function dataTexture(full: Uint8Array, fullWidth: number, fullHeight: number, srgb: boolean, anisotropy: number) {
   const { data, width, height } = shrinkRgba(full, fullWidth, fullHeight);
-  const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  const texture = drawnOnce(new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType));
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;

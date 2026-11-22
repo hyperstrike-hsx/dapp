@@ -421,10 +421,10 @@ const VOICES: Record<CueName, Voice> = {
     puff(k, t, "pink", "lowpass", 500, 0.7, 0.3, 0.8);
     for (let i = 0; i < 4 + Math.floor(Math.random() * 5); i += 1) blip(k, t + rand(0.15, 0.95), rand(900, 2400), rand(0.1, 0.3));
   } },
-  waveSlap: { len: 2.4, db: -10, reach: 2, gap: 0.8, build(k, t) {
-    noise(k, { src: "pink", t, d: 1.3, type: "lowpass", f: [[0, 180], [0.1, 420], [0.9, 160]], g: [[0, 0], [0.07, 1], [0.3, 0.5], [1.2, 0]] });
-    noise(k, { src: "pink", t, d: 2.3, f: [[0, 900], [0.25, rand(1800, 2600)], [1.8, 900]], q: 0.7, g: [[0, 0], [0.2, 0.5], [0.6, 0.3], [2.2, 0]] });
-    for (let i = 0; i < 2 + Math.floor(Math.random() * 4); i += 1) blip(k, t + rand(0.3, 1.6), rand(280, 700), rand(0.12, 0.28));
+  // A wake coming onto a quay wall: it swells and runs back, with no knock and nothing bubbling in it.
+  waveSlap: { len: 2.4, db: -19, reach: 2, gap: 0.8, build(k, t) {
+    noise(k, { src: "pink", t, d: 1.7, type: "lowpass", f: [[0, 160], [0.35, 300], [1.5, 150]], g: [[0, 0], [0.3, 0.8], [0.8, 0.45], [1.6, 0]] });
+    noise(k, { src: "pink", t, d: 2.3, f: [[0, 700], [0.55, rand(1100, 1500)], [2, 700]], q: 0.6, g: [[0, 0], [0.5, 0.25], [1.1, 0.16], [2.2, 0]] });
   } },
   icicleDrop: { len: 1.1, db: -11, build(k, t) {
     ring(k, t, rand(2600, 3800), [[1, 1, 0.12], [1.73, 0.6, 0.08], [2.9, 0.4, 0.05]]);
@@ -807,13 +807,14 @@ const LOOPS = {
     wobble(k, pour.volume.gain, 0, d, 1.5, 0.18);
     burble(k, d, 6, 450, 1700, 11, 0.35, 1.5);
   } },
-  // Harbour water against a wall: slow washes, a slosh now and then, hollow gurgles.
+  // Harbour water along a quay wall, as a quay hears it: one soft wash that breathes slowly and the faint run of
+  // it off the stone. It never stops and starts, and nothing gurgles in it: a bed, not something to listen to.
   lap: { len: 14.9, noise(k, d) {
-    const wash = noise(k, { src: "pink", t: 0, d, f: 380, q: 0.6, g: steady(0.15) });
-    gate(k, wash.volume.gain, 0, d, 0.4, 0.6, 1);
-    const slosh = noise(k, { src: "pink", t: 0, d, f: 1500, q: 0.7, g: steady(0.04) });
-    gate(k, slosh.volume.gain, 0, d, 0.55, 0.45, 0.6);
-    burble(k, d, 3, 250, 700, 3, 0.25, 1.2);
+    const wash = noise(k, { src: "pink", t: 0, d, f: 300, q: 0.5, g: steady(0.5) });
+    wobble(k, wash.volume.gain, 0, d, 0.18, 0.05);
+    wobble(k, wash.band.frequency, 0, d, 0.12, 25);
+    const run = noise(k, { src: "pink", t: 0, d, f: 1000, q: 0.5, g: steady(0.08) });
+    wobble(k, run.volume.gain, 0, d, 0.25, 0.012);
   } },
   // A diesel set: firing strokes with every other one heavier, exhaust puffs, a rattling cover.
   gen: { len: 8, tone(k, d) {
@@ -1266,7 +1267,8 @@ const MAPS: Record<RangeMapId, MapSpec> = {
     ground: ["tarmac"], wind: 0.65,
     own: ["buoyBell", "clothSnap", "containerClang", "craneMotor", "forkliftBeep", "gullCry", "ropeClank", "shipHorn", "waveSlap", "wingsFlush"],
     beds: [
-      { src: "lap", at: [25, -8], reach: 4, db: -25, sway: 2.5, warp: 0.03 },
+      // The only range with open water to hear. Kept under the wind and held level.
+      { src: "lap", at: [25, -8], reach: 4, db: -33, sway: 0.7 },
       { src: "pink", bands: [{ f: 560, q: 0.8, roam: 0.4, gustF: 0.6 }], db: -38, gust: 9, sway: 2, pan: -0.3, drift: 0.4, more: [{ bands: [{ type: "highpass", f: 3000 }], db: -50, gust: 10, pan: 0.3 }] },
       { src: "hum", rate: 0.62, at: [37.5, -6.6], reach: 8, db: -31, sway: 2, warp: 0.004, group: "machine" },
       { src: "brown", bands: [{ type: "lowpass", f: 150 }], db: -39, sway: 2, more: [{ bands: [{ f: 340, q: 0.8, roam: 0.35 }], db: -38, sway: 4, wide: true }] },
@@ -1372,14 +1374,12 @@ const MAPS: Record<RangeMapId, MapSpec> = {
       { cue: "doorSlamFar", every: [50, 120], where: beyond("left", 10, 30) },
     ],
   },
-  // Canal quay at dawn: water on stone, boats nudging their fenders, bells over the roofs, the quarter not yet awake.
+  // Canal quay at dawn: still water that makes no sound of its own, boats on their ropes, bells over the roofs,
+  // the quarter not yet awake.
   canal: {
     ground: ["flags", "cobble"], wind: 0.3,
-    own: ["chainRattle", "clothSnap", "drip", "gullCry", "pigeonCoo", "ropeClank", "shutterCreak", "signCreak", "sparrowChirp", "splash", "swiftScream", "waveSlap", "wingsFlush"],
+    own: ["chainRattle", "clothSnap", "drip", "gullCry", "pigeonCoo", "ropeClank", "shutterCreak", "signCreak", "sparrowChirp", "splash", "swiftScream", "wingsFlush"],
     beds: [
-      { src: "lap", at: [-11.5, 1], reach: 5, db: -26, sway: 2.5, warp: 0.03 },
-      // The wet dock under the warehouse, heard at its culvert.
-      { src: "lap", rate: 0.8, at: [-10, -16], reach: 4, db: -32, sway: 2.5, warp: 0.03 },
       { src: "pink", bands: [{ f: 520, q: 0.7, roam: 0.4, gustF: 0.5 }], db: -40, gust: 7, sway: 3, wide: true },
       { src: "brown", bands: [{ type: "lowpass", f: 170 }], db: -39, sway: 2, more: [{ bands: [{ f: 640, q: 0.5, roam: 0.3 }], db: -42, sway: 4, pan: 0.4, drift: 0.3 }] },
     ],

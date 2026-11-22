@@ -12,6 +12,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { createBallistics } from "./range/ballistics";
 import { displayMaterial, projectUv } from "./range/environment";
 import { buildMap } from "./range/maps";
+import { leanShadowMaps, releasePictures } from "./range/memory";
 import { createRangeSound } from "./range/sound";
 import { createAmbience } from "./range/ambience";
 import { onRangeVolume, rangeVolume, toggleRangeMute } from "./range/volume";
@@ -546,7 +547,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     viewModelScene.add(viewModelCamera);
     viewModelScene.add(new THREE.HemisphereLight(0xd9ecec, 0x2a2622, 0.22));
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", stencil: false });
+    // Every frame is drawn into the composer's own buffers and reaches the canvas as one flat picture, so the
+    // canvas wants neither multisampling nor depth of its own: at this size they would be 130 MB held for nothing.
+    const renderer = new THREE.WebGLRenderer({ antialias: false, depth: false, powerPreference: "high-performance", stencil: false });
     // Internal resolution: HIGH renders close to a retina panel's native pixels and supersamples a
     // little on standard-density screens. It only steps down if the frame rate stays low (see below).
     const pixelBudget=quality==="HIGH"?4_000_000:1_800_000;
@@ -657,7 +660,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     // The HDR sky is the backdrop; image-based light comes from a probe of the lit map itself.
     const pmrem = new THREE.PMREMGenerator(renderer);
     let roomProbe: THREE.WebGLRenderTarget | null = null;
-    let skyMap: THREE.Texture | null = null;
+    let skyMap: THREE.Texture | null = null, skyCube: THREE.WebGLCubeRenderTarget | null = null;
     if (look.sky) new HDRLoader(loadingManager).load(look.sky, (hdr) => {
       if (disposed) { hdr.dispose(); return; }
       hdr.mapping = THREE.EquirectangularReflectionMapping;
@@ -684,8 +687,12 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         hdr.image = { data, width, height };
         hdr.needsUpdate = true;
       }
-      skyMap = hdr;
-      scene.background = hdr;
+      // three.js would turn the sky into a cube on the frame that first shows it, give that cube six depth
+      // buffers nothing reads and keep the flat picture beside it. Made here it is the same cube, by itself.
+      skyCube = new THREE.WebGLCubeRenderTarget(hdr.image.height, { depthBuffer: false }).fromEquirectangularTexture(renderer, hdr);
+      hdr.dispose();
+      skyMap = skyCube.texture;
+      scene.background = skyMap;
       scene.backgroundIntensity = look.skyIntensity;
       scene.backgroundRotation.y = look.skyRotation;
     });
@@ -1887,6 +1894,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       const dome = backdrop?.ready() && skyMap ? backdrop : null;
       if (dome) { scene.background = skyMap; dome.mesh.visible = false; }
       range.reflection.render(scene, camera, range.mirrorHidden);
+      range.beforeRender(camera);
       if (dome) { scene.background = flatBackground; dome.setIntensity(scene.backgroundIntensity); dome.mesh.visible = true; }
       renderer.clear();
       composer.render(dt);
@@ -1922,6 +1930,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       // Light the room by itself: capture the lit scene, then again so the second
       // capture includes one bounce of the first.
       range.update(performance.now());
+      leanShadowMaps(renderer, scene, viewModelScene);
       renderer.shadowMap.needsUpdate = true;
       for (let bounce = 0; bounce < 2; bounce += 1) {
         const captured = range.captureProbe(pmrem);
@@ -1948,6 +1957,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       // The hands are fitted to every weapon now as well: laying a thumb in place is a search, and
       // too long a one for the frame that first draws a weapon.
       arsenal.rigs.forEach(contactOf);
+      releasePictures(renderer, scene, viewModelScene);
       pmrem.dispose();
       renderer.shadowMap.needsUpdate = true;
       solids = surveySolids(
@@ -2034,7 +2044,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       voteTextures.forEach((texture) => texture.dispose());
       environmentTextures.forEach((texture) => texture.dispose());
       roomProbe?.dispose();
-      skyMap?.dispose();
+      skyCube?.dispose();
       backdrop?.dispose();
       range.dispose();
       ballistics.dispose();

@@ -7,6 +7,7 @@ import { createLife } from "./life";
 import { createProps, type PropItem, type PropKind } from "./props";
 import { createTrees, type TreeItem } from "./trees";
 import { createWind } from "./wind";
+import { waterMaterial } from "./water";
 import { leanAssets } from "./touch";
 
 export { projectUv } from "./kit";
@@ -1702,12 +1703,41 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
       for (const x of [-0.4, 0, 0.4]) box(machineB, 0.04, 0.7, 0.025, x, 0.52, s * 0.5125);
     }
     box(machineB, 1.5, 0.03, 1, 0, 0.115, 0);
-    put(glassB, new THREE.PlaneGeometry(1.44, 0.94), 0, 0.8, 0, -PI / 2);
     box(machineB, 1.44, 0.02, 0.94, 0, 0.77, 0);
     pipe(brushedB, 0.022, [[0.75, 0.84, -0.3], [0.9, 0.84, -0.3], [0.9, 0.03, -0.3]], 0.07, 8);
     put(steelB, new THREE.CylinderGeometry(0.028, 0.028, 0.14, 8), -0.82, 0.24, 0.22, 0, 0, PI / 2);
     handwheel(-0.86, 0.33, 0.22, 0.055);
   });
+  // The quench water: black and oily, never quite still, with a line of scum along the plates. When the charge
+  // goes in, the middle of it boils white, glows for a moment with the steel under it and throws a ring at the walls.
+  const quenchClock = { value: 0 }, quenchRings = { value: [new THREE.Vector4(tankX, hoistZ, -100, 0)] };
+  const quenchWater = track(waterMaterial({
+    time: quenchClock, key: "foundry-quench", lean: !high,
+    uniforms: { quenchBoil: { type: "float", value: 0 }, quenchGlow: { type: "float", value: 0 } },
+    field: /* glsl */`
+      void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+        vec2 from = p - vec2(${tankX.toFixed(3)}, ${hoistZ.toFixed(3)});
+        shore = max(min(0.72 - abs(from.x), 0.47 - abs(from.y)), 0.0);
+        depth = 0.62;
+        float r = length(from) + 0.001;
+        flow = (from / r) * 0.1 * quenchBoil * exp(-r / 0.35);
+        churn = quenchBoil * exp(-pow(r / 0.34, 2.0)) * (0.3 + 0.8 * wNoise(p * 7.0 + vec2(t * 2.3, -t * 1.9)));
+      }
+    `,
+    finish: /* glsl */`
+      vec2 hot = p - vec2(${tankX.toFixed(3)}, ${hoistZ.toFixed(3)});
+      totalEmissiveRadiance += vec3(1.0, 0.24, 0.03) * quenchGlow * quenchGlow * 2.2 * exp(-dot(hot, hot) / 0.07) * (1.0 - foam * 0.6);
+    `,
+    steep: 0, ripple: 0.03, rippleSize: 0.16, lap: 0.02, flowRipple: 0.09,
+    deep: 0x070d0b, bed: 0x161816, bedGrain: 0.2, clarity: 0.45, caustics: 0,
+    foam: 0x383d3b, foamSize: 0.03, shoreReach: 0.04, shoreFoam: 0.3, driftFoam: 0.22,
+    rings: quenchRings, roughness: 0.05, envMapIntensity: 1.6,
+  }));
+  const quenchSurface = new THREE.Mesh(track(new THREE.PlaneGeometry(1.44, 0.94).rotateX(-PI / 2)), quenchWater);
+  quenchSurface.position.set(tankX, 0.8, hoistZ);
+  quenchSurface.userData.walkThrough = true;
+  scene.add(quenchSurface);
+  kit.mirrorHidden.push(quenchSurface);
   decal("oilA", 2.5, 2.1, tankX + 0.2, hoistZ + 0.1, 0.5);
   decal("scorch", 2, 2, soakX, hoistZ, 0.9, undefined, sootB);
 
@@ -1805,7 +1835,7 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
     [8.6, () => hoistSay("craneMotor", 1, 0.98)],
     [12.7, () => { hoistSay("chainRattle", 0.8, 1); swing(-1); }],
     [13.7, () => hoistSay("craneMotor", 0.8, 1.16)],
-    [QUENCH, () => { hoistVoice.gain = 1.2; hoistVoice.pitch = 0.95 + Math.random() * 0.15; cue?.("quenchHiss", tankAt, hoistVoice); }],
+    [QUENCH, () => { hoistVoice.gain = 1.2; hoistVoice.pitch = 0.95 + Math.random() * 0.15; cue?.("quenchHiss", tankAt, hoistVoice); quenchRings.value[0].set(tankX, hoistZ, quenchClock.value, 0.55); }],
     [20.5, () => hoistSay("craneMotor", 0.8, 1.16)],
     [24.6, () => { hoistSay("craneMotor", 1, 0.94); swing(-1); }],
     [28, () => hoistSay("craneMotor", 1, 0.98)],
@@ -1814,10 +1844,12 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
     [36.7, () => { hoistVoice.gain = 0.5; hoistVoice.pitch = 0.8; cue?.("hammerClank", soakAt, hoistVoice); }],
   ];
   const eased = (t: number, from: number, to: number) => { const k = THREE.MathUtils.clamp((t - from) / (to - from), 0, 1); return k * k * (3 - 2 * k); };
-  let runAt = -1, nextRun = -1, mark = 0, heat = 1, steam = 0, lastSeconds = -1, present = false;
+  let runAt = -1, nextRun = -1, mark = 0, heat = 1, steam = 0, lastSeconds = -1, present = false, quenchFrom = -1;
   kit.updates.push((now) => {
     const seconds = now / 1000, dt = lastSeconds < 0 ? 0 : THREE.MathUtils.clamp(seconds - lastSeconds, 0, 0.1);
     lastSeconds = seconds;
+    if (quenchFrom < 0) quenchFrom = seconds;
+    quenchClock.value = seconds - quenchFrom;
     if (nextRun < 0) nextRun = seconds + 5;
     // Whoever has just taken the pointer sees a run within seconds, not a minute later.
     const locked = typeof document !== "undefined" && document.pointerLockElement === kit.renderer.domElement;
@@ -1840,6 +1872,8 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
     chargeMaterial.emissiveIntensity = 2.3 * heat * heat;
     steam = t >= QUENCH && t < QUENCH + 3.5 ? Math.min(1, steam + dt * 3) : Math.max(0, steam - dt * 0.4);
     quenchSteam.visible = steam > 0.01;
+    quenchWater.userData.water.quenchBoil.value = steam;
+    quenchWater.userData.water.quenchGlow.value = t >= QUENCH ? heat : 0;
     if (steamLook) steamLook.z = STEAM * steam;
     const flash = t < 0 ? 0.02 : Math.sin(seconds * 10) > 0.1 ? 1 : 0.06;
     beaconMaterial.color.setRGB(5 * flash, 2 * flash, 0.2 * flash);

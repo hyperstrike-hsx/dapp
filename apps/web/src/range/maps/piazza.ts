@@ -11,6 +11,7 @@ import { createLife } from "../life";
 import { createProps, type PropItem, type PropKind } from "../props";
 import { createTrees, type TreeItem } from "../trees";
 import { createWind } from "../wind";
+import { waterMaterial } from "../water";
 
 // Piazza: an old-town square at low sun, just after rain.
 //
@@ -1693,7 +1694,34 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
   place(new THREE.Mesh(new THREE.LatheGeometry(basinProfile, 28, 0, Math.PI).scale(0.68, 1, 1), stone), LEFT, 0, fountainZ, true, true);
   const water = new THREE.CircleGeometry(0.94, 28, 0, Math.PI);
   water.rotateX(-Math.PI / 2); water.rotateY(-Math.PI / 2); water.scale(0.68, 1, 1);
-  place(new THREE.Mesh(water, glazes(0x1c3134)), LEFT, 0.64, fountainZ, false);
+  // Where the jet leaves the spout and where it lands; the moving water further down draws it from these.
+  const spout: V3 = [LEFT + 0.455, 1.7, fountainZ], pool = 0.646, jetFall = Math.sqrt((spout[1] - pool) / 4.905), jetThrow = 0.13;
+  const landing: V3 = [spout[0] + jetThrow * 0.8 * jetFall, pool, fountainZ];
+  // A third of a metre of clear water over the stone: the sun nets its floor, the jet rings it and beats a patch of
+  // it white, and all of that swells when the pressure surges.
+  const waterTime = { value: 0 };
+  const basinWater = track(waterMaterial({
+    time: waterTime, key: "piazza-basin", lean: !high,
+    uniforms: { basinSurge: { type: "float", value: 0 } },
+    field: /* glsl */`
+      void wField(vec2 p, float t, out float depth, out float shore, out vec2 flow, out float churn) {
+        vec2 d = (p - vec2(${LEFT.toFixed(3)}, ${fountainZ.toFixed(3)})) / vec2(0.632, 0.93);
+        shore = max(min((1.0 - length(d)) * 0.632, p.x - ${(LEFT + 0.2).toFixed(3)}), 0.0);
+        depth = 0.12 + 0.22 * smoothstep(0.0, 0.2, shore);
+        vec2 from = p - vec2(${landing[0].toFixed(3)}, ${landing[2].toFixed(3)});
+        float r = length(from) + 0.001, hard = 1.0 + 0.7 * basinSurge;
+        flow = (from / r) * 0.24 * hard * exp(-r / 0.3);
+        churn = exp(-pow(r / (0.055 * hard), 2.0)) * (0.85 + 0.2 * sin(t * 11.0)) + 0.32 * hard * exp(-r / 0.12) * (0.7 + 0.6 * wNoise(p * 14.0 - t * vec2(0.9, 0.6)));
+      }
+    `,
+    steep: 0, ripple: 0.02, rippleSize: 0.12, lap: 0.02, flowRipple: 0.035,
+    deep: 0x14302c, bed: 0x6a6652, bedGrain: 0.1, clarity: 3, caustics: 0.9, causticSize: 0.2,
+    foam: 0x8f9896, foamSize: 0.035, shoreReach: 0.03, shoreFoam: 0.25,
+    sources: [new THREE.Vector4(landing[0], landing[2], 0.8, 0.45)],
+    roughness: 0.04, envMapIntensity: 1.5, glare: 2,
+  }));
+  basinWater.userData.unmirrored = true;
+  place(new THREE.Mesh(water, basinWater), LEFT, 0.64, fountainZ, false);
   place(new THREE.Mesh(rod([0, 0, 0], [0.17, -0.04, 0], 0.028, 8), copper), LEFT + 0.28, 1.74, fountainZ, false);
   // Carving: a fluted shell in the pediment, a rosette around the spout and a pilaster each side.
   const carving: THREE.BufferGeometry[] = [];
@@ -2837,10 +2865,8 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
   const RING = 0, DROP = 1, JET = 2, SPRAY = 3;
   type Quad = { at: V3; clock: [number, number, number, number]; motion: [number, number, number, number]; glint: number };
   const quads: Quad[] = [], spatter = rng(311);
-  const spout: V3 = [LEFT + 0.455, 1.7, fountainZ], pool = 0.646, jetFall = Math.sqrt((spout[1] - pool) / 4.905), jetThrow = 0.13;
-  const landing: V3 = [spout[0] + jetThrow * 0.8 * jetFall, pool, fountainZ];
+  // The basin's own surface carries the rings the jet raises (see the fountain).
   for (let i = 0; i < 10; i += 1) quads.push({ at: spout, clock: [JET, 1, 0, 0.014], motion: [i / 10, (i + 1) / 10, jetFall, jetThrow], glint: 1.25 });
-  for (let i = 0; i < 4; i += 1) quads.push({ at: [landing[0], pool + 0.002 + i * 0.0005, landing[2]], clock: [RING, 1.9, i * 1.9 / 4, 0], motion: [1.9, 0.03, 0.3, 0.6], glint: 1.2 });
   for (let i = 0; i < 9; i += 1) {
     const angle = i * 2.4, out = 0.16 + 0.2 * spatter();
     quads.push({ at: landing, clock: [SPRAY, 0.34 + 0.2 * spatter(), spatter(), 0.011 + 0.008 * spatter()], motion: [Math.cos(angle) * out, 0.75 + 0.7 * spatter(), Math.sin(angle) * out, 0], glint: 1.3 });
@@ -2883,7 +2909,7 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
     waterGeometry.setAttribute("glint", new THREE.BufferAttribute(glint, 1));
     waterGeometry.setIndex(index);
   }
-  const waterUniforms = { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), waterTime: { value: 0 }, waterSurge: { value: 0 } };
+  const waterUniforms = { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), waterTime, waterSurge: { value: 0 } };
   const waterMesh = new THREE.Mesh(waterGeometry, track(new THREE.ShaderMaterial({ vertexShader: WATER_VERTEX, fragmentShader: WATER_FRAGMENT, uniforms: waterUniforms, transparent: true, depthWrite: false, fog: true, side: THREE.DoubleSide })));
   waterMesh.frustumCulled = false;
   waterMesh.renderOrder = 2;
@@ -2926,6 +2952,7 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
     if (time > fountainSurge.next) { fountainSurge.at = time; fountainSurge.next = time + 7 + 6 * chance(); fountainSurge.heard = false; }
     const surged = time - fountainSurge.at;
     waterUniforms.waterSurge.value = surged < 2.8 ? smooth(surged / 0.35) * (1 - smooth((surged - 1) / 1.8)) : 0;
+    basinWater.userData.water.basinSurge.value = waterUniforms.waterSurge.value;
     if (!fountainSurge.heard && surged > 0.4) { fountainSurge.heard = true; say("splash", landing[0], landing[1], landing[2], 0.5, 0.9 + 0.25 * chance()); }
     for (let i = 0; i < dripClock.length; i += 1) {
       const drip = dripClock[i], landed = Math.floor((time - drip.lands) / drip.every);
