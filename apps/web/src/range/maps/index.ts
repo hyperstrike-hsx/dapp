@@ -10,6 +10,14 @@ import { buildCourtyard } from "./courtyard";
 import { buildPiazza } from "./piazza";
 import { buildReactor } from "./reactor";
 import { buildRooftop } from "./rooftop";
+import { buildYard } from "./yard";
+import { buildVault } from "./vault";
+import { buildCanal } from "./canal";
+import { buildRuin } from "./ruin";
+import { buildGlasshouse } from "./glasshouse";
+import { buildDam } from "./dam";
+import { buildCinema } from "./cinema";
+import { buildOffice } from "./office";
 
 const BUILDERS: Record<RangeMapId, (options: RangeOptions) => RangeEnvironment> = {
   foundry: buildRange,
@@ -22,6 +30,14 @@ const BUILDERS: Record<RangeMapId, (options: RangeOptions) => RangeEnvironment> 
   hangar: buildHangar,
   bazaar: buildBazaar,
   outpost: buildOutpost,
+  yard: buildYard,
+  vault: buildVault,
+  canal: buildCanal,
+  ruin: buildRuin,
+  glasshouse: buildGlasshouse,
+  dam: buildDam,
+  cinema: buildCinema,
+  office: buildOffice,
 };
 
 export function buildMap(id: RangeMapId, options: RangeOptions): RangeEnvironment {

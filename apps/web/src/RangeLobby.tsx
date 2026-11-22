@@ -85,7 +85,7 @@ export function RangeLobby({ current, entered, touch, onDeploy, onLoad, onFoundr
 
   const onKeys = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = RANGE_MAPS.findIndex((entry) => entry.id === shown);
-    // Two rows of five on a tall window, one sideways strip otherwise: count what shares the first row.
+    // Rows of nine or six, or one sideways strip: count what shares the first row.
     const top = cards.current[0]?.offsetTop ?? 0;
     const perRow = cards.current.filter((card) => card && card.offsetTop === top).length || 1;
     const columns = perRow >= RANGE_MAPS.length ? 1 : perRow;

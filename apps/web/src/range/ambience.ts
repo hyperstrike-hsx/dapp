@@ -723,6 +723,32 @@ const VOICES: Record<CueName, Voice> = {
     ring(k, t, prime, [[0.5, 0.55, 6.5], [0.503, 0.3, 6.2], [1, 1, 4.6], [1.004, 0.5, 4.4], [1.19, 0.7, 3.4], [1.5, 0.45, 2.6], [2, 0.6, 2], [2.006, 0.3, 1.9], [2.51, 0.3, 1.4], [2.67, 0.22, 1.2], [3.01, 0.2, 1], [4.17, 0.15, 0.7], [5.43, 0.1, 0.5], [6.8, 0.06, 0.35]], undefined, 0.004);
     puff(k, t, "pink", "bandpass", prime * 4, 0.8, 0.03, 0.7);
   } },
+  // ---- The second set of ranges ----
+  // Thunder a valley away: no crack, only the roll, coming back once off the hills.
+  thunderFar: { len: 9, db: -12, reach: 60, gap: 6, build(k, t) {
+    const far = faraway(k, rand(260, 420), rand(0.5, 0.9), 0.45), d = rand(4.5, 7.5);
+    const roll = noise(k, { src: "brown", t, d, type: "lowpass", f: [[0, 90], [0.5, 240], [d, 70]], g: [[0, 0], [0.35, 1], [1.2, 0.5], [2.2, 0.8], [d, 0]], to: far });
+    wobble(k, roll.volume.gain, t, d, 5, 0.3);
+    noise(k, { src: "pink", t: t + 0.1, d: 1.6, f: [[0, 700], [1.4, 220]], q: 0.6, g: [[0, 0], [0.05, 0.35], [1.5, 0]], exp: true, to: far });
+    thud(k, t + 0.2, 60, 34, 1.4, 0.7, far);
+  } },
+  // A desk telephone: two bells a third apart under one clapper, in the double burst an exchange sends.
+  phoneRing: { len: 1.5, db: -17, reach: 3, gap: 1.2, takes: 1, build(k, t) {
+    const room = through(k, "lowpass", 4600);
+    for (const burst of [0, 0.6]) {
+      for (const [hz, level] of [[1330, 1], [1690, 0.7], [2660, 0.18], [3380, 0.1]]) {
+        const bell = tone(k, { t: t + burst, d: 0.44, f: hz, g: [[0, 0], [0.008, level * 0.5], [0.38, level * 0.5], [0.44, 0]], to: room });
+        lfo(k, bell.volume.gain, t + burst, 0.44, 22, level * 0.4, "square");
+      }
+      puff(k, t + burst, "white", "bandpass", 2400, 2, 0.4, 0.05, room);
+    }
+  } },
+  // An escapement: one dry tick with a little of the case in it.
+  clockTick: { len: 0.25, db: -19, reach: 2.5, gap: 0.3, build(k, t) {
+    puff(k, t, "white", "bandpass", rand(3000, 3400), 6, 0.012, 1);
+    ring(k, t, rand(1850, 1950), [[1, 0.25, 0.06], [2.7, 0.1, 0.035]]);
+    thud(k, t, 300, 220, 0.03, 0.25);
+  } },
 };
 
 // ---- Loops: the textures too rich to build live ---------------------------------------------------
@@ -823,6 +849,18 @@ const LOOPS = {
     const chain = noise(k, { t: 0, d, f: 1500, q: 3, g: steady(0.02) });
     lfo(k, chain.volume.gain, 0, d, 60 / 11, 0.3, pulse(k.c, 8));
     for (let i = 0; i < 5; i += 1) tone(k, { t: 0.9 + i * 2.75, d: 0.04, f: [[0, 2100], [0.03, 2300]], g: [[0, 0], [0.008, 0.05], [0.035, 0]] });
+  } },
+  // A film projector: the claw pulling down twenty-four frames a second, the motor under it, film over the gate.
+  projector: { len: 10, tone(k, d) {
+    for (const [hz, level] of [[24, 0.25], [48, 0.35], [96, 0.3], [144.1, 0.12]]) tone(k, { t: 0, d, f: hz, g: steady(level) });
+  }, noise(k, d) {
+    const claw = pulse(k.c, 10);
+    const clatter = noise(k, { t: 0, d, f: 2400, q: 1.2, g: steady(0.02) });
+    lfo(k, clatter.volume.gain, 0, d, 24, 0.5, claw);
+    const body = noise(k, { src: "pink", t: 0, d, f: 700, q: 1, g: steady(0.05) });
+    lfo(k, body.volume.gain, 0, d, 24, 0.35, claw);
+    const film = noise(k, { t: 0, d, type: "highpass", f: 5200, g: steady(0.05) });
+    wobble(k, film.volume.gain, 0, d, 2, 0.02);
   } },
 } satisfies Record<string, LoopSpec>;
 type LoopName = keyof typeof LOOPS;
@@ -1293,6 +1331,155 @@ const MAPS: Record<RangeMapId, MapSpec> = {
       { cue: "windGust", every: [8, 18], where: ring360(8, 18), db: [-4, -1] },
       { cue: "signCreak", every: [22, 55], where: spot([9, -20, 3]), gusty: true, db: [1, 4] },
       { cue: "shutterCreak", every: [40, 90], where: spot([-9.4, 0, 3]), gusty: true },
+    ],
+  },
+  // Freight yard on a wet night: rain on everything, a diesel idling on the far road, wagons shunted somewhere out in the dark.
+  yard: {
+    ground: ["tarmac"], wind: 0.45,
+    own: ["chainRattle", "crowCaw", "drip", "metalCreak", "relayClack", "signCreak", "splash", "steamHiss", "trainBrake", "tubeFlicker", "windGust", "wingsFlush"],
+    beds: [
+      // Rain: its hiss on open ground, the patter of single drops close by, and its drumming on the tin over the firing line.
+      { src: "white", bands: [{ type: "highpass", f: 3600 }, { type: "lowpass", f: 9500 }], db: -38, gust: 4, sway: 1.5, wide: true },
+      { src: "crackle", bands: [{ f: 2600, q: 0.5, roam: 0.3 }], db: -39, gust: 3, sway: 2, pan: -0.3, drift: 0.5, more: [{ bands: [{ f: 5200, q: 0.8 }], db: -45, sway: 2, pan: 0.4, drift: 0.4 }] },
+      { src: "pink", bands: [{ f: 950, q: 0.8, roam: 0.25 }], at: [0, 6.5], reach: 3, db: -32, sway: 2, gust: 3 },
+      { src: "water", rate: 1.5, bands: [{ type: "highpass", f: 900 }], at: [-9.1, 2.9], reach: 1.1, db: -30, sway: 2 },
+      { src: "gen", rate: 0.6, at: [-7, -38], reach: 7, db: -27, sway: 1.5, warp: 0.01, group: "machine" },
+      { src: "brown", bands: [{ type: "lowpass", f: 170 }], db: -39, sway: 2, gust: 4 },
+    ],
+    events: [
+      { cue: "containerClang", every: [22, 55], where: ring360(70, 150), run: [1, 4], gap: [0.5, 1.4], first: [6, 16] },
+      { cue: "trainPass", every: [80, 170], where: pass(140, 260), db: [0, 3], pitch: [0.8, 0.95] },
+      { cue: "thunderFar", every: [45, 110], where: ring360(200, 500), first: [12, 30] },
+      { cue: "hornFar", every: [70, 160], where: ring360(150, 300), pitch: [0.5, 0.6], db: [2, 5] },
+      { cue: "doorSlamFar", every: [50, 110], where: ring360(40, 90) },
+    ],
+  },
+  // Banking hall after closing: a big still room, the lamps' transformers, air in the ducts, the time lock on the vault, the street through the doors.
+  vault: {
+    ground: ["tile"], wind: 0.03,
+    own: ["chainRattle", "pigeonCoo", "relayClack", "tubeFlicker", "wingsFlush"],
+    beds: [
+      { src: "brown", bands: [{ type: "lowpass", f: 120 }], db: -40, sway: 2, more: [{ bands: [{ f: 360, q: 1.2, roam: 0.3 }], db: -38, sway: 3.5, wide: true }] },
+      { src: "pink", bands: [{ f: 820, q: 0.5, roam: 0.4 }], db: -40, sway: 4, wide: true },
+      { src: "fan", rate: 0.6, at: [6, -20], reach: 2.5, db: -34, sway: 1.5, warp: 0.004, group: "machine" },
+      { src: "hum", db: -42, sway: 3, pan: -0.4, drift: 0.3, group: "machine" },
+    ],
+    events: [
+      { cue: "clockTick", every: [1, 1], where: () => ({ x: -8.73, z: -4.3, h: 2.35 }) },
+      { cue: "alarmBlip", every: [70, 160], where: beyond("far", 30, 70, 900), first: [25, 50] },
+      { cue: "bellToll", every: [140, 260], where: beyond("back", 60, 120, 1400), run: [1, 3], gap: [2.2, 2.6], db: [-4, -1] },
+      { cue: "carPass", every: [20, 50], where: beyond("back", 14, 30, 700) },
+      { cue: "doorSlamFar", every: [50, 120], where: beyond("left", 10, 30) },
+    ],
+  },
+  // Canal quay at dawn: water on stone, boats nudging their fenders, bells over the roofs, the quarter not yet awake.
+  canal: {
+    ground: ["flags", "cobble"], wind: 0.3,
+    own: ["chainRattle", "clothSnap", "drip", "gullCry", "pigeonCoo", "ropeClank", "shutterCreak", "signCreak", "sparrowChirp", "splash", "swiftScream", "waveSlap", "wingsFlush"],
+    beds: [
+      { src: "lap", at: [-11.5, 1], reach: 5, db: -26, sway: 2.5, warp: 0.03 },
+      // The wet dock under the warehouse, heard at its culvert.
+      { src: "lap", rate: 0.8, at: [-10, -16], reach: 4, db: -32, sway: 2.5, warp: 0.03 },
+      { src: "pink", bands: [{ f: 520, q: 0.7, roam: 0.4, gustF: 0.5 }], db: -40, gust: 7, sway: 3, wide: true },
+      { src: "brown", bands: [{ type: "lowpass", f: 170 }], db: -39, sway: 2, more: [{ bands: [{ f: 640, q: 0.5, roam: 0.3 }], db: -42, sway: 4, pan: 0.4, drift: 0.3 }] },
+    ],
+    events: [
+      // The bell tower stands beyond the far end.
+      { cue: "bellToll", every: [50, 120], where: () => ({ x: 10, z: -70, h: 22 }), run: [1, 4], gap: [2.2, 2.8], first: [10, 26], db: [-7, -4] },
+      { cue: "shipHorn", every: [130, 260], where: ring360(300, 600), pitch: [1.25, 1.5], db: [-6, -3] },
+      { cue: "dogBarkFar", every: [60, 140], where: ring360(50, 110), group: "life" },
+      { cue: "doorSlamFar", every: [45, 100], where: ring360(30, 70) },
+      { cue: "windGust", every: [20, 44], where: ring360(8, 18), db: [-7, -4] },
+    ],
+  },
+  // Forest ruin: insects in waves, a spout running into a stone basin, wind high in the leaves, thunder beyond the ridge.
+  ruin: {
+    ground: ["flags", "sand"], wind: 0.25,
+    own: ["crowCaw", "drip", "leafRustle", "pigeonCoo", "sparrowChirp", "wingsFlush"],
+    beds: [
+      { src: "cicada", rate: 1.22, db: -34, sway: 2, pan: -0.5, drift: 0.25, warp: 0.02, group: "life", rests: [12, 30, 3, 8] },
+      { src: "cicada", rate: 0.86, db: -36, sway: 2, pan: 0.55, drift: 0.25, group: "life", rests: [8, 22, 4, 10] },
+      { src: "cicada", rate: 1.6, bands: [{ type: "highpass", f: 4200 }], db: -42, sway: 2, wide: true, group: "life", rests: [20, 50, 2, 6] },
+      { src: "water", rate: 1.2, at: [-9.2, -3], reach: 1.3, db: -28, sway: 2, warp: 0.03 },
+      { src: "pink", bands: [{ f: 1900, q: 0.5, roam: 0.4, gustF: 0.5 }], db: -41, gust: 8, sway: 3, wide: true },
+      { src: "brown", bands: [{ type: "lowpass", f: 200 }], db: -40, sway: 2 },
+    ],
+    events: [
+      { cue: "thunderFar", every: [40, 100], where: ring360(250, 600), first: [15, 35] },
+      { cue: "windGust", every: [18, 40], where: above(14, 16), db: [-7, -4] },
+    ],
+  },
+  // Palm house: the misters, water running in the rill, the heating pipes ticking, panes moving in their bars when the wind leans on the roof.
+  glasshouse: {
+    ground: ["tile", "flags"], wind: 0.2,
+    own: ["chainRattle", "drip", "leafRustle", "sparrowChirp", "steamHiss", "valveClunk", "wingsFlush"],
+    beds: [
+      { src: "white", bands: [{ type: "highpass", f: 4200 }, { type: "lowpass", f: 10500 }], at: [-8.8, -4], reach: 1.6, db: -33, sway: 1.5 },
+      { src: "white", bands: [{ type: "highpass", f: 4600 }, { type: "lowpass", f: 10500 }], at: [8.8, -21], reach: 1.6, db: -34, sway: 1.5 },
+      { src: "water", rate: 1.3, at: [9.1, 5.5], reach: 1.2, db: -28, sway: 2, warp: 0.03 },
+      { src: "pink", bands: [{ f: 700, q: 0.6, roam: 0.4, gustF: 0.4 }], db: -41, gust: 6, sway: 3.5, wide: true },
+      { src: "brown", bands: [{ type: "lowpass", f: 150 }], db: -40, sway: 2, more: [{ bands: [{ f: 420, q: 1.4, roam: 0.3 }], db: -40, sway: 3.5, wide: true }] },
+    ],
+    events: [
+      { cue: "metalCreak", every: [9, 24], where: spot([0, -10, 11], [-6, -20, 9], [6, 0, 9], [0, 6, 10]), pitch: [1.1, 1.5], gusty: true },
+      { cue: "windGust", every: [22, 48], where: above(13, 14), db: [-8, -5] },
+      { cue: "doorSlamFar", every: [70, 150], where: beyond("back", 15, 40) },
+      { cue: "dogBarkFar", every: [80, 170], where: ring360(70, 140), group: "life" },
+    ],
+  },
+  // Foot of a dam: the gate running white into the tailrace, the turbine hall, wind and spray in the gorge.
+  dam: {
+    ground: ["concrete"], wind: 0.55,
+    own: ["alarmBlip", "chainRattle", "crowCaw", "drip", "metalCreak", "relayClack", "steamHiss", "swiftScream", "wingsFlush"],
+    beds: [
+      // The fall: its weight, its body and the hiss of the spray, all from where the water lands.
+      { src: "brown", bands: [{ type: "lowpass", f: 260, roam: 0.15 }], at: [-20, -50], reach: 26, db: -25, sway: 1.5, more: [{ bands: [{ f: 700, q: 0.5, roam: 0.2 }], at: [-20, -50], reach: 22, db: -27, sway: 2 }] },
+      { src: "white", bands: [{ type: "highpass", f: 2600 }, { type: "lowpass", f: 9000 }], at: [-20, -50], reach: 16, db: -33, sway: 2, gust: 3 },
+      { src: "water", rate: 0.7, at: [-12, -8], reach: 5, db: -31, sway: 2.5, warp: 0.03 },
+      { src: "hum", rate: 1.2, at: [14, -14], reach: 4, db: -31, sway: 1.5, warp: 0.003, group: "machine", more: [{ bands: [{ f: 1180, q: 9 }], at: [14, -14], reach: 4, db: -38, sway: 2, group: "machine" }] },
+      { src: "pink", bands: [{ f: 480, q: 1.4, roam: 0.4, gustF: 0.7 }], db: -40, gust: 10, sway: 2, pan: 0.3, drift: 0.5 },
+    ],
+    events: [
+      { cue: "windGust", every: [12, 26], where: ring360(8, 18), db: [-5, -2] },
+      { cue: "paTone", every: [90, 200], where: spot([14, -14, 8]), first: [30, 60] },
+      { cue: "doorSlamFar", every: [60, 130], where: beyond("right", 10, 30) },
+    ],
+  },
+  // Empty picture house: the projector running in its box behind the back wall, old ventilation, the building settling.
+  cinema: {
+    ground: ["felt"], wind: 0.02,
+    own: ["chainRattle", "pigeonCoo", "relayClack", "tubeFlicker", "wingsFlush"],
+    beds: [
+      { src: "projector", at: [0, 10.5], reach: 4.5, db: -29, sway: 1, warp: 0.004, group: "machine" },
+      { src: "fan", rate: 0.55, at: [-6, -14], reach: 3, db: -35, sway: 2, warp: 0.006, group: "machine" },
+      { src: "brown", bands: [{ type: "lowpass", f: 110 }], db: -41, sway: 2, more: [{ bands: [{ f: 300, q: 1.2, roam: 0.3 }], db: -40, sway: 3.5, wide: true }] },
+      { src: "pink", bands: [{ f: 900, q: 0.5, roam: 0.4 }], db: -42, sway: 4, wide: true },
+    ],
+    events: [
+      { cue: "shutterCreak", every: [16, 40], where: spot([-12, -8, 1], [12, -16, 1], [-11, 2, 1], [11, -24, 1], [0, 8, 7]), pitch: [0.7, 1], db: [-3, 1] },
+      { cue: "metalCreak", every: [20, 50], where: spot([0, -12, 12], [-7, -22, 11], [7, -4, 11]), pitch: [0.6, 0.85] },
+      { cue: "carPass", every: [25, 60], where: beyond("back", 18, 40, 600) },
+      { cue: "doorSlamFar", every: [55, 120], where: beyond("back", 12, 30) },
+      { cue: "drip", every: [14, 40], where: spot([-8.8, -22, 0.2], [7.5, -26, 0.2]), run: [1, 3], gap: [0.5, 1.4] },
+    ],
+  },
+  // Trading floor after the close: air handling, the server room behind glass, lamps, a telephone nobody is there to answer, the city below.
+  office: {
+    ground: ["felt"], wind: 0.03,
+    own: ["shutterCreak", "tubeFlicker"],
+    beds: [
+      { src: "fan", at: [12, -5], reach: 3.5, db: -31, sway: 1.5, warp: 0.004, group: "machine", more: [{ bands: [{ type: "highpass", f: 2400 }], at: [12, -5], reach: 3, db: -40, sway: 2, group: "machine" }] },
+      { src: "pink", bands: [{ f: 1100, q: 0.5, roam: 0.3 }], db: -38, sway: 3, wide: true, group: "machine" },
+      { src: "hum", db: -42, sway: 3, pan: 0.4, drift: 0.3, group: "machine" },
+      { src: "brown", bands: [{ type: "lowpass", f: 130 }], db: -40, sway: 2, more: [{ bands: [{ f: 420, q: 0.6, roam: 0.3 }], db: -41, sway: 4, wide: true }] },
+    ],
+    events: [
+      { cue: "phoneRing", every: [45, 110], where: spot([-8.2, 4.5, -0.6], [8.3, 6, -0.6], [-8.4, 1.5, -0.6]), run: [3, 6], gap: [3, 3], first: [14, 30] },
+      { cue: "sirenFar", every: [60, 140], where: pass(160, 320, -60, 900) },
+      { cue: "hornFar", every: [18, 44], where: ring360(90, 200), db: [-6, -3] },
+      { cue: "carPass", every: [10, 24], where: pass(80, 150, -60, 800), db: [-6, -2] },
+      { cue: "relayClack", every: [20, 50], where: spot([12, -5, 0.5], [12, -2.5, 0.5]), run: [2, 6], gap: [0.08, 0.3] },
+      { cue: "doorSlamFar", every: [60, 130], where: beyond("left", 10, 30) },
     ],
   },
 };

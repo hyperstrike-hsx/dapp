@@ -54,6 +54,46 @@ export const RANGE_MAPS = [
     brief: "A supply outpost in deep snow under a flat white sky. Drifts against the cabins, marker lamps, everything fading into the weather.",
     setting: "Outdoor · alpine", light: "Overcast, flat", air: "Low visibility, snow haze", sound: "Howling wind, generator, muffled by snow",
   },
+  {
+    id: "yard", code: "11", name: "SIDING", line: "Freight yard · night rain",
+    brief: "A freight yard at night in steady rain. Boxcars standing on the sidings, signal lamps on their gantry, floodlights hanging in the wet and every puddle holding a light.",
+    setting: "Outdoor · rail yard", light: "Night, floodlights and signals", air: "Rain, low mist", sound: "Rain on steel, an idling diesel, couplers",
+  },
+  {
+    id: "vault", code: "12", name: "VAULT", line: "Bank hall · after closing",
+    brief: "A banking hall after the doors have shut. Marble underfoot, brass grilles at the counters and the round vault door standing open on walls of deposit boxes.",
+    setting: "Indoor · banking hall", light: "Lay light, green desk lamps", air: "Still, faint dust", sound: "Time lock ticking, ventilation, a far alarm bell",
+  },
+  {
+    id: "canal", code: "13", name: "BACKWATER", line: "Canal quarter · dawn mist",
+    brief: "A quay in a canal quarter just after sunrise. Stone edges, moored boats and a footbridge, with the far houses lost in mist off the water.",
+    setting: "Outdoor · canal quay", light: "Low dawn sun through mist", air: "Mist off the water", sound: "Lapping water, mooring ropes, far bells",
+  },
+  {
+    id: "ruin", code: "14", name: "CANOPY", line: "Jungle ruin · green light",
+    brief: "The court of a ruin deep in forest. Stone terraces under roots and creepers, sun coming down through the leaves in shafts and the air heavy with damp.",
+    setting: "Outdoor · forest ruin", light: "Sun shafts through leaves", air: "Humid haze", sound: "Insects, dripping leaves, far thunder",
+  },
+  {
+    id: "glasshouse", code: "15", name: "GLASSHOUSE", line: "Palm house · filtered sun",
+    brief: "A palm house of white iron and glass. Tall palms and ferns in raised beds, sun striped by the glazing bars and mist drifting from the sprays.",
+    setting: "Indoor · glass and iron", light: "Sun through glazing", air: "Warm mist", sound: "Misters, ticking pipes, sparrows in the roof",
+  },
+  {
+    id: "dam", code: "16", name: "SPILLWAY", line: "Dam foot · spray and sun",
+    brief: "The apron at the foot of a dam in a rock gorge. The concrete face rising overhead, a gate running white and spray drifting across the sun.",
+    setting: "Outdoor · gorge", light: "High sun, spray haze", air: "Drifting spray", sound: "Roaring water, turbine whine, wind in the gorge",
+  },
+  {
+    id: "cinema", code: "17", name: "MATINEE", line: "Old cinema · projector beam",
+    brief: "The auditorium of an old picture house with nobody in it. Velvet rows, gilt plaster and a single projector beam cutting through the haze to the screen.",
+    setting: "Indoor · auditorium", light: "Projector beam, aisle lamps", air: "Dusty haze", sound: "Projector clatter, old ventilation, a seat creaking",
+  },
+  {
+    id: "office", code: "18", name: "AFTER HOURS", line: "Trading floor · dusk",
+    brief: "A trading floor after the close. Rows of dark desks and sleeping screens, ticker boards still running and the city going dusk through the blinds.",
+    setting: "Indoor · office floor", light: "Dusk through blinds, screens", air: "Clear, conditioned", sound: "Server fans, air handling, a phone ringing out",
+  },
 ] as const;
 
 export type RangeMapId = (typeof RANGE_MAPS)[number]["id"];

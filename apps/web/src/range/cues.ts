@@ -24,6 +24,8 @@ export const CUE_NAMES = [
   // Appended with the soundscapes: swifts over a square, steel ticking as it cools, a coppersmith's hammer,
   // crockery at a café table, a long public-address tone
   "swiftScream", "metalCreak", "copperTap", "cupClatter", "paTone",
+  // Appended with the second set of ranges: thunder beyond the hills, a desk telephone ringing out, an escapement
+  "thunderFar", "phoneRing", "clockTick",
 ] as const;
 
 export type CueName = (typeof CUE_NAMES)[number];

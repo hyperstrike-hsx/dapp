@@ -53,6 +53,14 @@ const ROOMS: Record<RangeMapId, { seconds: number; damping: number; wet: number 
   hangar: { seconds: 2.4, damping: 0.4, wet: 1.0 },
   bazaar: { seconds: 0.7, damping: 0.8, wet: 0.6 },
   outpost: { seconds: 0.6, damping: 0.9, wet: 0.45 },
+  yard: { seconds: 0.8, damping: 0.85, wet: 0.5 },
+  vault: { seconds: 2.6, damping: 0.4, wet: 1.05 },
+  canal: { seconds: 0.9, damping: 0.7, wet: 0.6 },
+  ruin: { seconds: 0.7, damping: 0.85, wet: 0.5 },
+  glasshouse: { seconds: 1.7, damping: 0.45, wet: 0.9 },
+  dam: { seconds: 1.5, damping: 0.6, wet: 0.75 },
+  cinema: { seconds: 1.3, damping: 0.85, wet: 0.7 },
+  office: { seconds: 0.55, damping: 0.9, wet: 0.5 },
 };
 
 const VARIATIONS = 3;
