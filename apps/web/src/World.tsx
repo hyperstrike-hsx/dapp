@@ -525,6 +525,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const wanted = () => (touch ? touchPlayRef.current : document.pointerLockElement === mount);
     /** ...and the map is there to play in. */
     const playing = () => live && wanted();
+    // Overrun by the horde: the player can still look around, but no longer moves, shoots or handles anything.
+    const fallen = () => horde.phase === "over";
+    const acting = () => playing() && !fallen();
 
     const loadingManager = new THREE.LoadingManager();
     if (leanAssets()) loadingManager.setURLModifier(leanUrl);
@@ -1450,7 +1453,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       if (magazines[current] === 0) { autoReloadAt = now + (manual ? 420 : rig.cycle ? spec.cycleMs : 160); resetTrigger(trigger); }
     };
     const onMouseDown = (event: MouseEvent) => {
-      if (touch || !playing()) return;
+      if (touch || !acting()) return;
       // The right button is the secondary: sights, or the optic.
       if (event.button === 2) { aimHeld = true; inspectStartedAt = -1; return; }
       if (event.button !== 0) return;
@@ -1471,7 +1474,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     const WHEEL_NOTCH = 60, WHEEL_GAP = 180;
     let wheelRun = 0, wheelAt = -1e6, wheelSpent = false;
     const onWheel = (event: WheelEvent) => {
-      if (!playing() || event.deltaY === 0) return;
+      if (!acting() || event.deltaY === 0) return;
       const now = performance.now();
       if (now - wheelAt > WHEEL_GAP || Math.sign(event.deltaY) !== Math.sign(wheelRun)) { wheelRun = 0; wheelSpent = false; }
       wheelAt = now;
@@ -1494,7 +1497,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       // Space jumps rather than scrolling the page, and Ctrl is the crouch: with it held, the browser's
       // own Ctrl shortcuts (save, find, bookmark) are kept from firing where the browser allows that.
       if (event.code === "Space" || (event.ctrlKey && !event.metaKey)) event.preventDefault();
-      if (event.repeat) return;
+      if (event.repeat || fallen()) return;
       const now = performance.now();
       if (event.code === "Space" && !airborne) { airborne = true; rise = JUMP; }
       if (event.code === "KeyR") startReload();
@@ -1514,7 +1517,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
     };
     /** Opens what the player is standing at, and frees the pointer for it. */
     const use = () => {
-      if (!playing()) return;
+      if (!acting()) return;
       // A weapon lying at the player's feet comes first: picking it up does not free the pointer.
       const lying = withinReach(2.3, false);
       if (lying) { pickUp(lying); return; }
@@ -1539,12 +1542,12 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         lookKickY = THREE.MathUtils.clamp(lookKickY + dy * 0.00065, -0.028, 0.028);
       },
       fire: (down) => {
-        if (down && playing()) { wake(); pressTrigger(trigger); } else releaseTrigger(trigger);
+        if (down && acting()) { wake(); pressTrigger(trigger); } else releaseTrigger(trigger);
       },
       aim: (on) => { touchAim = on; },
-      reload: () => { if (playing()) startReload(); },
-      nextWeapon: () => { if (playing()) cycleWeapon(1); },
-      mode: () => { if (playing()) cycleMode(); },
+      reload: () => { if (acting()) startReload(); },
+      nextWeapon: () => { if (acting()) cycleWeapon(1); },
+      mode: () => { if (acting()) cycleMode(); },
       pause: release,
       wake,
     };
@@ -1594,9 +1597,9 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       lastFrameTime = now;
       let moving = false;
       // Running is the default pace; Shift walks, and Ctrl (or C) ducks, which is slower still.
-      const ducking = playing() && (keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("KeyC"));
+      const ducking = acting() && (keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("KeyC"));
       const walking = !ducking && (keys.has("ShiftLeft") || keys.has("ShiftRight"));
-      if (playing()) {
+      if (acting()) {
         moveDirection.set(stick.x, 0, stick.y);
         if (keys.has("KeyW")) moveDirection.z -= 1;
         if (keys.has("KeyS")) moveDirection.z += 1;
@@ -1713,7 +1716,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         }
       }
       if (autoReloadAt >= 0 && now >= autoReloadAt) startReload();
-      const armed = enteredRef.current && !reloading && switchingTo < 0 && (forceFire || playing());
+      const armed = enteredRef.current && !reloading && switchingTo < 0 && !fallen() && (forceFire || playing());
       if (armed && takeShot(spec, modes[current], trigger, now)) {
         if (magazines[current] > 0) fireShot(now);
         else { playAction("dry"); resetTrigger(trigger); startReload(); }
@@ -1725,7 +1728,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
       recoil = THREE.MathUtils.lerp(recoil, 0, Math.min(1, dt * 14));
       muzzleEnergy = THREE.MathUtils.lerp(muzzleEnergy, 0, Math.min(1, dt * 25));
       // Aim down the sights while the right button is held; an optic takes over the whole view once it is up.
-      const aiming = enteredRef.current && (forceScope || ((aimHeld || touchAim) && playing())) && !reloading && switchingTo < 0 && !(cycleStartedAt >= 0 && modes[current] === "BOLT");
+      const aiming = enteredRef.current && (forceScope || ((aimHeld || touchAim) && acting())) && !reloading && switchingTo < 0 && !(cycleStartedAt >= 0 && modes[current] === "BOLT");
       aim += ((aiming ? 1 : 0) - aim) * Math.min(1, dt * 13);
       if (Math.abs(aim - (aiming ? 1 : 0)) < 0.003) aim = aiming ? 1 : 0;
       const sighted = smooth01(aim), magnification = THREE.MathUtils.lerp(1, spec.zoom, sighted);
@@ -1836,7 +1839,7 @@ export function World({ quality="HIGH", map="foundry", markets, onSelect, onProx
         if (u >= 1) { item.resting = true; playAction("slap"); }
       }
       // Walking over one picks it up again.
-      if (playing() && dropped.length) { const underfoot = withinReach(0.95, true); if (underfoot) pickUp(underfoot); }
+      if (acting() && dropped.length) { const underfoot = withinReach(0.95, true); if (underfoot) pickUp(underfoot); }
 
       range.update(now);
       ballistics.update(now, dt);

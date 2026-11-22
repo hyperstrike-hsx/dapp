@@ -899,6 +899,8 @@ export function createHorde(options: HordeOptions): Horde {
     },
     hit(object, point, direction, amount, headshot, now) {
       const z = zombies[object.userData.zombie as number];
+      // Once the player is down the run is final: nothing scores and nothing more is killed.
+      if (phase === "over") return false;
       if (!z || (z.state !== "rising" && z.state !== "chasing" && z.state !== "attacking")) return false;
       const zone = object.userData.zone as string;
       // A weapon with no headshot multiplier strikes the head like any other part.
