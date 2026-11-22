@@ -1,5 +1,11 @@
 # Data configuration and operating boundaries
 
+> **Production path.** The five indexes run on the multi-venue engine described in
+> [INDEX_METHODOLOGY.md](INDEX_METHODOLOGY.md) and operated by `pnpm oracle:daemon`
+> (see [LAUNCH.md](LAUNCH.md)). The on-chain publication window is 240 seconds.
+> The generic adapter, the one-shot `oracle:sign` / `oracle:publish` CLIs and the
+> workflow below remain for manual recovery and audit replay.
+
 No bundled constituent fixture is approved production data. Configure the engine only after committee approval and a provider agreement permitting executable quote ingestion and display. A different hostname alone does not establish economic source independence; that is an operating review.
 
 The JSON accepted by `services/api/src/indexer-engine.ts` has:
@@ -17,7 +23,7 @@ Eligibility v1 weights source coverage/uptime/liquidity/spread/history/agreement
 
 1. Poll adapters and commit original payloads before normalization.
 2. Calculate each minute from timestamped eligible inputs. Record both input/output; never retroactively edit.
-3. On a five-minute boundary generate a candidate. The operator must budget feed polling plus signer verification and broadcast within the contract's 90-second publication window. The one-shot worker is not an SLO guarantee; provider batching/caching and production scheduling must be tested.
+3. On a five-minute boundary generate a candidate. The operator must budget feed polling plus signer verification and broadcast within the 90 seconds these CLIs allow (the contract accepts 240). The one-shot worker is not an SLO guarantee; provider batching/caching and production scheduling must be tested.
 4. Each isolated signer verifies the approved version, source commitments, replay, freshness and chain sequence. Run `pnpm oracle:sign candidate.json` on each signer host.
 5. Transfer only signed envelopes to the publisher. `pnpm oracle:publish signer-a.json signer-b.json` validates and simulates; only an operator-controlled `--broadcast` sends gas. Keep publisher keys separate from oracle keys.
 6. `pnpm chain:index` follows finalized events, validates stored checkpoint hash and reconstructs native market/observation read models. Collateral reconciliation reads one block tag for all balances. Reorg beyond finality halts; rebuild a separate database and investigate rather than rewriting history.

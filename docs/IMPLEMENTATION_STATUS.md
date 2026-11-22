@@ -1,6 +1,16 @@
 # Implementation and release status
 
-This is a **substantial local implementation, not completion of every production requirement** in the supplied v3 specification. No mainnet deployment, real order or token burn was executed during implementation. Independent contract review and operational data evidence cannot be replaced by passing unit tests.
+**Launch candidate. Not deployed to mainnet, not externally audited.** The
+indexes run on real prices from five marketplaces
+([methodology](INDEX_METHODOLOGY.md)). The contracts, deployment script, oracle
+daemon and settlement keeper pass a full lifecycle on a fork of HyperEVM mainnet
+with real USDC, real HSX and the real HSX/WHYPE pool. The remaining steps need
+keys, a multisig and decisions only the operator can supply; they are listed in
+the [launch runbook](LAUNCH.md).
+
+The table below tracks the original v3 specification. Where it still says
+"remaining", the runbook's risk list says whether that item is done, accepted
+as a launch risk, or deferred.
 
 ## Coverage against v3
 
@@ -39,18 +49,22 @@ This does **not** establish CS2 visual parity, real ray tracing or stable 60 FPS
 - Solidity integration/fuzz tests for create/burn atomicity, immutable uniqueness, oracle signatures/replays, fee segregation, trading lock/pause, redemption/INVALID/dust, challenge timing, curve cost/timelock, leap-month expiry.
 - Browser smoke test: paper buy and sell, portfolio persistence after reload, routing, range asset load and shader rendering, single-canvas lifecycle after quality switches. Native onchain portfolio and wallet actions are implemented but not validated against a deployed pilot. The embedded browser measured approximately 30 FPS in both presets; this is not a 60 FPS acceptance result.
 
-Latest automated run: **43 JavaScript/TypeScript tests and 23 Solidity tests passed**, plus strict typecheck and production build. The two Solidity fuzz tests also passed with 10,000 runs each. Production build retains a large-chunk advisory for the lazy Three.js bundle and the main wallet-enabled bundle; it is not a build failure.
+Latest automated run (2026-11-21): **89 JavaScript/TypeScript tests and 43
+Solidity tests passed**, including four stateful invariants (collateral covers
+liabilities, claims fully accounted, fee vault solvent, traders never extract
+more than deposited), a full lifecycle on a mainnet fork, and the CI profile at
+10,000 fuzz runs. Strict typecheck and production build pass.
 
-Passing this suite is useful engineering evidence, **not an audit**. CI contains an extended fuzz configuration; the current tests are not a complete stateful adversarial invariant campaign.
+One internal adversarial review of the contracts was run and its findings
+fixed or documented in the runbook. Passing this suite is useful engineering
+evidence, **not an audit**.
 
-## Live launch blockers (in order)
+## Live launch blockers
 
-1. **Product approval:** review the clarifications, risk caps, curve parameters, challenge policy and internal-claim/native-only architecture.
-2. **Data:** choose licensed executable bid/ask providers, supply source mappings, approve exact constituent baskets, publish methodology/inclusion decisions, reconstruct 30 days and replay/audit the outputs.
-3. **Collateral and price feeds:** identify the sole approved stablecoin address; review its code/decimals/transfer semantics; deploy reviewed HSX TWAP plus independent reference.
-4. **Security:** independent review of the exact clean commit, economic/settlement simulation, fork tests against the actual token, stateful invariant/reentrancy campaign, and source verification.
-5. **Operations:** production DB/backup/object archive, signer isolation (3 independent keys), multisig/timelock/treasury addresses, broadcaster cadence, API/worker monitoring, incident and challenge drills.
-6. **Pilot:** deploy reviewed contracts with a small explicit cap, complete role grants/version scheduling, verify every address/constructor/runtime hash, then user-controlled funded-wallet tests of mint→create→buy→sell→resolve→redeem→fee claim.
-7. **Scale only after evidence:** liquidity/usage/settlement/error budgets and all v3 release gates.
-
-`pnpm production:check` must fail until reviewed configuration and evidence are supplied. `pnpm native:deploy` prints a plan only. Broadcast requires an explicit flag, local signer configuration and the clean externally reviewed commit. The script records each deployment progressively but does not automatically resume a partially deployed system—inspect its manifest before retrying, to avoid duplicate deployments.
+See [LAUNCH.md](LAUNCH.md). In short: a Safe and a treasury on HyperEVM, three
+signer keys on three hosts, funded deployer and publisher keys, the explicit
+collateral choice, and a signed-off review report for the commit being
+deployed. `pnpm production:check` fails until those are supplied and
+`pnpm native:deploy` sends nothing without `--broadcast`. The script records
+each deployment progressively but does not resume a partial deployment; inspect
+its manifest before retrying.
