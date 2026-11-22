@@ -673,7 +673,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
   // A light air up the canal from the south-west. Every fitting that can speak goes through one desk, so the
   // quay stays quiet: a thing that has spoken keeps still for a while, and no two speak at once.
   const wind = createWind({ heading: WIND_HEADING, strength: 0.24, gustiness: 0.6 });
-  const QUIET: Partial<Record<CueName, number>> = { ropeClank: 7, waveSlap: 5, chainRattle: 12, signCreak: 12, shutterCreak: 14, clothSnap: 7, drip: 2.5, splash: 20, sparrowChirp: 5, pigeonCoo: 9, gullCry: 7, swiftScream: 12 };
+  const QUIET: Partial<Record<CueName, number>> = { ropeClank: 7, chainRattle: 12, signCreak: 12, shutterCreak: 14, clothSnap: 7, drip: 2.5, splash: 20, sparrowChirp: 5, pigeonCoo: 9, gullCry: 7, swiftScream: 12 };
   const spoke: Partial<Record<CueName, number>> = {};
   const heard = options.cue;
   let lastSpoke = 0, answering = false;
@@ -1948,7 +1948,7 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
           boat.turn = half;
           if (first || chance() < 0.35) continue;
           if (half % 2 !== 0) cue?.("ropeClank", at.copy(boat.lines[0].ring), { gain: 0.3 + chance() * 0.25, pitch: 0.85 + chance() * 0.3 });
-          else { cue?.("waveSlap", at.set(QUAY_X - 0.2, WATER_Y + 0.2, boat.z), { gain: 0.3 + chance() * 0.3, pitch: 0.9 + chance() * 0.25 }); ripple(QUAY_X - 0.25, boat.z + (chance() - 0.5) * 2, 0.05); }
+          else ripple(QUAY_X - 0.25, boat.z + (chance() - 0.5) * 2, 0.05);
         }
       }
     });
