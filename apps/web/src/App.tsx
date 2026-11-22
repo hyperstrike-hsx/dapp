@@ -176,6 +176,8 @@ export default function App() {
     [range, setRange] = useState(false),
     [entered, setEntered] = useState(false),
     [locked, setLocked] = useState(false),
+    // A closing ticket or panel has asked for the pointer and the browser has yet to answer.
+    [resuming, setResuming] = useState(false),
     [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<IndexMarket | null>(null),
     [nearby, setNearby] = useState<IndexMarket | null>(null),
@@ -412,13 +414,31 @@ export default function App() {
     });
   };
   /**
-   * A click that dismisses a ticket or panel goes straight back to play once the player has
-   * deployed, instead of stopping at the pause screen: the click is the gesture the browser needs
-   * to hand the pointer back. (Escape is not such a gesture, so that still lands on the pause screen.)
+   * Closing a ticket or a panel goes straight back to play once the player has deployed, instead
+   * of stopping at the pause screen, whichever way it was closed. `quiet` is for Escape: a browser
+   * hands the pointer back on a click, and on Escape only where the range itself let go of it (a
+   * panel opened from the pause screen was reached by the player's own Escape). Where it is
+   * refused, the pause screen comes back with RESUME and nothing is reported.
    */
-  const resumeRange = () => {
-    if (range && entered) capture();
+  const backToPlay = (quiet = false) => {
+    setResuming(true);
+    capture(quiet);
   };
+  const resumeRange = (quiet = false) => {
+    if (range && entered) backToPlay(quiet);
+  };
+  // The browser hands the pointer over a moment after it is asked. The pause screen stays down
+  // for that moment rather than flashing up between the panel and play; an answer that has not
+  // come by then is a refusal, and the pause screen is where that leaves the player.
+  useEffect(() => {
+    if (!resuming) return;
+    if (locked || !range) {
+      setResuming(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setResuming(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [resuming, locked, range]);
   const connect = async () => {
     try {
       setWallet(await (await signer()).getAddress());
@@ -655,7 +675,7 @@ export default function App() {
           <div className="range-tag">
             RANGE {rangeMapInfo.code} <span>{rangeMapInfo.name} · INDEX MARKET SANDBOX</span>
           </div>
-          {ready && !locked && !selected && !rangePanel ? (
+          {ready && !locked && !selected && !rangePanel && !resuming ? (
             <RangeLobby
               current={rangeMap}
               entered={entered}
@@ -681,14 +701,17 @@ export default function App() {
               title={
                 rangePanel === "foundry" ? "STRIKE FOUNDRY" : "HSX MARKET TAPE"
               }
-              onClose={() => setRangePanel(null)}
-              onResume={() => {
-                setRangePanel(null);
-                capture();
-              }}
-              onOutside={() => {
+              onClose={() => {
                 setRangePanel(null);
                 resumeRange();
+              }}
+              onEscape={() => {
+                setRangePanel(null);
+                resumeRange(true);
+              }}
+              onResume={() => {
+                setRangePanel(null);
+                backToPlay();
               }}
             >
               {rangePanel === "foundry" ? <StrikePanel /> : <HsxChartPanel />}
@@ -1294,6 +1317,7 @@ export default function App() {
           onClose={() => {
             setSelected(null);
             setManagedSide(undefined);
+            resumeRange(true);
           }}
           onDismiss={() => {
             setSelected(null);
@@ -1306,7 +1330,10 @@ export default function App() {
       {nativeSelected && (
         <NativeTicket
           record={nativeSelected}
-          onClose={() => setNativeSelected(null)}
+          onClose={() => {
+            setNativeSelected(null);
+            resumeRange();
+          }}
           onNotice={setNotice}
         />
       )}
