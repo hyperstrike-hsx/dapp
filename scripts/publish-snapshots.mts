@@ -1,11 +1,9 @@
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import type { IndicativeFeed } from "@hyperstrike/market-types";
-import {
-  refreshSnapshot,
-  SNAPSHOT_VERSION,
-} from "../services/api/src/static-snapshot";
+import { refreshComposite } from "../services/api/src/composite-feed";
+import { loadGenesis } from "../services/api/src/oracle-engine";
+import { METHODOLOGY } from "../services/api/src/genesis";
 import { createHsxFeed } from "../services/api/src/hsx-chart";
 
 const directory = fileURLToPath(
@@ -24,27 +22,14 @@ async function publish(name: string, value: unknown) {
   await writeFile(`${path}.tmp`, JSON.stringify(value, null, 2) + "\n");
   await rename(`${path}.tmp`, path);
 }
-let previous: IndicativeFeed | undefined = await readJson(
+const previous: IndicativeFeed | undefined = await readJson(
   "indicative-indexes.json",
 );
-const args = process.argv.slice(2);
-if (args.length) {
-  if (args.length !== 2 || args[0] !== "--bootstrap-db" || previous)
-    throw Error(
-      "Usage: publish-snapshots [--bootstrap-db PATH] (bootstrap only before a snapshot exists)",
-    );
-  const db = new DatabaseSync(args[1], { readOnly: true });
-  try {
-    const cached = db
-      .prepare("SELECT data FROM indicative_cache WHERE id=?")
-      .get(SNAPSHOT_VERSION);
-    if (!cached) throw Error("No existing indicative baseline to migrate");
-    previous = JSON.parse(String(cached.data));
-  } finally {
-    db.close();
-  }
-}
-const indexes = await refreshSnapshot(previous);
+// The single-venue Skinport preview is retired, not rewritten: its last
+// published state is kept beside the multi-venue feed that replaces it.
+if (previous && previous.methodology !== METHODOLOGY)
+  await publish("indicative-indexes.skinport-preview-v1.json", previous);
+const indexes = await refreshComposite(previous, loadGenesis());
 const chart = await createHsxFeed()();
 const oldChart = await readJson("hsx-ohlcv.json");
 await mkdir(directory, { recursive: true });

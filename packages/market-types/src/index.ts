@@ -52,17 +52,19 @@ export type MarketDefinition = {
   settlementPolicyId: Hex;
 };
 export const SETTLEMENT_POLICY_ID = id("HS-TWAP-5M-15M-24H-V1") as Hex;
+/** Trading stops before the first sample of the 15-minute settlement window. Mirrors ProtocolConfig. */
+export const TRADE_CLOSE_LEAD = 900;
 export function expiryTime(expiry: Expiry, now: number): number {
   const d = new Date(now * 1000);
   d.setUTCHours(16, 0, 0, 0);
   if (expiry === "DAILY") {
-    if (d.getTime() / 1000 - 300 <= now) d.setUTCDate(d.getUTCDate() + 1);
+    if (d.getTime() / 1000 - TRADE_CLOSE_LEAD <= now) d.setUTCDate(d.getUTCDate() + 1);
   } else if (expiry === "WEEKLY") {
     d.setUTCDate(d.getUTCDate() + ((5 - d.getUTCDay() + 7) % 7));
-    if (d.getTime() / 1000 - 300 <= now) d.setUTCDate(d.getUTCDate() + 7);
+    if (d.getTime() / 1000 - TRADE_CLOSE_LEAD <= now) d.setUTCDate(d.getUTCDate() + 7);
   } else {
     d.setUTCMonth(d.getUTCMonth() + 1, 0);
-    if (d.getTime() / 1000 - 300 <= now) d.setUTCMonth(d.getUTCMonth() + 2, 0);
+    if (d.getTime() / 1000 - TRADE_CLOSE_LEAD <= now) d.setUTCMonth(d.getUTCMonth() + 2, 0);
   }
   return d.getTime() / 1000;
 }
@@ -120,7 +122,7 @@ export function validateDefinition(
   if (
     reference.confidenceBps < 9000 ||
     reference.observedAt > now ||
-    now - reference.observedAt > 300
+    now - reference.observedAt > 540
   )
     throw new Error("Fresh healthy index required");
   const expiry = (["DAILY", "WEEKLY", "MONTHLY"] as Expiry[]).find(
@@ -131,7 +133,7 @@ export function validateDefinition(
         : moveThresholds(e)
       ).includes(d.thresholdE8),
   );
-  if (!expiry || d.tradeCloseTime !== d.resolutionTime - 300)
+  if (!expiry || d.tradeCloseTime !== d.resolutionTime - TRADE_CLOSE_LEAD)
     throw new Error("Noncanonical expiry or strike");
   if (
     d.template === "MOVE" &&

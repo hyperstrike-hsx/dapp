@@ -1,0 +1,5974 @@
+{
+  "source": "Skinport",
+  "sourceUrl": "https://skinport.com/",
+  "currency": "USD",
+  "methodology": "skinport-ask-preview-v1",
+  "checkedAt": 1795147107,
+  "indexes": [
+    {
+      "ticker": "HS-CS50",
+      "indexId": "0x0f1dac92d468265aad6382e19ca1be355c3f2a3f355eba60801babad68507799",
+      "provenance": "INDICATIVE",
+      "settlementEligible": false,
+      "status": "OK",
+      "value": 862.370786,
+      "changeSinceBasePct": -13.762921400000005,
+      "baseAt": 1790438219,
+      "observedAt": 1795146912,
+      "coverage": 50,
+      "count": 50,
+      "constituents": [
+        {
+          "name": "★ Paracord Knife | Fade (Factory New)",
+          "baseUsd": 132.07,
+          "weight": 0.02,
+          "priceUsd": 116.03,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Kukri Knife | Fade (Factory New)",
+          "baseUsd": 165.76,
+          "weight": 0.02,
+          "priceUsd": 138.07,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bowie Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 118.19,
+          "weight": 0.02,
+          "priceUsd": 102.49,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Falchion Knife | Marble Fade (Factory New)",
+          "baseUsd": 159.07,
+          "weight": 0.02,
+          "priceUsd": 149.71,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife",
+          "baseUsd": 54.81,
+          "weight": 0.02,
+          "priceUsd": 45.31,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bayonet | Tiger Tooth (Factory New)",
+          "baseUsd": 266.3,
+          "weight": 0.02,
+          "priceUsd": 233.71,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Falchion Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 126.91,
+          "weight": 0.02,
+          "priceUsd": 119.58,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Huntsman Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 146.53,
+          "weight": 0.02,
+          "priceUsd": 125.04,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife | Fade (Factory New)",
+          "baseUsd": 126.15,
+          "weight": 0.02,
+          "priceUsd": 110.72,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Huntsman Knife | Marble Fade (Factory New)",
+          "baseUsd": 185.29,
+          "weight": 0.02,
+          "priceUsd": 138.72,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Nomad Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 181.8,
+          "weight": 0.02,
+          "priceUsd": 146.04,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Skeleton Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 308.95,
+          "weight": 0.02,
+          "priceUsd": 254.3,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Nomad Knife | Marble Fade (Factory New)",
+          "baseUsd": 207.47,
+          "weight": 0.02,
+          "priceUsd": 191.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bowie Knife | Marble Fade (Factory New)",
+          "baseUsd": 142.71,
+          "weight": 0.02,
+          "priceUsd": 127.76,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife | Marble Fade (Factory New)",
+          "baseUsd": 115.24,
+          "weight": 0.02,
+          "priceUsd": 104.87,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Specialist Gloves | Crimson Web (Field-Tested)",
+          "baseUsd": 131.38,
+          "weight": 0.01875,
+          "priceUsd": 102.66,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Imperial Plaid (Field-Tested)",
+          "baseUsd": 138.46,
+          "weight": 0.01875,
+          "priceUsd": 127.53,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Racing Green (Field-Tested)",
+          "baseUsd": 32.77,
+          "weight": 0.01875,
+          "priceUsd": 25.59,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Overtake (Field-Tested)",
+          "baseUsd": 44.76,
+          "weight": 0.01875,
+          "priceUsd": 41.58,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Polygon (Field-Tested)",
+          "baseUsd": 105.11,
+          "weight": 0.01875,
+          "priceUsd": 82.88,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Blood Pressure (Field-Tested)",
+          "baseUsd": 112.65,
+          "weight": 0.01875,
+          "priceUsd": 94.27,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Turtle (Field-Tested)",
+          "baseUsd": 58.83,
+          "weight": 0.01875,
+          "priceUsd": 49.91,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Broken Fang Gloves | Unhinged (Field-Tested)",
+          "baseUsd": 50.76,
+          "weight": 0.01875,
+          "priceUsd": 43.95,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SSG 08 | Blue Spruce (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "MP7 | Army Recon (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SCAR-20 | Contractor (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Dual Berettas | Contractor (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "G3SG1 | Desert Storm (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AUG | Sweeper (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "MP9 | Slide (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "P90 | Sand Spray (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "MP9 | Sand Dashed (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AUG | Contractor (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AUG | Storm (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Tec-9 | Army Mesh (Field-Tested)",
+          "baseUsd": 0.02,
+          "weight": 0.020833333333333332,
+          "priceUsd": 0.02,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Danger Zone Case",
+          "baseUsd": 1.02,
+          "weight": 0.02,
+          "priceUsd": 0.81,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Dreams & Nightmares Case",
+          "baseUsd": 1.15,
+          "weight": 0.02,
+          "priceUsd": 0.78,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Prisma Case",
+          "baseUsd": 1.12,
+          "weight": 0.02,
+          "priceUsd": 0.78,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Prisma 2 Case",
+          "baseUsd": 1.08,
+          "weight": 0.02,
+          "priceUsd": 0.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Recoil Case",
+          "baseUsd": 0.35,
+          "weight": 0.02,
+          "priceUsd": 0.27,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Horizon Case",
+          "baseUsd": 1.36,
+          "weight": 0.02,
+          "priceUsd": 1.14,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Spectrum 2 Case",
+          "baseUsd": 2.68,
+          "weight": 0.02,
+          "priceUsd": 2.16,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Operation Breakout Weapon Case",
+          "baseUsd": 7.27,
+          "weight": 0.02,
+          "priceUsd": 6.38,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Fever Case",
+          "baseUsd": 0.66,
+          "weight": 0.02,
+          "priceUsd": 0.47,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "CS20 Case",
+          "baseUsd": 0.82,
+          "weight": 0.02,
+          "priceUsd": 0.55,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A1-S | Printstream (Minimal Wear)",
+          "baseUsd": 264.05,
+          "weight": 0.02,
+          "priceUsd": 194.08,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SSG 08 | Dragonfire (Minimal Wear)",
+          "baseUsd": 253.81,
+          "weight": 0.02,
+          "priceUsd": 184.11,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A1-S | Blue Phosphor (Factory New)",
+          "baseUsd": 558.8,
+          "weight": 0.02,
+          "priceUsd": 426.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SSG 08 | Dragonfire (Factory New)",
+          "baseUsd": 323.33,
+          "weight": 0.02,
+          "priceUsd": 248.9,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AK-47 | Vulcan (Minimal Wear)",
+          "baseUsd": 362.22,
+          "weight": 0.02,
+          "priceUsd": 266.18,
+          "updatedAt": 1795146912
+        }
+      ],
+      "history": [
+        {
+          "value": 1000.0000000000005,
+          "observedAt": 1790438112
+        },
+        {
+          "value": 1000.4733579088476,
+          "observedAt": 1790438415
+        },
+        {
+          "value": 1000.416391,
+          "observedAt": 1790438713
+        },
+        {
+          "value": 1000.416391,
+          "observedAt": 1790439012
+        },
+        {
+          "value": 1000.292261,
+          "observedAt": 1790439312
+        },
+        {
+          "value": 1000.292261,
+          "observedAt": 1790439614
+        },
+        {
+          "value": 1000.740753,
+          "observedAt": 1790439912
+        },
+        {
+          "value": 1001.040783,
+          "observedAt": 1790440512
+        },
+        {
+          "value": 1000.418378,
+          "observedAt": 1790440813
+        },
+        {
+          "value": 1000.418378,
+          "observedAt": 1790441114
+        },
+        {
+          "value": 1000.207403,
+          "observedAt": 1790441413
+        },
+        {
+          "value": 1000.331533,
+          "observedAt": 1790441713
+        },
+        {
+          "value": 999.809794,
+          "observedAt": 1790442014
+        },
+        {
+          "value": 1000.877777,
+          "observedAt": 1790442613
+        },
+        {
+          "value": 1000.119222,
+          "observedAt": 1790442913
+        },
+        {
+          "value": 998.727917,
+          "observedAt": 1790443212
+        },
+        {
+          "value": 1000.640961,
+          "observedAt": 1790443513
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790443812
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790444414
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790444715
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790445013
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790445312
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790445614
+        },
+        {
+          "value": 1001.473604,
+          "observedAt": 1790446213
+        },
+        {
+          "value": 994.475918,
+          "observedAt": 1790446513
+        },
+        {
+          "value": 994.475918,
+          "observedAt": 1790446812
+        },
+        {
+          "value": 998.026012,
+          "observedAt": 1790447112
+        },
+        {
+          "value": 999.803967,
+          "observedAt": 1790447412
+        },
+        {
+          "value": 999.803967,
+          "observedAt": 1790448013
+        },
+        {
+          "value": 999.97788,
+          "observedAt": 1790448613
+        },
+        {
+          "value": 1000.665638,
+          "observedAt": 1790449214
+        },
+        {
+          "value": 1001.915723,
+          "observedAt": 1790450113
+        },
+        {
+          "value": 1001.987081,
+          "observedAt": 1790450413
+        },
+        {
+          "value": 1001.987081,
+          "observedAt": 1790450712
+        },
+        {
+          "value": 1001.987081,
+          "observedAt": 1790451013
+        },
+        {
+          "value": 979.244987,
+          "observedAt": 1791273913
+        },
+        {
+          "value": 979.31372,
+          "observedAt": 1791299413
+        },
+        {
+          "value": 981.788247,
+          "observedAt": 1791317713
+        },
+        {
+          "value": 982.507306,
+          "observedAt": 1791330613
+        },
+        {
+          "value": 984.15468,
+          "observedAt": 1791340812
+        },
+        {
+          "value": 988.780908,
+          "observedAt": 1791364516
+        },
+        {
+          "value": 985.240768,
+          "observedAt": 1791390913
+        },
+        {
+          "value": 983.329501,
+          "observedAt": 1791408612
+        },
+        {
+          "value": 975.439122,
+          "observedAt": 1791421813
+        },
+        {
+          "value": 972.787584,
+          "observedAt": 1791444313
+        },
+        {
+          "value": 968.931778,
+          "observedAt": 1791470413
+        },
+        {
+          "value": 976.814694,
+          "observedAt": 1791489913
+        },
+        {
+          "value": 958.701159,
+          "observedAt": 1791505213
+        },
+        {
+          "value": 982.232914,
+          "observedAt": 1791526813
+        },
+        {
+          "value": 985.804333,
+          "observedAt": 1791552313
+        },
+        {
+          "value": 986.179909,
+          "observedAt": 1791572114
+        },
+        {
+          "value": 972.868244,
+          "observedAt": 1791586514
+        },
+        {
+          "value": 980.878592,
+          "observedAt": 1791598213
+        },
+        {
+          "value": 984.599363,
+          "observedAt": 1791620713
+        },
+        {
+          "value": 971.33891,
+          "observedAt": 1791642914
+        },
+        {
+          "value": 979.989279,
+          "observedAt": 1791658213
+        },
+        {
+          "value": 974.429314,
+          "observedAt": 1791669613
+        },
+        {
+          "value": 977.403412,
+          "observedAt": 1791679514
+        },
+        {
+          "value": 979.890639,
+          "observedAt": 1791700214
+        },
+        {
+          "value": 975.793514,
+          "observedAt": 1791724814
+        },
+        {
+          "value": 975.931243,
+          "observedAt": 1791742214
+        },
+        {
+          "value": 980.54744,
+          "observedAt": 1791755413
+        },
+        {
+          "value": 978.938453,
+          "observedAt": 1791765912
+        },
+        {
+          "value": 980.136965,
+          "observedAt": 1791786913
+        },
+        {
+          "value": 982.891607,
+          "observedAt": 1791821116
+        },
+        {
+          "value": 981.494705,
+          "observedAt": 1791845413
+        },
+        {
+          "value": 979.66717,
+          "observedAt": 1791861014
+        },
+        {
+          "value": 964.839665,
+          "observedAt": 1791887715
+        },
+        {
+          "value": 959.345781,
+          "observedAt": 1791913513
+        },
+        {
+          "value": 957.329945,
+          "observedAt": 1791928514
+        },
+        {
+          "value": 950.894746,
+          "observedAt": 1791939615
+        },
+        {
+          "value": 964.050172,
+          "observedAt": 1791957614
+        },
+        {
+          "value": 964.235505,
+          "observedAt": 1791977713
+        },
+        {
+          "value": 968.036069,
+          "observedAt": 1791993313
+        },
+        {
+          "value": 959.449667,
+          "observedAt": 1792008314
+        },
+        {
+          "value": 966.212011,
+          "observedAt": 1792019413
+        },
+        {
+          "value": 970.677179,
+          "observedAt": 1792027513
+        },
+        {
+          "value": 970.617066,
+          "observedAt": 1792044313
+        },
+        {
+          "value": 966.037842,
+          "observedAt": 1792062914
+        },
+        {
+          "value": 965.498975,
+          "observedAt": 1792078514
+        },
+        {
+          "value": 966.27174,
+          "observedAt": 1792092014
+        },
+        {
+          "value": 965.858,
+          "observedAt": 1792103112
+        },
+        {
+          "value": 964.84074,
+          "observedAt": 1792110913
+        },
+        {
+          "value": 968.032777,
+          "observedAt": 1792126514
+        },
+        {
+          "value": 963.154339,
+          "observedAt": 1792143313
+        },
+        {
+          "value": 965.932423,
+          "observedAt": 1792159814
+        },
+        {
+          "value": 968.984696,
+          "observedAt": 1792173613
+        },
+        {
+          "value": 969.070638,
+          "observedAt": 1792184113
+        },
+        {
+          "value": 974.019802,
+          "observedAt": 1792192213
+        },
+        {
+          "value": 977.608369,
+          "observedAt": 1792199712
+        },
+        {
+          "value": 978.245231,
+          "observedAt": 1792215612
+        },
+        {
+          "value": 972.276669,
+          "observedAt": 1792229713
+        },
+        {
+          "value": 965.728098,
+          "observedAt": 1792242314
+        },
+        {
+          "value": 965.553474,
+          "observedAt": 1792254013
+        },
+        {
+          "value": 972.34072,
+          "observedAt": 1792262113
+        },
+        {
+          "value": 974.940407,
+          "observedAt": 1792270213
+        },
+        {
+          "value": 972.279222,
+          "observedAt": 1792276814
+        },
+        {
+          "value": 972.018717,
+          "observedAt": 1792282513
+        },
+        {
+          "value": 967.444085,
+          "observedAt": 1792298713
+        },
+        {
+          "value": 968.750258,
+          "observedAt": 1792314313
+        },
+        {
+          "value": 968.908377,
+          "observedAt": 1792329014
+        },
+        {
+          "value": 962.507339,
+          "observedAt": 1792341013
+        },
+        {
+          "value": 963.931383,
+          "observedAt": 1792349413
+        },
+        {
+          "value": 961.317413,
+          "observedAt": 1792357513
+        },
+        {
+          "value": 962.485918,
+          "observedAt": 1792364413
+        },
+        {
+          "value": 957.69864,
+          "observedAt": 1792371616
+        },
+        {
+          "value": 959.991137,
+          "observedAt": 1792389314
+        },
+        {
+          "value": 951.595171,
+          "observedAt": 1792414213
+        },
+        {
+          "value": 948.868142,
+          "observedAt": 1792435814
+        },
+        {
+          "value": 944.524665,
+          "observedAt": 1792449313
+        },
+        {
+          "value": 942.868458,
+          "observedAt": 1792458913
+        },
+        {
+          "value": 943.482579,
+          "observedAt": 1792476014
+        },
+        {
+          "value": 952.767098,
+          "observedAt": 1792510814
+        },
+        {
+          "value": 944.675964,
+          "observedAt": 1792524614
+        },
+        {
+          "value": 946.694902,
+          "observedAt": 1792535413
+        },
+        {
+          "value": 941.499719,
+          "observedAt": 1792543812
+        },
+        {
+          "value": 950.530356,
+          "observedAt": 1792560013
+        },
+        {
+          "value": 948.2464,
+          "observedAt": 1792577714
+        },
+        {
+          "value": 947.196403,
+          "observedAt": 1792596013
+        },
+        {
+          "value": 939.916958,
+          "observedAt": 1792610413
+        },
+        {
+          "value": 948.529467,
+          "observedAt": 1792621512
+        },
+        {
+          "value": 950.568984,
+          "observedAt": 1792630213
+        },
+        {
+          "value": 953.997518,
+          "observedAt": 1792646713
+        },
+        {
+          "value": 952.561592,
+          "observedAt": 1792665014
+        },
+        {
+          "value": 945.771416,
+          "observedAt": 1792683013
+        },
+        {
+          "value": 954.056322,
+          "observedAt": 1792696813
+        },
+        {
+          "value": 949.64805,
+          "observedAt": 1792707913
+        },
+        {
+          "value": 949.35241,
+          "observedAt": 1792716614
+        },
+        {
+          "value": 946.962806,
+          "observedAt": 1792733112
+        },
+        {
+          "value": 940.299767,
+          "observedAt": 1792751114
+        },
+        {
+          "value": 954.169296,
+          "observedAt": 1792768513
+        },
+        {
+          "value": 947.423235,
+          "observedAt": 1792782914
+        },
+        {
+          "value": 949.277827,
+          "observedAt": 1792793413
+        },
+        {
+          "value": 947.194949,
+          "observedAt": 1792802413
+        },
+        {
+          "value": 947.309069,
+          "observedAt": 1792818013
+        },
+        {
+          "value": 943.072895,
+          "observedAt": 1792833613
+        },
+        {
+          "value": 945.306665,
+          "observedAt": 1792848013
+        },
+        {
+          "value": 945.83634,
+          "observedAt": 1792860012
+        },
+        {
+          "value": 941.295871,
+          "observedAt": 1792868413
+        },
+        {
+          "value": 949.167023,
+          "observedAt": 1792877113
+        },
+        {
+          "value": 946.401357,
+          "observedAt": 1792884613
+        },
+        {
+          "value": 945.2196,
+          "observedAt": 1792891813
+        },
+        {
+          "value": 960.170628,
+          "observedAt": 1792910413
+        },
+        {
+          "value": 940.637769,
+          "observedAt": 1792929314
+        },
+        {
+          "value": 955.489121,
+          "observedAt": 1792943713
+        },
+        {
+          "value": 949.890869,
+          "observedAt": 1792954213
+        },
+        {
+          "value": 954.356525,
+          "observedAt": 1792962912
+        },
+        {
+          "value": 956.998288,
+          "observedAt": 1792970113
+        },
+        {
+          "value": 956.364069,
+          "observedAt": 1792977613
+        },
+        {
+          "value": 955.974581,
+          "observedAt": 1792995913
+        },
+        {
+          "value": 949.909006,
+          "observedAt": 1793020813
+        },
+        {
+          "value": 943.177344,
+          "observedAt": 1793042413
+        },
+        {
+          "value": 945.702329,
+          "observedAt": 1793056213
+        },
+        {
+          "value": 947.957609,
+          "observedAt": 1793066413
+        },
+        {
+          "value": 936.997392,
+          "observedAt": 1793086813
+        },
+        {
+          "value": 942.148001,
+          "observedAt": 1793107813
+        },
+        {
+          "value": 936.371588,
+          "observedAt": 1793127013
+        },
+        {
+          "value": 939.362591,
+          "observedAt": 1793140513
+        },
+        {
+          "value": 942.663396,
+          "observedAt": 1793151613
+        },
+        {
+          "value": 937.975619,
+          "observedAt": 1793172313
+        },
+        {
+          "value": 945.89554,
+          "observedAt": 1793196613
+        },
+        {
+          "value": 933.587626,
+          "observedAt": 1793215813
+        },
+        {
+          "value": 938.083984,
+          "observedAt": 1793229912
+        },
+        {
+          "value": 935.460901,
+          "observedAt": 1793241613
+        },
+        {
+          "value": 944.183675,
+          "observedAt": 1793263816
+        },
+        {
+          "value": 935.62803,
+          "observedAt": 1793288412
+        },
+        {
+          "value": 933.569833,
+          "observedAt": 1793306113
+        },
+        {
+          "value": 939.500829,
+          "observedAt": 1793319313
+        },
+        {
+          "value": 945.089313,
+          "observedAt": 1793339412
+        },
+        {
+          "value": 935.069066,
+          "observedAt": 1793360413
+        },
+        {
+          "value": 933.755527,
+          "observedAt": 1793380213
+        },
+        {
+          "value": 946.047621,
+          "observedAt": 1793395213
+        },
+        {
+          "value": 946.93215,
+          "observedAt": 1793408113
+        },
+        {
+          "value": 942.102677,
+          "observedAt": 1793429413
+        },
+        {
+          "value": 940.055271,
+          "observedAt": 1793451913
+        },
+        {
+          "value": 942.090428,
+          "observedAt": 1793468414
+        },
+        {
+          "value": 947.779701,
+          "observedAt": 1793479213
+        },
+        {
+          "value": 950.058635,
+          "observedAt": 1793490013
+        },
+        {
+          "value": 950.612672,
+          "observedAt": 1793500514
+        },
+        {
+          "value": 937.902117,
+          "observedAt": 1793525712
+        },
+        {
+          "value": 933.765036,
+          "observedAt": 1793550012
+        },
+        {
+          "value": 941.397997,
+          "observedAt": 1793565312
+        },
+        {
+          "value": 940.889999,
+          "observedAt": 1793577013
+        },
+        {
+          "value": 938.302303,
+          "observedAt": 1793587513
+        },
+        {
+          "value": 941.810446,
+          "observedAt": 1793613914
+        },
+        {
+          "value": 940.074019,
+          "observedAt": 1793650512
+        },
+        {
+          "value": 937.960239,
+          "observedAt": 1793672412
+        },
+        {
+          "value": 937.001499,
+          "observedAt": 1793698813
+        },
+        {
+          "value": 921.264837,
+          "observedAt": 1793726113
+        },
+        {
+          "value": 922.45925,
+          "observedAt": 1793744412
+        },
+        {
+          "value": 920.123811,
+          "observedAt": 1793759112
+        },
+        {
+          "value": 920.431715,
+          "observedAt": 1793785214
+        },
+        {
+          "value": 930.488676,
+          "observedAt": 1793813412
+        },
+        {
+          "value": 929.896248,
+          "observedAt": 1793832313
+        },
+        {
+          "value": 920.170175,
+          "observedAt": 1793847012
+        },
+        {
+          "value": 921.08208,
+          "observedAt": 1793872513
+        },
+        {
+          "value": 918.076223,
+          "observedAt": 1793900713
+        },
+        {
+          "value": 916.378853,
+          "observedAt": 1793919013
+        },
+        {
+          "value": 915.983151,
+          "observedAt": 1793933413
+        },
+        {
+          "value": 920.69245,
+          "observedAt": 1793959213
+        },
+        {
+          "value": 918.211652,
+          "observedAt": 1793985613
+        },
+        {
+          "value": 922.711049,
+          "observedAt": 1794003013
+        },
+        {
+          "value": 919.249371,
+          "observedAt": 1794016213
+        },
+        {
+          "value": 915.939864,
+          "observedAt": 1794037813
+        },
+        {
+          "value": 914.24373,
+          "observedAt": 1794061213
+        },
+        {
+          "value": 915.006999,
+          "observedAt": 1794077413
+        },
+        {
+          "value": 918.079562,
+          "observedAt": 1794090013
+        },
+        {
+          "value": 924.472239,
+          "observedAt": 1794101413
+        },
+        {
+          "value": 924.976348,
+          "observedAt": 1794124212
+        },
+        {
+          "value": 921.485167,
+          "observedAt": 1794148213
+        },
+        {
+          "value": 921.805571,
+          "observedAt": 1794164413
+        },
+        {
+          "value": 919.349755,
+          "observedAt": 1794177613
+        },
+        {
+          "value": 926.754551,
+          "observedAt": 1794189312
+        },
+        {
+          "value": 925.098947,
+          "observedAt": 1794216613
+        },
+        {
+          "value": 924.017389,
+          "observedAt": 1794254112
+        },
+        {
+          "value": 919.735228,
+          "observedAt": 1794278114
+        },
+        {
+          "value": 919.357102,
+          "observedAt": 1794306014
+        },
+        {
+          "value": 916.021895,
+          "observedAt": 1794351913
+        },
+        {
+          "value": 915.9054,
+          "observedAt": 1794364813
+        },
+        {
+          "value": 912.686055,
+          "observedAt": 1794390613
+        },
+        {
+          "value": 902.128673,
+          "observedAt": 1794417913
+        },
+        {
+          "value": 912.136837,
+          "observedAt": 1794440112
+        },
+        {
+          "value": 908.737501,
+          "observedAt": 1794456615
+        },
+        {
+          "value": 895.775714,
+          "observedAt": 1794487213
+        },
+        {
+          "value": 891.579736,
+          "observedAt": 1794515113
+        },
+        {
+          "value": 895.704167,
+          "observedAt": 1794532813
+        },
+        {
+          "value": 893.724621,
+          "observedAt": 1794557412
+        },
+        {
+          "value": 896.004606,
+          "observedAt": 1794586513
+        },
+        {
+          "value": 893.752105,
+          "observedAt": 1794607213
+        },
+        {
+          "value": 895.862542,
+          "observedAt": 1794622213
+        },
+        {
+          "value": 894.468989,
+          "observedAt": 1794646513
+        },
+        {
+          "value": 892.809031,
+          "observedAt": 1794669913
+        },
+        {
+          "value": 891.80266,
+          "observedAt": 1794686112
+        },
+        {
+          "value": 889.731576,
+          "observedAt": 1794699913
+        },
+        {
+          "value": 885.302428,
+          "observedAt": 1794712212
+        },
+        {
+          "value": 882.066397,
+          "observedAt": 1794739513
+        },
+        {
+          "value": 894.085153,
+          "observedAt": 1794763513
+        },
+        {
+          "value": 890.555253,
+          "observedAt": 1794779712
+        },
+        {
+          "value": 887.939904,
+          "observedAt": 1794793513
+        },
+        {
+          "value": 888.642808,
+          "observedAt": 1794818114
+        },
+        {
+          "value": 883.15467,
+          "observedAt": 1794855012
+        },
+        {
+          "value": 883.926285,
+          "observedAt": 1794881413
+        },
+        {
+          "value": 878.949094,
+          "observedAt": 1794911713
+        },
+        {
+          "value": 878.698536,
+          "observedAt": 1794943213
+        },
+        {
+          "value": 880.511718,
+          "observedAt": 1794966013
+        },
+        {
+          "value": 876.752873,
+          "observedAt": 1794992713
+        },
+        {
+          "value": 871.290594,
+          "observedAt": 1795024513
+        },
+        {
+          "value": 872.179477,
+          "observedAt": 1795047013
+        },
+        {
+          "value": 868.295493,
+          "observedAt": 1795072513
+        },
+        {
+          "value": 859.78616,
+          "observedAt": 1795106112
+        },
+        {
+          "value": 861.949194,
+          "observedAt": 1795129813
+        },
+        {
+          "value": 862.370786,
+          "observedAt": 1795146912
+        }
+      ]
+    },
+    {
+      "ticker": "HS-KNIFE20",
+      "indexId": "0x13d0875f8f67df248d63630f61d17836be8f731512a999f09b11b050173a3f13",
+      "provenance": "INDICATIVE",
+      "settlementEligible": false,
+      "status": "OK",
+      "value": 864.526355,
+      "changeSinceBasePct": -13.547364500000004,
+      "baseAt": 1790438219,
+      "observedAt": 1795146912,
+      "coverage": 20,
+      "count": 20,
+      "constituents": [
+        {
+          "name": "★ Paracord Knife | Fade (Factory New)",
+          "baseUsd": 132.07,
+          "weight": 0.05,
+          "priceUsd": 116.03,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Kukri Knife | Fade (Factory New)",
+          "baseUsd": 165.76,
+          "weight": 0.05,
+          "priceUsd": 138.07,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bowie Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 118.19,
+          "weight": 0.05,
+          "priceUsd": 102.49,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Falchion Knife | Marble Fade (Factory New)",
+          "baseUsd": 159.07,
+          "weight": 0.05,
+          "priceUsd": 149.71,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife",
+          "baseUsd": 54.81,
+          "weight": 0.05,
+          "priceUsd": 45.31,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bayonet | Tiger Tooth (Factory New)",
+          "baseUsd": 266.3,
+          "weight": 0.05,
+          "priceUsd": 233.71,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Falchion Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 126.91,
+          "weight": 0.05,
+          "priceUsd": 119.58,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Huntsman Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 146.53,
+          "weight": 0.05,
+          "priceUsd": 125.04,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife | Fade (Factory New)",
+          "baseUsd": 126.15,
+          "weight": 0.05,
+          "priceUsd": 110.72,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Huntsman Knife | Marble Fade (Factory New)",
+          "baseUsd": 185.29,
+          "weight": 0.05,
+          "priceUsd": 138.72,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Nomad Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 181.8,
+          "weight": 0.05,
+          "priceUsd": 146.04,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Skeleton Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 308.95,
+          "weight": 0.05,
+          "priceUsd": 254.3,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Nomad Knife | Marble Fade (Factory New)",
+          "baseUsd": 207.47,
+          "weight": 0.05,
+          "priceUsd": 191.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Bowie Knife | Marble Fade (Factory New)",
+          "baseUsd": 142.71,
+          "weight": 0.05,
+          "priceUsd": 127.76,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Survival Knife | Marble Fade (Factory New)",
+          "baseUsd": 115.24,
+          "weight": 0.05,
+          "priceUsd": 104.87,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Huntsman Knife | Lore (Field-Tested)",
+          "baseUsd": 82.68,
+          "weight": 0.05,
+          "priceUsd": 76.51,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Shadow Daggers | Marble Fade (Factory New)",
+          "baseUsd": 90.88,
+          "weight": 0.05,
+          "priceUsd": 72.4,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Ursus Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 135.64,
+          "weight": 0.05,
+          "priceUsd": 107.8,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Kukri Knife | Case Hardened (Field-Tested)",
+          "baseUsd": 93.45,
+          "weight": 0.05,
+          "priceUsd": 85.39,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Paracord Knife | Tiger Tooth (Factory New)",
+          "baseUsd": 107.29,
+          "weight": 0.05,
+          "priceUsd": 92.05,
+          "updatedAt": 1795146912
+        }
+      ],
+      "history": [
+        {
+          "value": 1000.0000000000002,
+          "observedAt": 1790438112
+        },
+        {
+          "value": 1000.984222943085,
+          "observedAt": 1790438415
+        },
+        {
+          "value": 1000.841805,
+          "observedAt": 1790438713
+        },
+        {
+          "value": 1000.841805,
+          "observedAt": 1790439012
+        },
+        {
+          "value": 1000.312448,
+          "observedAt": 1790439312
+        },
+        {
+          "value": 1000.312448,
+          "observedAt": 1790439614
+        },
+        {
+          "value": 1000.312448,
+          "observedAt": 1790439912
+        },
+        {
+          "value": 998.237102,
+          "observedAt": 1790440512
+        },
+        {
+          "value": 998.237102,
+          "observedAt": 1790440813
+        },
+        {
+          "value": 998.237102,
+          "observedAt": 1790441114
+        },
+        {
+          "value": 997.495593,
+          "observedAt": 1790441413
+        },
+        {
+          "value": 997.805917,
+          "observedAt": 1790441713
+        },
+        {
+          "value": 997.805917,
+          "observedAt": 1790442014
+        },
+        {
+          "value": 997.640842,
+          "observedAt": 1790442613
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790442913
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790443212
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790443513
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790443812
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790444414
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790444715
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790445013
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790445312
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790445614
+        },
+        {
+          "value": 997.030487,
+          "observedAt": 1790446213
+        },
+        {
+          "value": 992.213848,
+          "observedAt": 1790446513
+        },
+        {
+          "value": 992.213848,
+          "observedAt": 1790446812
+        },
+        {
+          "value": 992.213848,
+          "observedAt": 1790447112
+        },
+        {
+          "value": 992.890724,
+          "observedAt": 1790447412
+        },
+        {
+          "value": 992.890724,
+          "observedAt": 1790448013
+        },
+        {
+          "value": 992.890724,
+          "observedAt": 1790448613
+        },
+        {
+          "value": 994.088112,
+          "observedAt": 1790449214
+        },
+        {
+          "value": 996.428596,
+          "observedAt": 1790450113
+        },
+        {
+          "value": 996.428596,
+          "observedAt": 1790450413
+        },
+        {
+          "value": 996.428596,
+          "observedAt": 1790450712
+        },
+        {
+          "value": 996.428596,
+          "observedAt": 1790451013
+        },
+        {
+          "value": 980.755677,
+          "observedAt": 1791273913
+        },
+        {
+          "value": 983.169652,
+          "observedAt": 1791299413
+        },
+        {
+          "value": 989.529408,
+          "observedAt": 1791317713
+        },
+        {
+          "value": 993.700596,
+          "observedAt": 1791330613
+        },
+        {
+          "value": 998.241776,
+          "observedAt": 1791340812
+        },
+        {
+          "value": 992.70423,
+          "observedAt": 1791364516
+        },
+        {
+          "value": 988.981279,
+          "observedAt": 1791390913
+        },
+        {
+          "value": 998.895011,
+          "observedAt": 1791408612
+        },
+        {
+          "value": 996.284484,
+          "observedAt": 1791421813
+        },
+        {
+          "value": 986.43837,
+          "observedAt": 1791444313
+        },
+        {
+          "value": 992.928936,
+          "observedAt": 1791470413
+        },
+        {
+          "value": 996.723827,
+          "observedAt": 1791489913
+        },
+        {
+          "value": 998.862336,
+          "observedAt": 1791505213
+        },
+        {
+          "value": 995.269322,
+          "observedAt": 1791526813
+        },
+        {
+          "value": 993.339285,
+          "observedAt": 1791552313
+        },
+        {
+          "value": 1011.600192,
+          "observedAt": 1791572114
+        },
+        {
+          "value": 1013.479869,
+          "observedAt": 1791586514
+        },
+        {
+          "value": 1012.681561,
+          "observedAt": 1791598213
+        },
+        {
+          "value": 1012.896884,
+          "observedAt": 1791620713
+        },
+        {
+          "value": 998.414566,
+          "observedAt": 1791642914
+        },
+        {
+          "value": 996.473515,
+          "observedAt": 1791658213
+        },
+        {
+          "value": 989.617828,
+          "observedAt": 1791669613
+        },
+        {
+          "value": 978.871198,
+          "observedAt": 1791679514
+        },
+        {
+          "value": 984.512659,
+          "observedAt": 1791700214
+        },
+        {
+          "value": 993.100083,
+          "observedAt": 1791724814
+        },
+        {
+          "value": 985.358644,
+          "observedAt": 1791742214
+        },
+        {
+          "value": 980.950376,
+          "observedAt": 1791755413
+        },
+        {
+          "value": 977.925595,
+          "observedAt": 1791765912
+        },
+        {
+          "value": 987.482907,
+          "observedAt": 1791786913
+        },
+        {
+          "value": 989.879836,
+          "observedAt": 1791821116
+        },
+        {
+          "value": 992.799443,
+          "observedAt": 1791845413
+        },
+        {
+          "value": 989.765205,
+          "observedAt": 1791861014
+        },
+        {
+          "value": 976.820107,
+          "observedAt": 1791887715
+        },
+        {
+          "value": 984.086706,
+          "observedAt": 1791913513
+        },
+        {
+          "value": 978.692063,
+          "observedAt": 1791928514
+        },
+        {
+          "value": 956.450407,
+          "observedAt": 1791939615
+        },
+        {
+          "value": 966.578049,
+          "observedAt": 1791957614
+        },
+        {
+          "value": 952.328932,
+          "observedAt": 1791977713
+        },
+        {
+          "value": 971.859848,
+          "observedAt": 1791993313
+        },
+        {
+          "value": 974.578982,
+          "observedAt": 1792008314
+        },
+        {
+          "value": 976.01751,
+          "observedAt": 1792019413
+        },
+        {
+          "value": 959.764337,
+          "observedAt": 1792027513
+        },
+        {
+          "value": 967.6013,
+          "observedAt": 1792044313
+        },
+        {
+          "value": 974.228491,
+          "observedAt": 1792062914
+        },
+        {
+          "value": 965.84377,
+          "observedAt": 1792078514
+        },
+        {
+          "value": 979.180792,
+          "observedAt": 1792092014
+        },
+        {
+          "value": 985.249456,
+          "observedAt": 1792103112
+        },
+        {
+          "value": 972.976138,
+          "observedAt": 1792110913
+        },
+        {
+          "value": 971.243954,
+          "observedAt": 1792126514
+        },
+        {
+          "value": 956.822725,
+          "observedAt": 1792143313
+        },
+        {
+          "value": 972.5683,
+          "observedAt": 1792159814
+        },
+        {
+          "value": 971.528636,
+          "observedAt": 1792173613
+        },
+        {
+          "value": 968.93243,
+          "observedAt": 1792184113
+        },
+        {
+          "value": 971.288204,
+          "observedAt": 1792192213
+        },
+        {
+          "value": 971.028338,
+          "observedAt": 1792199712
+        },
+        {
+          "value": 975.508006,
+          "observedAt": 1792215612
+        },
+        {
+          "value": 972.843137,
+          "observedAt": 1792229713
+        },
+        {
+          "value": 966.323881,
+          "observedAt": 1792242314
+        },
+        {
+          "value": 965.76707,
+          "observedAt": 1792254013
+        },
+        {
+          "value": 972.330588,
+          "observedAt": 1792262113
+        },
+        {
+          "value": 974.377209,
+          "observedAt": 1792270213
+        },
+        {
+          "value": 972.331278,
+          "observedAt": 1792276814
+        },
+        {
+          "value": 969.630061,
+          "observedAt": 1792282513
+        },
+        {
+          "value": 973.010264,
+          "observedAt": 1792298713
+        },
+        {
+          "value": 970.38166,
+          "observedAt": 1792314313
+        },
+        {
+          "value": 967.331294,
+          "observedAt": 1792329014
+        },
+        {
+          "value": 962.55741,
+          "observedAt": 1792341013
+        },
+        {
+          "value": 966.47885,
+          "observedAt": 1792349413
+        },
+        {
+          "value": 958.91639,
+          "observedAt": 1792357513
+        },
+        {
+          "value": 959.623293,
+          "observedAt": 1792364413
+        },
+        {
+          "value": 957.25067,
+          "observedAt": 1792371616
+        },
+        {
+          "value": 950.393122,
+          "observedAt": 1792389314
+        },
+        {
+          "value": 949.286967,
+          "observedAt": 1792414213
+        },
+        {
+          "value": 943.679892,
+          "observedAt": 1792435814
+        },
+        {
+          "value": 947.300469,
+          "observedAt": 1792449313
+        },
+        {
+          "value": 952.502559,
+          "observedAt": 1792458913
+        },
+        {
+          "value": 949.801826,
+          "observedAt": 1792476014
+        },
+        {
+          "value": 947.52249,
+          "observedAt": 1792510814
+        },
+        {
+          "value": 937.546053,
+          "observedAt": 1792524614
+        },
+        {
+          "value": 938.92383,
+          "observedAt": 1792535413
+        },
+        {
+          "value": 936.56791,
+          "observedAt": 1792543812
+        },
+        {
+          "value": 943.642438,
+          "observedAt": 1792560013
+        },
+        {
+          "value": 944.863238,
+          "observedAt": 1792577714
+        },
+        {
+          "value": 940.352072,
+          "observedAt": 1792596013
+        },
+        {
+          "value": 937.998046,
+          "observedAt": 1792610413
+        },
+        {
+          "value": 942.130413,
+          "observedAt": 1792621512
+        },
+        {
+          "value": 946.385981,
+          "observedAt": 1792630213
+        },
+        {
+          "value": 953.69885,
+          "observedAt": 1792646713
+        },
+        {
+          "value": 955.224114,
+          "observedAt": 1792665014
+        },
+        {
+          "value": 952.390726,
+          "observedAt": 1792683013
+        },
+        {
+          "value": 946.949795,
+          "observedAt": 1792696813
+        },
+        {
+          "value": 949.942647,
+          "observedAt": 1792707913
+        },
+        {
+          "value": 949.088347,
+          "observedAt": 1792716614
+        },
+        {
+          "value": 949.233396,
+          "observedAt": 1792733112
+        },
+        {
+          "value": 945.099556,
+          "observedAt": 1792751114
+        },
+        {
+          "value": 960.39217,
+          "observedAt": 1792768513
+        },
+        {
+          "value": 945.928488,
+          "observedAt": 1792782914
+        },
+        {
+          "value": 962.000076,
+          "observedAt": 1792793413
+        },
+        {
+          "value": 960.76816,
+          "observedAt": 1792802413
+        },
+        {
+          "value": 954.039287,
+          "observedAt": 1792818013
+        },
+        {
+          "value": 959.345815,
+          "observedAt": 1792833613
+        },
+        {
+          "value": 955.857804,
+          "observedAt": 1792848013
+        },
+        {
+          "value": 960.392771,
+          "observedAt": 1792860012
+        },
+        {
+          "value": 968.68831,
+          "observedAt": 1792868413
+        },
+        {
+          "value": 955.466603,
+          "observedAt": 1792877113
+        },
+        {
+          "value": 967.298611,
+          "observedAt": 1792884613
+        },
+        {
+          "value": 968.166478,
+          "observedAt": 1792891813
+        },
+        {
+          "value": 970.751538,
+          "observedAt": 1792910413
+        },
+        {
+          "value": 979.052256,
+          "observedAt": 1792929314
+        },
+        {
+          "value": 972.590058,
+          "observedAt": 1792943713
+        },
+        {
+          "value": 968.393312,
+          "observedAt": 1792954213
+        },
+        {
+          "value": 967.30188,
+          "observedAt": 1792962912
+        },
+        {
+          "value": 967.623051,
+          "observedAt": 1792970113
+        },
+        {
+          "value": 960.925975,
+          "observedAt": 1792977613
+        },
+        {
+          "value": 963.247936,
+          "observedAt": 1792995913
+        },
+        {
+          "value": 962.213724,
+          "observedAt": 1793020813
+        },
+        {
+          "value": 960.893686,
+          "observedAt": 1793042413
+        },
+        {
+          "value": 974.772946,
+          "observedAt": 1793056213
+        },
+        {
+          "value": 967.174832,
+          "observedAt": 1793066413
+        },
+        {
+          "value": 949.096079,
+          "observedAt": 1793086813
+        },
+        {
+          "value": 956.00004,
+          "observedAt": 1793107813
+        },
+        {
+          "value": 946.408849,
+          "observedAt": 1793127013
+        },
+        {
+          "value": 951.092649,
+          "observedAt": 1793140513
+        },
+        {
+          "value": 949.453686,
+          "observedAt": 1793151613
+        },
+        {
+          "value": 951.222021,
+          "observedAt": 1793172313
+        },
+        {
+          "value": 952.686226,
+          "observedAt": 1793196613
+        },
+        {
+          "value": 957.343004,
+          "observedAt": 1793215813
+        },
+        {
+          "value": 944.026296,
+          "observedAt": 1793229912
+        },
+        {
+          "value": 944.009073,
+          "observedAt": 1793241613
+        },
+        {
+          "value": 947.915777,
+          "observedAt": 1793263816
+        },
+        {
+          "value": 932.442501,
+          "observedAt": 1793288412
+        },
+        {
+          "value": 942.356573,
+          "observedAt": 1793306113
+        },
+        {
+          "value": 940.518827,
+          "observedAt": 1793319313
+        },
+        {
+          "value": 941.445877,
+          "observedAt": 1793339412
+        },
+        {
+          "value": 935.590946,
+          "observedAt": 1793360413
+        },
+        {
+          "value": 944.280953,
+          "observedAt": 1793380213
+        },
+        {
+          "value": 954.126809,
+          "observedAt": 1793395213
+        },
+        {
+          "value": 959.245456,
+          "observedAt": 1793408113
+        },
+        {
+          "value": 957.142571,
+          "observedAt": 1793429413
+        },
+        {
+          "value": 956.091099,
+          "observedAt": 1793451913
+        },
+        {
+          "value": 954.268357,
+          "observedAt": 1793468414
+        },
+        {
+          "value": 958.872243,
+          "observedAt": 1793479213
+        },
+        {
+          "value": 960.500149,
+          "observedAt": 1793490013
+        },
+        {
+          "value": 962.122826,
+          "observedAt": 1793500514
+        },
+        {
+          "value": 958.337974,
+          "observedAt": 1793525712
+        },
+        {
+          "value": 959.794238,
+          "observedAt": 1793550012
+        },
+        {
+          "value": 960.883797,
+          "observedAt": 1793565312
+        },
+        {
+          "value": 967.21052,
+          "observedAt": 1793577013
+        },
+        {
+          "value": 966.689175,
+          "observedAt": 1793587513
+        },
+        {
+          "value": 965.318865,
+          "observedAt": 1793613914
+        },
+        {
+          "value": 958.578501,
+          "observedAt": 1793650512
+        },
+        {
+          "value": 961.309198,
+          "observedAt": 1793672412
+        },
+        {
+          "value": 956.504982,
+          "observedAt": 1793698813
+        },
+        {
+          "value": 920.304565,
+          "observedAt": 1793726113
+        },
+        {
+          "value": 924.721108,
+          "observedAt": 1793744412
+        },
+        {
+          "value": 919.745242,
+          "observedAt": 1793759112
+        },
+        {
+          "value": 927.12797,
+          "observedAt": 1793785214
+        },
+        {
+          "value": 941.252929,
+          "observedAt": 1793813412
+        },
+        {
+          "value": 944.76598,
+          "observedAt": 1793832313
+        },
+        {
+          "value": 937.135656,
+          "observedAt": 1793847012
+        },
+        {
+          "value": 943.504529,
+          "observedAt": 1793872513
+        },
+        {
+          "value": 932.849189,
+          "observedAt": 1793900713
+        },
+        {
+          "value": 935.304017,
+          "observedAt": 1793919013
+        },
+        {
+          "value": 942.233211,
+          "observedAt": 1793933413
+        },
+        {
+          "value": 938.659426,
+          "observedAt": 1793959213
+        },
+        {
+          "value": 926.765781,
+          "observedAt": 1793985613
+        },
+        {
+          "value": 937.787811,
+          "observedAt": 1794003013
+        },
+        {
+          "value": 934.738127,
+          "observedAt": 1794016213
+        },
+        {
+          "value": 933.950166,
+          "observedAt": 1794037813
+        },
+        {
+          "value": 926.890653,
+          "observedAt": 1794061213
+        },
+        {
+          "value": 920.489327,
+          "observedAt": 1794077413
+        },
+        {
+          "value": 930.106651,
+          "observedAt": 1794090013
+        },
+        {
+          "value": 932.031284,
+          "observedAt": 1794101413
+        },
+        {
+          "value": 937.982452,
+          "observedAt": 1794124212
+        },
+        {
+          "value": 931.407058,
+          "observedAt": 1794148213
+        },
+        {
+          "value": 935.355072,
+          "observedAt": 1794164413
+        },
+        {
+          "value": 930.77912,
+          "observedAt": 1794177613
+        },
+        {
+          "value": 931.872744,
+          "observedAt": 1794189312
+        },
+        {
+          "value": 929.978906,
+          "observedAt": 1794216613
+        },
+        {
+          "value": 933.307978,
+          "observedAt": 1794254112
+        },
+        {
+          "value": 930.439439,
+          "observedAt": 1794278114
+        },
+        {
+          "value": 932.735889,
+          "observedAt": 1794306014
+        },
+        {
+          "value": 923.515741,
+          "observedAt": 1794351913
+        },
+        {
+          "value": 923.370087,
+          "observedAt": 1794364813
+        },
+        {
+          "value": 913.887903,
+          "observedAt": 1794390613
+        },
+        {
+          "value": 905.030916,
+          "observedAt": 1794417913
+        },
+        {
+          "value": 909.320386,
+          "observedAt": 1794440112
+        },
+        {
+          "value": 907.456787,
+          "observedAt": 1794456615
+        },
+        {
+          "value": 889.280592,
+          "observedAt": 1794487213
+        },
+        {
+          "value": 902.192295,
+          "observedAt": 1794515113
+        },
+        {
+          "value": 901.258315,
+          "observedAt": 1794532813
+        },
+        {
+          "value": 900.970132,
+          "observedAt": 1794557412
+        },
+        {
+          "value": 903.980567,
+          "observedAt": 1794586513
+        },
+        {
+          "value": 895.624329,
+          "observedAt": 1794607213
+        },
+        {
+          "value": 898.097168,
+          "observedAt": 1794622213
+        },
+        {
+          "value": 892.456466,
+          "observedAt": 1794646513
+        },
+        {
+          "value": 889.371138,
+          "observedAt": 1794669913
+        },
+        {
+          "value": 906.026757,
+          "observedAt": 1794686112
+        },
+        {
+          "value": 899.640919,
+          "observedAt": 1794699913
+        },
+        {
+          "value": 891.620782,
+          "observedAt": 1794712212
+        },
+        {
+          "value": 890.932297,
+          "observedAt": 1794739513
+        },
+        {
+          "value": 901.614938,
+          "observedAt": 1794763513
+        },
+        {
+          "value": 898.095191,
+          "observedAt": 1794779712
+        },
+        {
+          "value": 900.048394,
+          "observedAt": 1794793513
+        },
+        {
+          "value": 904.271164,
+          "observedAt": 1794818114
+        },
+        {
+          "value": 898.720325,
+          "observedAt": 1794855012
+        },
+        {
+          "value": 888.315805,
+          "observedAt": 1794881413
+        },
+        {
+          "value": 881.240583,
+          "observedAt": 1794911713
+        },
+        {
+          "value": 887.692191,
+          "observedAt": 1794943213
+        },
+        {
+          "value": 883.898947,
+          "observedAt": 1794966013
+        },
+        {
+          "value": 883.693772,
+          "observedAt": 1794992713
+        },
+        {
+          "value": 878.80829,
+          "observedAt": 1795024513
+        },
+        {
+          "value": 877.257713,
+          "observedAt": 1795047013
+        },
+        {
+          "value": 876.091892,
+          "observedAt": 1795072513
+        },
+        {
+          "value": 870.852506,
+          "observedAt": 1795106112
+        },
+        {
+          "value": 868.094942,
+          "observedAt": 1795129813
+        },
+        {
+          "value": 864.526355,
+          "observedAt": 1795146912
+        }
+      ]
+    },
+    {
+      "ticker": "HS-GLOVE10",
+      "indexId": "0xc530f4224292f265d1b8ba33cb93ed74244f5652078c1180d0b556a32d0f3c13",
+      "provenance": "INDICATIVE",
+      "settlementEligible": false,
+      "status": "OK",
+      "value": 860.75369,
+      "changeSinceBasePct": -13.924630999999998,
+      "baseAt": 1790438219,
+      "observedAt": 1795146912,
+      "coverage": 10,
+      "count": 10,
+      "constituents": [
+        {
+          "name": "★ Specialist Gloves | Crimson Web (Field-Tested)",
+          "baseUsd": 131.38,
+          "weight": 0.1,
+          "priceUsd": 102.66,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Imperial Plaid (Field-Tested)",
+          "baseUsd": 138.46,
+          "weight": 0.1,
+          "priceUsd": 127.53,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Racing Green (Field-Tested)",
+          "baseUsd": 32.77,
+          "weight": 0.1,
+          "priceUsd": 25.59,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Overtake (Field-Tested)",
+          "baseUsd": 44.76,
+          "weight": 0.1,
+          "priceUsd": 41.58,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Polygon (Field-Tested)",
+          "baseUsd": 105.11,
+          "weight": 0.1,
+          "priceUsd": 82.88,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Blood Pressure (Field-Tested)",
+          "baseUsd": 112.65,
+          "weight": 0.1,
+          "priceUsd": 94.27,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Moto Gloves | Turtle (Field-Tested)",
+          "baseUsd": 58.83,
+          "weight": 0.1,
+          "priceUsd": 49.91,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Broken Fang Gloves | Unhinged (Field-Tested)",
+          "baseUsd": 50.76,
+          "weight": 0.1,
+          "priceUsd": 43.95,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Hydra Gloves | Case Hardened (Field-Tested)",
+          "baseUsd": 53.42,
+          "weight": 0.1,
+          "priceUsd": 53.22,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "★ Driver Gloves | Rezan the Red (Field-Tested)",
+          "baseUsd": 60.53,
+          "weight": 0.1,
+          "priceUsd": 52.02,
+          "updatedAt": 1795146912
+        }
+      ],
+      "history": [
+        {
+          "value": 999.9999999999999,
+          "observedAt": 1790438112
+        },
+        {
+          "value": 1002.5245755138517,
+          "observedAt": 1790438415
+        },
+        {
+          "value": 1002.524576,
+          "observedAt": 1790438713
+        },
+        {
+          "value": 1002.524576,
+          "observedAt": 1790439012
+        },
+        {
+          "value": 1002.524576,
+          "observedAt": 1790439312
+        },
+        {
+          "value": 1002.524576,
+          "observedAt": 1790439614
+        },
+        {
+          "value": 1002.524576,
+          "observedAt": 1790439912
+        },
+        {
+          "value": 1002.500333,
+          "observedAt": 1790440512
+        },
+        {
+          "value": 1002.500333,
+          "observedAt": 1790440813
+        },
+        {
+          "value": 1002.500333,
+          "observedAt": 1790441114
+        },
+        {
+          "value": 1002.957023,
+          "observedAt": 1790441413
+        },
+        {
+          "value": 1002.957023,
+          "observedAt": 1790441713
+        },
+        {
+          "value": 1002.957023,
+          "observedAt": 1790442014
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790442613
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790442913
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790443212
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790443513
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790443812
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790444414
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790444715
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790445013
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790445312
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790445614
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790446213
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790446513
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790446812
+        },
+        {
+          "value": 1009.005093,
+          "observedAt": 1790447112
+        },
+        {
+          "value": 1017.043515,
+          "observedAt": 1790447412
+        },
+        {
+          "value": 1017.043515,
+          "observedAt": 1790448013
+        },
+        {
+          "value": 1021.423897,
+          "observedAt": 1790448613
+        },
+        {
+          "value": 1021.423897,
+          "observedAt": 1790449214
+        },
+        {
+          "value": 1019.158828,
+          "observedAt": 1790450113
+        },
+        {
+          "value": 1019.539403,
+          "observedAt": 1790450413
+        },
+        {
+          "value": 1019.539403,
+          "observedAt": 1790450712
+        },
+        {
+          "value": 1019.539403,
+          "observedAt": 1790451013
+        },
+        {
+          "value": 983.153646,
+          "observedAt": 1791273913
+        },
+        {
+          "value": 975.644799,
+          "observedAt": 1791299413
+        },
+        {
+          "value": 985.911455,
+          "observedAt": 1791317713
+        },
+        {
+          "value": 983.255139,
+          "observedAt": 1791330613
+        },
+        {
+          "value": 982.633745,
+          "observedAt": 1791340812
+        },
+        {
+          "value": 989.812232,
+          "observedAt": 1791364516
+        },
+        {
+          "value": 978.424933,
+          "observedAt": 1791390913
+        },
+        {
+          "value": 963.268417,
+          "observedAt": 1791408612
+        },
+        {
+          "value": 975.211673,
+          "observedAt": 1791421813
+        },
+        {
+          "value": 966.412631,
+          "observedAt": 1791444313
+        },
+        {
+          "value": 967.60292,
+          "observedAt": 1791470413
+        },
+        {
+          "value": 950.506227,
+          "observedAt": 1791489913
+        },
+        {
+          "value": 947.042301,
+          "observedAt": 1791505213
+        },
+        {
+          "value": 969.578085,
+          "observedAt": 1791526813
+        },
+        {
+          "value": 976.762919,
+          "observedAt": 1791552313
+        },
+        {
+          "value": 992.425078,
+          "observedAt": 1791572114
+        },
+        {
+          "value": 983.095807,
+          "observedAt": 1791586514
+        },
+        {
+          "value": 996.568597,
+          "observedAt": 1791598213
+        },
+        {
+          "value": 1000.83738,
+          "observedAt": 1791620713
+        },
+        {
+          "value": 1001.885243,
+          "observedAt": 1791642914
+        },
+        {
+          "value": 1015.173392,
+          "observedAt": 1791658213
+        },
+        {
+          "value": 1004.63453,
+          "observedAt": 1791669613
+        },
+        {
+          "value": 998.762028,
+          "observedAt": 1791679514
+        },
+        {
+          "value": 991.753935,
+          "observedAt": 1791700214
+        },
+        {
+          "value": 978.747711,
+          "observedAt": 1791724814
+        },
+        {
+          "value": 971.572943,
+          "observedAt": 1791742214
+        },
+        {
+          "value": 998.183146,
+          "observedAt": 1791755413
+        },
+        {
+          "value": 996.493106,
+          "observedAt": 1791765912
+        },
+        {
+          "value": 1002.924071,
+          "observedAt": 1791786913
+        },
+        {
+          "value": 1005.047097,
+          "observedAt": 1791821116
+        },
+        {
+          "value": 989.062583,
+          "observedAt": 1791845413
+        },
+        {
+          "value": 993.222271,
+          "observedAt": 1791861014
+        },
+        {
+          "value": 982.142767,
+          "observedAt": 1791887715
+        },
+        {
+          "value": 960.076371,
+          "observedAt": 1791913513
+        },
+        {
+          "value": 955.070668,
+          "observedAt": 1791928514
+        },
+        {
+          "value": 960.898951,
+          "observedAt": 1791939615
+        },
+        {
+          "value": 970.313969,
+          "observedAt": 1791957614
+        },
+        {
+          "value": 979.832862,
+          "observedAt": 1791977713
+        },
+        {
+          "value": 971.002732,
+          "observedAt": 1791993313
+        },
+        {
+          "value": 971.893074,
+          "observedAt": 1792008314
+        },
+        {
+          "value": 968.114063,
+          "observedAt": 1792019413
+        },
+        {
+          "value": 983.321941,
+          "observedAt": 1792027513
+        },
+        {
+          "value": 987.09571,
+          "observedAt": 1792044313
+        },
+        {
+          "value": 972.588306,
+          "observedAt": 1792062914
+        },
+        {
+          "value": 1002.384192,
+          "observedAt": 1792078514
+        },
+        {
+          "value": 1014.209602,
+          "observedAt": 1792092014
+        },
+        {
+          "value": 1011.72799,
+          "observedAt": 1792103112
+        },
+        {
+          "value": 1001.080667,
+          "observedAt": 1792110913
+        },
+        {
+          "value": 1002.651456,
+          "observedAt": 1792126514
+        },
+        {
+          "value": 994.255477,
+          "observedAt": 1792143313
+        },
+        {
+          "value": 998.850743,
+          "observedAt": 1792159814
+        },
+        {
+          "value": 1003.52965,
+          "observedAt": 1792173613
+        },
+        {
+          "value": 983.722416,
+          "observedAt": 1792184113
+        },
+        {
+          "value": 996.563949,
+          "observedAt": 1792192213
+        },
+        {
+          "value": 993.897614,
+          "observedAt": 1792199712
+        },
+        {
+          "value": 977.510573,
+          "observedAt": 1792215612
+        },
+        {
+          "value": 975.627785,
+          "observedAt": 1792229713
+        },
+        {
+          "value": 970.406858,
+          "observedAt": 1792242314
+        },
+        {
+          "value": 964.388577,
+          "observedAt": 1792254013
+        },
+        {
+          "value": 986.675881,
+          "observedAt": 1792262113
+        },
+        {
+          "value": 984.976368,
+          "observedAt": 1792270213
+        },
+        {
+          "value": 972.211688,
+          "observedAt": 1792276814
+        },
+        {
+          "value": 980.662717,
+          "observedAt": 1792282513
+        },
+        {
+          "value": 959.015581,
+          "observedAt": 1792298713
+        },
+        {
+          "value": 995.941206,
+          "observedAt": 1792314313
+        },
+        {
+          "value": 984.465662,
+          "observedAt": 1792329014
+        },
+        {
+          "value": 973.324005,
+          "observedAt": 1792341013
+        },
+        {
+          "value": 994.138581,
+          "observedAt": 1792349413
+        },
+        {
+          "value": 980.173328,
+          "observedAt": 1792357513
+        },
+        {
+          "value": 981.526835,
+          "observedAt": 1792364413
+        },
+        {
+          "value": 980.698853,
+          "observedAt": 1792371616
+        },
+        {
+          "value": 951.40844,
+          "observedAt": 1792389314
+        },
+        {
+          "value": 940.253981,
+          "observedAt": 1792414213
+        },
+        {
+          "value": 954.392149,
+          "observedAt": 1792435814
+        },
+        {
+          "value": 932.209417,
+          "observedAt": 1792449313
+        },
+        {
+          "value": 923.726048,
+          "observedAt": 1792458913
+        },
+        {
+          "value": 943.581525,
+          "observedAt": 1792476014
+        },
+        {
+          "value": 977.498735,
+          "observedAt": 1792510814
+        },
+        {
+          "value": 959.923535,
+          "observedAt": 1792524614
+        },
+        {
+          "value": 983.229895,
+          "observedAt": 1792535413
+        },
+        {
+          "value": 959.947432,
+          "observedAt": 1792543812
+        },
+        {
+          "value": 968.743943,
+          "observedAt": 1792560013
+        },
+        {
+          "value": 961.389656,
+          "observedAt": 1792577714
+        },
+        {
+          "value": 973.447429,
+          "observedAt": 1792596013
+        },
+        {
+          "value": 937.027839,
+          "observedAt": 1792610413
+        },
+        {
+          "value": 961.386979,
+          "observedAt": 1792621512
+        },
+        {
+          "value": 970.929388,
+          "observedAt": 1792630213
+        },
+        {
+          "value": 971.547947,
+          "observedAt": 1792646713
+        },
+        {
+          "value": 977.383763,
+          "observedAt": 1792665014
+        },
+        {
+          "value": 975.346258,
+          "observedAt": 1792683013
+        },
+        {
+          "value": 968.89556,
+          "observedAt": 1792696813
+        },
+        {
+          "value": 962.172156,
+          "observedAt": 1792707913
+        },
+        {
+          "value": 962.417911,
+          "observedAt": 1792716614
+        },
+        {
+          "value": 968.524476,
+          "observedAt": 1792733112
+        },
+        {
+          "value": 973.969121,
+          "observedAt": 1792751114
+        },
+        {
+          "value": 973.384543,
+          "observedAt": 1792768513
+        },
+        {
+          "value": 950.848015,
+          "observedAt": 1792782914
+        },
+        {
+          "value": 947.030551,
+          "observedAt": 1792793413
+        },
+        {
+          "value": 937.134451,
+          "observedAt": 1792802413
+        },
+        {
+          "value": 972.39874,
+          "observedAt": 1792818013
+        },
+        {
+          "value": 978.6496,
+          "observedAt": 1792833613
+        },
+        {
+          "value": 965.84881,
+          "observedAt": 1792848013
+        },
+        {
+          "value": 948.230607,
+          "observedAt": 1792860012
+        },
+        {
+          "value": 936.340022,
+          "observedAt": 1792868413
+        },
+        {
+          "value": 947.367364,
+          "observedAt": 1792877113
+        },
+        {
+          "value": 924.77009,
+          "observedAt": 1792884613
+        },
+        {
+          "value": 928.158198,
+          "observedAt": 1792891813
+        },
+        {
+          "value": 964.274027,
+          "observedAt": 1792910413
+        },
+        {
+          "value": 932.642028,
+          "observedAt": 1792929314
+        },
+        {
+          "value": 959.362202,
+          "observedAt": 1792943713
+        },
+        {
+          "value": 938.270349,
+          "observedAt": 1792954213
+        },
+        {
+          "value": 941.99478,
+          "observedAt": 1792962912
+        },
+        {
+          "value": 952.636515,
+          "observedAt": 1792970113
+        },
+        {
+          "value": 952.636515,
+          "observedAt": 1792977613
+        },
+        {
+          "value": 952.648662,
+          "observedAt": 1792995913
+        },
+        {
+          "value": 953.282147,
+          "observedAt": 1793020813
+        },
+        {
+          "value": 936.451303,
+          "observedAt": 1793042413
+        },
+        {
+          "value": 930.86723,
+          "observedAt": 1793056213
+        },
+        {
+          "value": 954.954872,
+          "observedAt": 1793066413
+        },
+        {
+          "value": 940.081046,
+          "observedAt": 1793086813
+        },
+        {
+          "value": 947.781128,
+          "observedAt": 1793107813
+        },
+        {
+          "value": 913.157148,
+          "observedAt": 1793127013
+        },
+        {
+          "value": 936.548629,
+          "observedAt": 1793140513
+        },
+        {
+          "value": 947.379121,
+          "observedAt": 1793151613
+        },
+        {
+          "value": 945.147888,
+          "observedAt": 1793172313
+        },
+        {
+          "value": 943.588696,
+          "observedAt": 1793196613
+        },
+        {
+          "value": 915.861974,
+          "observedAt": 1793215813
+        },
+        {
+          "value": 925.536021,
+          "observedAt": 1793229912
+        },
+        {
+          "value": 935.934084,
+          "observedAt": 1793241613
+        },
+        {
+          "value": 952.765347,
+          "observedAt": 1793263816
+        },
+        {
+          "value": 952.961817,
+          "observedAt": 1793288412
+        },
+        {
+          "value": 949.201042,
+          "observedAt": 1793306113
+        },
+        {
+          "value": 965.293526,
+          "observedAt": 1793319313
+        },
+        {
+          "value": 971.881153,
+          "observedAt": 1793339412
+        },
+        {
+          "value": 967.281463,
+          "observedAt": 1793360413
+        },
+        {
+          "value": 949.196235,
+          "observedAt": 1793380213
+        },
+        {
+          "value": 973.847797,
+          "observedAt": 1793395213
+        },
+        {
+          "value": 968.559066,
+          "observedAt": 1793408113
+        },
+        {
+          "value": 960.568534,
+          "observedAt": 1793429413
+        },
+        {
+          "value": 950.55106,
+          "observedAt": 1793451913
+        },
+        {
+          "value": 962.706855,
+          "observedAt": 1793468414
+        },
+        {
+          "value": 962.903861,
+          "observedAt": 1793479213
+        },
+        {
+          "value": 955.049359,
+          "observedAt": 1793490013
+        },
+        {
+          "value": 968.873676,
+          "observedAt": 1793500514
+        },
+        {
+          "value": 956.721974,
+          "observedAt": 1793525712
+        },
+        {
+          "value": 937.051485,
+          "observedAt": 1793550012
+        },
+        {
+          "value": 961.952074,
+          "observedAt": 1793565312
+        },
+        {
+          "value": 960.359574,
+          "observedAt": 1793577013
+        },
+        {
+          "value": 926.910853,
+          "observedAt": 1793587513
+        },
+        {
+          "value": 969.959575,
+          "observedAt": 1793613914
+        },
+        {
+          "value": 969.1026,
+          "observedAt": 1793650512
+        },
+        {
+          "value": 950.160785,
+          "observedAt": 1793672412
+        },
+        {
+          "value": 949.457512,
+          "observedAt": 1793698813
+        },
+        {
+          "value": 947.047113,
+          "observedAt": 1793726113
+        },
+        {
+          "value": 957.927931,
+          "observedAt": 1793744412
+        },
+        {
+          "value": 956.928524,
+          "observedAt": 1793759112
+        },
+        {
+          "value": 944.935211,
+          "observedAt": 1793785214
+        },
+        {
+          "value": 931.912858,
+          "observedAt": 1793813412
+        },
+        {
+          "value": 928.152004,
+          "observedAt": 1793832313
+        },
+        {
+          "value": 922.58878,
+          "observedAt": 1793847012
+        },
+        {
+          "value": 924.152208,
+          "observedAt": 1793872513
+        },
+        {
+          "value": 912.117699,
+          "observedAt": 1793900713
+        },
+        {
+          "value": 915.126306,
+          "observedAt": 1793919013
+        },
+        {
+          "value": 921.39993,
+          "observedAt": 1793933413
+        },
+        {
+          "value": 898.822699,
+          "observedAt": 1793959213
+        },
+        {
+          "value": 920.58238,
+          "observedAt": 1793985613
+        },
+        {
+          "value": 905.975453,
+          "observedAt": 1794003013
+        },
+        {
+          "value": 909.968986,
+          "observedAt": 1794016213
+        },
+        {
+          "value": 908.812012,
+          "observedAt": 1794037813
+        },
+        {
+          "value": 909.298689,
+          "observedAt": 1794061213
+        },
+        {
+          "value": 926.852331,
+          "observedAt": 1794077413
+        },
+        {
+          "value": 927.815297,
+          "observedAt": 1794090013
+        },
+        {
+          "value": 930.041459,
+          "observedAt": 1794101413
+        },
+        {
+          "value": 930.041459,
+          "observedAt": 1794124212
+        },
+        {
+          "value": 918.189356,
+          "observedAt": 1794148213
+        },
+        {
+          "value": 928.278766,
+          "observedAt": 1794164413
+        },
+        {
+          "value": 944.93775,
+          "observedAt": 1794177613
+        },
+        {
+          "value": 939.519289,
+          "observedAt": 1794189312
+        },
+        {
+          "value": 944.897909,
+          "observedAt": 1794216613
+        },
+        {
+          "value": 945.020972,
+          "observedAt": 1794254112
+        },
+        {
+          "value": 941.645576,
+          "observedAt": 1794278114
+        },
+        {
+          "value": 943.677686,
+          "observedAt": 1794306014
+        },
+        {
+          "value": 922.666378,
+          "observedAt": 1794351913
+        },
+        {
+          "value": 920.624608,
+          "observedAt": 1794364813
+        },
+        {
+          "value": 916.046525,
+          "observedAt": 1794390613
+        },
+        {
+          "value": 914.056653,
+          "observedAt": 1794417913
+        },
+        {
+          "value": 912.098263,
+          "observedAt": 1794440112
+        },
+        {
+          "value": 908.744839,
+          "observedAt": 1794456615
+        },
+        {
+          "value": 896.788063,
+          "observedAt": 1794487213
+        },
+        {
+          "value": 884.771036,
+          "observedAt": 1794515113
+        },
+        {
+          "value": 862.896056,
+          "observedAt": 1794532813
+        },
+        {
+          "value": 865.876548,
+          "observedAt": 1794557412
+        },
+        {
+          "value": 869.067958,
+          "observedAt": 1794586513
+        },
+        {
+          "value": 884.474156,
+          "observedAt": 1794607213
+        },
+        {
+          "value": 875.966638,
+          "observedAt": 1794622213
+        },
+        {
+          "value": 885.505655,
+          "observedAt": 1794646513
+        },
+        {
+          "value": 899.121827,
+          "observedAt": 1794669913
+        },
+        {
+          "value": 899.31196,
+          "observedAt": 1794686112
+        },
+        {
+          "value": 890.77593,
+          "observedAt": 1794699913
+        },
+        {
+          "value": 883.090288,
+          "observedAt": 1794712212
+        },
+        {
+          "value": 879.385246,
+          "observedAt": 1794739513
+        },
+        {
+          "value": 900.224235,
+          "observedAt": 1794763513
+        },
+        {
+          "value": 903.184996,
+          "observedAt": 1794779712
+        },
+        {
+          "value": 898.077445,
+          "observedAt": 1794793513
+        },
+        {
+          "value": 897.630936,
+          "observedAt": 1794818114
+        },
+        {
+          "value": 899.503615,
+          "observedAt": 1794855012
+        },
+        {
+          "value": 878.870986,
+          "observedAt": 1794881413
+        },
+        {
+          "value": 861.181892,
+          "observedAt": 1794911713
+        },
+        {
+          "value": 876.825235,
+          "observedAt": 1794943213
+        },
+        {
+          "value": 878.332713,
+          "observedAt": 1794966013
+        },
+        {
+          "value": 872.583639,
+          "observedAt": 1794992713
+        },
+        {
+          "value": 873.852803,
+          "observedAt": 1795024513
+        },
+        {
+          "value": 866.893468,
+          "observedAt": 1795047013
+        },
+        {
+          "value": 864.312125,
+          "observedAt": 1795072513
+        },
+        {
+          "value": 859.664958,
+          "observedAt": 1795106112
+        },
+        {
+          "value": 860.75369,
+          "observedAt": 1795129813
+        },
+        {
+          "value": 860.75369,
+          "observedAt": 1795146912
+        }
+      ]
+    },
+    {
+      "ticker": "HS-BLUE20",
+      "indexId": "0xdc2c02f42f13e8dd98afc769248f2c55bf5b03d9625b977be635ef85a7b06372",
+      "provenance": "INDICATIVE",
+      "settlementEligible": false,
+      "status": "OK",
+      "value": 729.435039,
+      "changeSinceBasePct": -27.056496100000004,
+      "baseAt": 1790438219,
+      "observedAt": 1795146912,
+      "coverage": 20,
+      "count": 20,
+      "constituents": [
+        {
+          "name": "M4A1-S | Printstream (Minimal Wear)",
+          "baseUsd": 264.05,
+          "weight": 0.05,
+          "priceUsd": 194.08,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SSG 08 | Dragonfire (Minimal Wear)",
+          "baseUsd": 253.81,
+          "weight": 0.05,
+          "priceUsd": 184.11,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A1-S | Blue Phosphor (Factory New)",
+          "baseUsd": 558.8,
+          "weight": 0.05,
+          "priceUsd": 426.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "SSG 08 | Dragonfire (Factory New)",
+          "baseUsd": 323.33,
+          "weight": 0.05,
+          "priceUsd": 248.9,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AK-47 | Vulcan (Minimal Wear)",
+          "baseUsd": 362.22,
+          "weight": 0.05,
+          "priceUsd": 266.18,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Desert Eagle | Emerald Jörmungandr (Factory New)",
+          "baseUsd": 534.26,
+          "weight": 0.05,
+          "priceUsd": 338.27,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A4 | Buzz Kill (Minimal Wear)",
+          "baseUsd": 302.12,
+          "weight": 0.05,
+          "priceUsd": 227.39,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Desert Eagle | Blaze (Factory New)",
+          "baseUsd": 630.74,
+          "weight": 0.05,
+          "priceUsd": 497.36,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A1-S | Icarus Fell (Factory New)",
+          "baseUsd": 484.61,
+          "weight": 0.05,
+          "priceUsd": 347.06,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AWP | Lightning Strike (Factory New)",
+          "baseUsd": 490.38,
+          "weight": 0.05,
+          "priceUsd": 388.65,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A1-S | Nightmare (Factory New)",
+          "baseUsd": 269.49,
+          "weight": 0.05,
+          "priceUsd": 197.92,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A4 | The Coalition (Minimal Wear)",
+          "baseUsd": 429.57,
+          "weight": 0.05,
+          "priceUsd": 331.38,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A4 | The Emperor (Factory New)",
+          "baseUsd": 258.78,
+          "weight": 0.05,
+          "priceUsd": 167.31,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AK-47 | Fire Serpent (Field-Tested)",
+          "baseUsd": 731.53,
+          "weight": 0.05,
+          "priceUsd": 648.79,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A4 | The Coalition (Field-Tested)",
+          "baseUsd": 426.92,
+          "weight": 0.05,
+          "priceUsd": 217.58,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AK-47 | Vulcan (Factory New)",
+          "baseUsd": 576.9,
+          "weight": 0.05,
+          "priceUsd": 432.54,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Five-SeveN | Hyper Beast (Minimal Wear)",
+          "baseUsd": 357.69,
+          "weight": 0.05,
+          "priceUsd": 278.75,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Glock-18 | Twilight Galaxy (Factory New)",
+          "baseUsd": 516.57,
+          "weight": 0.05,
+          "priceUsd": 362.66,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "AWP | Fade (Factory New)",
+          "baseUsd": 691.15,
+          "weight": 0.05,
+          "priceUsd": 482.13,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "M4A4 | Hellfire (Factory New)",
+          "baseUsd": 328.9,
+          "weight": 0.05,
+          "priceUsd": 229.98,
+          "updatedAt": 1795146912
+        }
+      ],
+      "history": [
+        {
+          "value": 1000.0000000000002,
+          "observedAt": 1790438112
+        },
+        {
+          "value": 1000.0000000000002,
+          "observedAt": 1790438415
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790438713
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439012
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439312
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439614
+        },
+        {
+          "value": 1001.902693,
+          "observedAt": 1790439912
+        },
+        {
+          "value": 1002.571562,
+          "observedAt": 1790440512
+        },
+        {
+          "value": 1001.01555,
+          "observedAt": 1790440813
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790441114
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790441413
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790441713
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790442014
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790442613
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790442913
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790443212
+        },
+        {
+          "value": 998.250585,
+          "observedAt": 1790443513
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790443812
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790444414
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790444715
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790445013
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790445312
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790445614
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790446213
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790446513
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790446812
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790447112
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790447412
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790448013
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790448613
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790449214
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790450113
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790450413
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790450712
+        },
+        {
+          "value": 1000.332193,
+          "observedAt": 1790451013
+        },
+        {
+          "value": 959.53694,
+          "observedAt": 1791273913
+        },
+        {
+          "value": 957.111678,
+          "observedAt": 1791299413
+        },
+        {
+          "value": 954.185602,
+          "observedAt": 1791317713
+        },
+        {
+          "value": 953.763904,
+          "observedAt": 1791330613
+        },
+        {
+          "value": 953.763904,
+          "observedAt": 1791340812
+        },
+        {
+          "value": 952.801876,
+          "observedAt": 1791364516
+        },
+        {
+          "value": 952.630551,
+          "observedAt": 1791390913
+        },
+        {
+          "value": 948.560871,
+          "observedAt": 1791408612
+        },
+        {
+          "value": 949.30391,
+          "observedAt": 1791421813
+        },
+        {
+          "value": 940.289982,
+          "observedAt": 1791444313
+        },
+        {
+          "value": 943.799333,
+          "observedAt": 1791470413
+        },
+        {
+          "value": 929.81291,
+          "observedAt": 1791489913
+        },
+        {
+          "value": 930.12076,
+          "observedAt": 1791505213
+        },
+        {
+          "value": 928.781015,
+          "observedAt": 1791526813
+        },
+        {
+          "value": 926.046904,
+          "observedAt": 1791552313
+        },
+        {
+          "value": 926.238839,
+          "observedAt": 1791572114
+        },
+        {
+          "value": 927.257342,
+          "observedAt": 1791586514
+        },
+        {
+          "value": 927.52309,
+          "observedAt": 1791598213
+        },
+        {
+          "value": 923.959475,
+          "observedAt": 1791620713
+        },
+        {
+          "value": 917.863491,
+          "observedAt": 1791642914
+        },
+        {
+          "value": 911.035008,
+          "observedAt": 1791658213
+        },
+        {
+          "value": 910.838416,
+          "observedAt": 1791669613
+        },
+        {
+          "value": 907.671489,
+          "observedAt": 1791679514
+        },
+        {
+          "value": 919.879423,
+          "observedAt": 1791700214
+        },
+        {
+          "value": 916.877171,
+          "observedAt": 1791724814
+        },
+        {
+          "value": 912.538608,
+          "observedAt": 1791742214
+        },
+        {
+          "value": 912.882292,
+          "observedAt": 1791755413
+        },
+        {
+          "value": 912.497543,
+          "observedAt": 1791765912
+        },
+        {
+          "value": 912.20408,
+          "observedAt": 1791786913
+        },
+        {
+          "value": 905.425729,
+          "observedAt": 1791821116
+        },
+        {
+          "value": 910.573717,
+          "observedAt": 1791845413
+        },
+        {
+          "value": 907.456083,
+          "observedAt": 1791861014
+        },
+        {
+          "value": 904.750266,
+          "observedAt": 1791887715
+        },
+        {
+          "value": 896.995762,
+          "observedAt": 1791913513
+        },
+        {
+          "value": 895.432404,
+          "observedAt": 1791928514
+        },
+        {
+          "value": 895.259099,
+          "observedAt": 1791939615
+        },
+        {
+          "value": 892.133017,
+          "observedAt": 1791957614
+        },
+        {
+          "value": 889.029402,
+          "observedAt": 1791977713
+        },
+        {
+          "value": 887.379722,
+          "observedAt": 1791993313
+        },
+        {
+          "value": 890.60077,
+          "observedAt": 1792008314
+        },
+        {
+          "value": 892.755719,
+          "observedAt": 1792019413
+        },
+        {
+          "value": 897.955251,
+          "observedAt": 1792027513
+        },
+        {
+          "value": 900.536578,
+          "observedAt": 1792044313
+        },
+        {
+          "value": 895.299096,
+          "observedAt": 1792062914
+        },
+        {
+          "value": 888.023473,
+          "observedAt": 1792078514
+        },
+        {
+          "value": 887.495485,
+          "observedAt": 1792092014
+        },
+        {
+          "value": 881.51983,
+          "observedAt": 1792103112
+        },
+        {
+          "value": 877.610127,
+          "observedAt": 1792110913
+        },
+        {
+          "value": 888.674468,
+          "observedAt": 1792126514
+        },
+        {
+          "value": 891.639489,
+          "observedAt": 1792143313
+        },
+        {
+          "value": 881.725455,
+          "observedAt": 1792159814
+        },
+        {
+          "value": 890.450589,
+          "observedAt": 1792173613
+        },
+        {
+          "value": 889.415065,
+          "observedAt": 1792184113
+        },
+        {
+          "value": 886.804369,
+          "observedAt": 1792192213
+        },
+        {
+          "value": 897.200536,
+          "observedAt": 1792199712
+        },
+        {
+          "value": 898.519538,
+          "observedAt": 1792215612
+        },
+        {
+          "value": 890.895561,
+          "observedAt": 1792229713
+        },
+        {
+          "value": 890.621603,
+          "observedAt": 1792242314
+        },
+        {
+          "value": 899.358225,
+          "observedAt": 1792254013
+        },
+        {
+          "value": 897.192435,
+          "observedAt": 1792262113
+        },
+        {
+          "value": 888.303512,
+          "observedAt": 1792270213
+        },
+        {
+          "value": 889.453716,
+          "observedAt": 1792276814
+        },
+        {
+          "value": 888.173001,
+          "observedAt": 1792282513
+        },
+        {
+          "value": 892.78487,
+          "observedAt": 1792298713
+        },
+        {
+          "value": 892.78487,
+          "observedAt": 1792314313
+        },
+        {
+          "value": 892.847577,
+          "observedAt": 1792329014
+        },
+        {
+          "value": 892.166356,
+          "observedAt": 1792341013
+        },
+        {
+          "value": 889.619099,
+          "observedAt": 1792349413
+        },
+        {
+          "value": 890.096472,
+          "observedAt": 1792357513
+        },
+        {
+          "value": 888.016453,
+          "observedAt": 1792364413
+        },
+        {
+          "value": 890.096472,
+          "observedAt": 1792371616
+        },
+        {
+          "value": 883.337069,
+          "observedAt": 1792389314
+        },
+        {
+          "value": 873.479776,
+          "observedAt": 1792414213
+        },
+        {
+          "value": 864.368426,
+          "observedAt": 1792435814
+        },
+        {
+          "value": 863.481111,
+          "observedAt": 1792449313
+        },
+        {
+          "value": 859.731093,
+          "observedAt": 1792458913
+        },
+        {
+          "value": 859.372467,
+          "observedAt": 1792476014
+        },
+        {
+          "value": 872.750101,
+          "observedAt": 1792510814
+        },
+        {
+          "value": 874.207046,
+          "observedAt": 1792524614
+        },
+        {
+          "value": 873.383843,
+          "observedAt": 1792535413
+        },
+        {
+          "value": 873.383843,
+          "observedAt": 1792543812
+        },
+        {
+          "value": 877.386539,
+          "observedAt": 1792560013
+        },
+        {
+          "value": 879.094345,
+          "observedAt": 1792577714
+        },
+        {
+          "value": 876.681953,
+          "observedAt": 1792596013
+        },
+        {
+          "value": 878.781828,
+          "observedAt": 1792610413
+        },
+        {
+          "value": 878.240676,
+          "observedAt": 1792621512
+        },
+        {
+          "value": 878.58941,
+          "observedAt": 1792630213
+        },
+        {
+          "value": 878.791142,
+          "observedAt": 1792646713
+        },
+        {
+          "value": 879.237222,
+          "observedAt": 1792665014
+        },
+        {
+          "value": 879.445516,
+          "observedAt": 1792683013
+        },
+        {
+          "value": 876.878398,
+          "observedAt": 1792696813
+        },
+        {
+          "value": 874.552839,
+          "observedAt": 1792707913
+        },
+        {
+          "value": 874.552839,
+          "observedAt": 1792716614
+        },
+        {
+          "value": 869.06271,
+          "observedAt": 1792733112
+        },
+        {
+          "value": 868.115039,
+          "observedAt": 1792751114
+        },
+        {
+          "value": 864.430613,
+          "observedAt": 1792768513
+        },
+        {
+          "value": 864.912309,
+          "observedAt": 1792782914
+        },
+        {
+          "value": 866.945202,
+          "observedAt": 1792793413
+        },
+        {
+          "value": 864.124954,
+          "observedAt": 1792802413
+        },
+        {
+          "value": 865.851562,
+          "observedAt": 1792818013
+        },
+        {
+          "value": 868.48643,
+          "observedAt": 1792833613
+        },
+        {
+          "value": 872.509258,
+          "observedAt": 1792848013
+        },
+        {
+          "value": 870.394424,
+          "observedAt": 1792860012
+        },
+        {
+          "value": 872.387711,
+          "observedAt": 1792868413
+        },
+        {
+          "value": 874.828487,
+          "observedAt": 1792877113
+        },
+        {
+          "value": 874.835477,
+          "observedAt": 1792884613
+        },
+        {
+          "value": 877.018478,
+          "observedAt": 1792891813
+        },
+        {
+          "value": 876.496434,
+          "observedAt": 1792910413
+        },
+        {
+          "value": 873.644317,
+          "observedAt": 1792929314
+        },
+        {
+          "value": 872.193294,
+          "observedAt": 1792943713
+        },
+        {
+          "value": 864.807394,
+          "observedAt": 1792954213
+        },
+        {
+          "value": 868.046657,
+          "observedAt": 1792962912
+        },
+        {
+          "value": 867.95106,
+          "observedAt": 1792970113
+        },
+        {
+          "value": 865.570464,
+          "observedAt": 1792977613
+        },
+        {
+          "value": 866.431322,
+          "observedAt": 1792995913
+        },
+        {
+          "value": 857.705509,
+          "observedAt": 1793020813
+        },
+        {
+          "value": 861.397438,
+          "observedAt": 1793042413
+        },
+        {
+          "value": 859.242696,
+          "observedAt": 1793056213
+        },
+        {
+          "value": 849.703069,
+          "observedAt": 1793066413
+        },
+        {
+          "value": 848.698092,
+          "observedAt": 1793086813
+        },
+        {
+          "value": 840.662029,
+          "observedAt": 1793107813
+        },
+        {
+          "value": 844.36193,
+          "observedAt": 1793127013
+        },
+        {
+          "value": 848.162785,
+          "observedAt": 1793140513
+        },
+        {
+          "value": 840.985573,
+          "observedAt": 1793151613
+        },
+        {
+          "value": 843.365879,
+          "observedAt": 1793172313
+        },
+        {
+          "value": 842.78017,
+          "observedAt": 1793196613
+        },
+        {
+          "value": 844.882099,
+          "observedAt": 1793215813
+        },
+        {
+          "value": 842.457473,
+          "observedAt": 1793229912
+        },
+        {
+          "value": 848.462105,
+          "observedAt": 1793241613
+        },
+        {
+          "value": 844.102106,
+          "observedAt": 1793263816
+        },
+        {
+          "value": 852.956369,
+          "observedAt": 1793288412
+        },
+        {
+          "value": 849.199125,
+          "observedAt": 1793306113
+        },
+        {
+          "value": 846.9511,
+          "observedAt": 1793319313
+        },
+        {
+          "value": 852.7997,
+          "observedAt": 1793339412
+        },
+        {
+          "value": 851.907777,
+          "observedAt": 1793360413
+        },
+        {
+          "value": 851.490943,
+          "observedAt": 1793380213
+        },
+        {
+          "value": 855.128499,
+          "observedAt": 1793395213
+        },
+        {
+          "value": 854.331092,
+          "observedAt": 1793408113
+        },
+        {
+          "value": 857.310692,
+          "observedAt": 1793429413
+        },
+        {
+          "value": 861.925442,
+          "observedAt": 1793451913
+        },
+        {
+          "value": 861.070406,
+          "observedAt": 1793468414
+        },
+        {
+          "value": 865.185007,
+          "observedAt": 1793479213
+        },
+        {
+          "value": 857.830743,
+          "observedAt": 1793490013
+        },
+        {
+          "value": 857.830743,
+          "observedAt": 1793500514
+        },
+        {
+          "value": 854.59946,
+          "observedAt": 1793525712
+        },
+        {
+          "value": 854.872493,
+          "observedAt": 1793550012
+        },
+        {
+          "value": 847.286504,
+          "observedAt": 1793565312
+        },
+        {
+          "value": 848.896582,
+          "observedAt": 1793577013
+        },
+        {
+          "value": 848.644256,
+          "observedAt": 1793587513
+        },
+        {
+          "value": 852.949976,
+          "observedAt": 1793613914
+        },
+        {
+          "value": 839.133155,
+          "observedAt": 1793650512
+        },
+        {
+          "value": 839.474915,
+          "observedAt": 1793672412
+        },
+        {
+          "value": 837.879521,
+          "observedAt": 1793698813
+        },
+        {
+          "value": 836.192083,
+          "observedAt": 1793726113
+        },
+        {
+          "value": 832.196096,
+          "observedAt": 1793744412
+        },
+        {
+          "value": 824.874805,
+          "observedAt": 1793759112
+        },
+        {
+          "value": 820.370097,
+          "observedAt": 1793785214
+        },
+        {
+          "value": 824.894983,
+          "observedAt": 1793813412
+        },
+        {
+          "value": 822.939459,
+          "observedAt": 1793832313
+        },
+        {
+          "value": 811.89534,
+          "observedAt": 1793847012
+        },
+        {
+          "value": 813.321901,
+          "observedAt": 1793872513
+        },
+        {
+          "value": 815.694408,
+          "observedAt": 1793900713
+        },
+        {
+          "value": 808.736006,
+          "observedAt": 1793919013
+        },
+        {
+          "value": 805.670141,
+          "observedAt": 1793933413
+        },
+        {
+          "value": 793.828999,
+          "observedAt": 1793959213
+        },
+        {
+          "value": 803.617015,
+          "observedAt": 1793985613
+        },
+        {
+          "value": 791.800238,
+          "observedAt": 1794003013
+        },
+        {
+          "value": 789.660601,
+          "observedAt": 1794016213
+        },
+        {
+          "value": 791.037388,
+          "observedAt": 1794037813
+        },
+        {
+          "value": 792.541563,
+          "observedAt": 1794061213
+        },
+        {
+          "value": 793.151932,
+          "observedAt": 1794077413
+        },
+        {
+          "value": 788.447928,
+          "observedAt": 1794090013
+        },
+        {
+          "value": 789.417142,
+          "observedAt": 1794101413
+        },
+        {
+          "value": 789.450827,
+          "observedAt": 1794124212
+        },
+        {
+          "value": 800.767454,
+          "observedAt": 1794148213
+        },
+        {
+          "value": 793.820357,
+          "observedAt": 1794164413
+        },
+        {
+          "value": 793.240521,
+          "observedAt": 1794177613
+        },
+        {
+          "value": 792.586624,
+          "observedAt": 1794189312
+        },
+        {
+          "value": 789.190002,
+          "observedAt": 1794216613
+        },
+        {
+          "value": 786.949053,
+          "observedAt": 1794254112
+        },
+        {
+          "value": 790.316671,
+          "observedAt": 1794278114
+        },
+        {
+          "value": 786.841346,
+          "observedAt": 1794306014
+        },
+        {
+          "value": 779.613298,
+          "observedAt": 1794351913
+        },
+        {
+          "value": 772.464862,
+          "observedAt": 1794364813
+        },
+        {
+          "value": 769.94873,
+          "observedAt": 1794390613
+        },
+        {
+          "value": 757.755296,
+          "observedAt": 1794417913
+        },
+        {
+          "value": 772.314278,
+          "observedAt": 1794440112
+        },
+        {
+          "value": 771.164002,
+          "observedAt": 1794456615
+        },
+        {
+          "value": 759.202061,
+          "observedAt": 1794487213
+        },
+        {
+          "value": 767.94628,
+          "observedAt": 1794515113
+        },
+        {
+          "value": 771.428555,
+          "observedAt": 1794532813
+        },
+        {
+          "value": 771.260958,
+          "observedAt": 1794557412
+        },
+        {
+          "value": 767.617347,
+          "observedAt": 1794586513
+        },
+        {
+          "value": 759.876585,
+          "observedAt": 1794607213
+        },
+        {
+          "value": 761.443756,
+          "observedAt": 1794622213
+        },
+        {
+          "value": 755.316332,
+          "observedAt": 1794646513
+        },
+        {
+          "value": 764.136895,
+          "observedAt": 1794669913
+        },
+        {
+          "value": 764.114512,
+          "observedAt": 1794686112
+        },
+        {
+          "value": 761.70747,
+          "observedAt": 1794699913
+        },
+        {
+          "value": 761.70747,
+          "observedAt": 1794712212
+        },
+        {
+          "value": 756.900788,
+          "observedAt": 1794739513
+        },
+        {
+          "value": 749.737315,
+          "observedAt": 1794763513
+        },
+        {
+          "value": 749.600456,
+          "observedAt": 1794779712
+        },
+        {
+          "value": 759.344929,
+          "observedAt": 1794793513
+        },
+        {
+          "value": 752.384714,
+          "observedAt": 1794818114
+        },
+        {
+          "value": 737.140301,
+          "observedAt": 1794855012
+        },
+        {
+          "value": 745.733536,
+          "observedAt": 1794881413
+        },
+        {
+          "value": 742.546075,
+          "observedAt": 1794911713
+        },
+        {
+          "value": 735.212843,
+          "observedAt": 1794943213
+        },
+        {
+          "value": 737.978185,
+          "observedAt": 1794966013
+        },
+        {
+          "value": 736.839062,
+          "observedAt": 1794992713
+        },
+        {
+          "value": 733.391382,
+          "observedAt": 1795024513
+        },
+        {
+          "value": 732.854177,
+          "observedAt": 1795047013
+        },
+        {
+          "value": 732.860801,
+          "observedAt": 1795072513
+        },
+        {
+          "value": 737.253521,
+          "observedAt": 1795106112
+        },
+        {
+          "value": 728.586173,
+          "observedAt": 1795129813
+        },
+        {
+          "value": 729.435039,
+          "observedAt": 1795146912
+        }
+      ]
+    },
+    {
+      "ticker": "HS-CASE20",
+      "indexId": "0x7aefd3fb14286f26170572602579fa7a061cc6d5f5f7b5089b03bfe3c6a69593",
+      "provenance": "INDICATIVE",
+      "settlementEligible": false,
+      "status": "OK",
+      "value": 792.165037,
+      "changeSinceBasePct": -20.783496300000003,
+      "baseAt": 1790438219,
+      "observedAt": 1795146912,
+      "coverage": 20,
+      "count": 20,
+      "constituents": [
+        {
+          "name": "Danger Zone Case",
+          "baseUsd": 1.02,
+          "weight": 0.05,
+          "priceUsd": 0.81,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Dreams & Nightmares Case",
+          "baseUsd": 1.15,
+          "weight": 0.05,
+          "priceUsd": 0.78,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Prisma Case",
+          "baseUsd": 1.12,
+          "weight": 0.05,
+          "priceUsd": 0.78,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Prisma 2 Case",
+          "baseUsd": 1.08,
+          "weight": 0.05,
+          "priceUsd": 0.77,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Recoil Case",
+          "baseUsd": 0.35,
+          "weight": 0.05,
+          "priceUsd": 0.27,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Horizon Case",
+          "baseUsd": 1.36,
+          "weight": 0.05,
+          "priceUsd": 1.14,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Spectrum 2 Case",
+          "baseUsd": 2.68,
+          "weight": 0.05,
+          "priceUsd": 2.16,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Operation Breakout Weapon Case",
+          "baseUsd": 7.27,
+          "weight": 0.05,
+          "priceUsd": 6.38,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Fever Case",
+          "baseUsd": 0.66,
+          "weight": 0.05,
+          "priceUsd": 0.47,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "CS20 Case",
+          "baseUsd": 0.82,
+          "weight": 0.05,
+          "priceUsd": 0.55,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Operation Phoenix Weapon Case",
+          "baseUsd": 3.39,
+          "weight": 0.05,
+          "priceUsd": 2.83,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Fracture Case",
+          "baseUsd": 0.5,
+          "weight": 0.05,
+          "priceUsd": 0.31,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Clutch Case",
+          "baseUsd": 0.48,
+          "weight": 0.05,
+          "priceUsd": 0.42,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Snakebite Case",
+          "baseUsd": 0.4,
+          "weight": 0.05,
+          "priceUsd": 0.4,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Gallery Case",
+          "baseUsd": 0.75,
+          "weight": 0.05,
+          "priceUsd": 0.52,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Falchion Case",
+          "baseUsd": 1.49,
+          "weight": 0.05,
+          "priceUsd": 1.24,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Spectrum Case",
+          "baseUsd": 3.31,
+          "weight": 0.05,
+          "priceUsd": 2.84,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Shadow Case",
+          "baseUsd": 1.51,
+          "weight": 0.05,
+          "priceUsd": 1.28,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Chroma 3 Case",
+          "baseUsd": 3.06,
+          "weight": 0.05,
+          "priceUsd": 2.65,
+          "updatedAt": 1795146912
+        },
+        {
+          "name": "Chroma 2 Case",
+          "baseUsd": 3.39,
+          "weight": 0.05,
+          "priceUsd": 2.91,
+          "updatedAt": 1795146912
+        }
+      ],
+      "history": [
+        {
+          "value": 1000.0000000000002,
+          "observedAt": 1790438112
+        },
+        {
+          "value": 1000.0000000000002,
+          "observedAt": 1790438415
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790438713
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439012
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439312
+        },
+        {
+          "value": 1000,
+          "observedAt": 1790439614
+        },
+        {
+          "value": 996.950838,
+          "observedAt": 1790439912
+        },
+        {
+          "value": 997.712276,
+          "observedAt": 1790440512
+        },
+        {
+          "value": 997.712276,
+          "observedAt": 1790440813
+        },
+        {
+          "value": 997.712276,
+          "observedAt": 1790441114
+        },
+        {
+          "value": 997.712276,
+          "observedAt": 1790441413
+        },
+        {
+          "value": 997.712276,
+          "observedAt": 1790441713
+        },
+        {
+          "value": 996.407928,
+          "observedAt": 1790442014
+        },
+        {
+          "value": 996.407928,
+          "observedAt": 1790442613
+        },
+        {
+          "value": 995.802795,
+          "observedAt": 1790442913
+        },
+        {
+          "value": 992.324534,
+          "observedAt": 1790443212
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790443513
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790443812
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790444414
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790444715
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790445013
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790445312
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790445614
+        },
+        {
+          "value": 996.95965,
+          "observedAt": 1790446213
+        },
+        {
+          "value": 983.282076,
+          "observedAt": 1790446513
+        },
+        {
+          "value": 983.282076,
+          "observedAt": 1790446812
+        },
+        {
+          "value": 980.439811,
+          "observedAt": 1790447112
+        },
+        {
+          "value": 980.439811,
+          "observedAt": 1790447412
+        },
+        {
+          "value": 980.439811,
+          "observedAt": 1790448013
+        },
+        {
+          "value": 979.624594,
+          "observedAt": 1790448613
+        },
+        {
+          "value": 987.096201,
+          "observedAt": 1790449214
+        },
+        {
+          "value": 992.865825,
+          "observedAt": 1790450113
+        },
+        {
+          "value": 992.865825,
+          "observedAt": 1790450413
+        },
+        {
+          "value": 996.865825,
+          "observedAt": 1790450712
+        },
+        {
+          "value": 996.865825,
+          "observedAt": 1790451013
+        },
+        {
+          "value": 961.047461,
+          "observedAt": 1791273913
+        },
+        {
+          "value": 946.113733,
+          "observedAt": 1791299413
+        },
+        {
+          "value": 956.835395,
+          "observedAt": 1791317713
+        },
+        {
+          "value": 959.541374,
+          "observedAt": 1791330613
+        },
+        {
+          "value": 970.372585,
+          "observedAt": 1791340812
+        },
+        {
+          "value": 972.792833,
+          "observedAt": 1791364516
+        },
+        {
+          "value": 960.972156,
+          "observedAt": 1791390913
+        },
+        {
+          "value": 972.16398,
+          "observedAt": 1791408612
+        },
+        {
+          "value": 937.45531,
+          "observedAt": 1791421813
+        },
+        {
+          "value": 947.594356,
+          "observedAt": 1791444313
+        },
+        {
+          "value": 918.018094,
+          "observedAt": 1791470413
+        },
+        {
+          "value": 942.040787,
+          "observedAt": 1791489913
+        },
+        {
+          "value": 911.142169,
+          "observedAt": 1791505213
+        },
+        {
+          "value": 963.2152,
+          "observedAt": 1791526813
+        },
+        {
+          "value": 949.863843,
+          "observedAt": 1791552313
+        },
+        {
+          "value": 949.357151,
+          "observedAt": 1791572114
+        },
+        {
+          "value": 907.662203,
+          "observedAt": 1791586514
+        },
+        {
+          "value": 920.269012,
+          "observedAt": 1791598213
+        },
+        {
+          "value": 928.560057,
+          "observedAt": 1791620713
+        },
+        {
+          "value": 904.428573,
+          "observedAt": 1791642914
+        },
+        {
+          "value": 935.587995,
+          "observedAt": 1791658213
+        },
+        {
+          "value": 924.595336,
+          "observedAt": 1791669613
+        },
+        {
+          "value": 946.643771,
+          "observedAt": 1791679514
+        },
+        {
+          "value": 950.35791,
+          "observedAt": 1791700214
+        },
+        {
+          "value": 925.474633,
+          "observedAt": 1791724814
+        },
+        {
+          "value": 939.766857,
+          "observedAt": 1791742214
+        },
+        {
+          "value": 932.299433,
+          "observedAt": 1791755413
+        },
+        {
+          "value": 929.18712,
+          "observedAt": 1791765912
+        },
+        {
+          "value": 920.947755,
+          "observedAt": 1791786913
+        },
+        {
+          "value": 929.590947,
+          "observedAt": 1791821116
+        },
+        {
+          "value": 952.424476,
+          "observedAt": 1791845413
+        },
+        {
+          "value": 946.889941,
+          "observedAt": 1791861014
+        },
+        {
+          "value": 916.919616,
+          "observedAt": 1791887715
+        },
+        {
+          "value": 892.661466,
+          "observedAt": 1791913513
+        },
+        {
+          "value": 904.996144,
+          "observedAt": 1791928514
+        },
+        {
+          "value": 877.08595,
+          "observedAt": 1791939615
+        },
+        {
+          "value": 913.517296,
+          "observedAt": 1791957614
+        },
+        {
+          "value": 916.332819,
+          "observedAt": 1791977713
+        },
+        {
+          "value": 916.797168,
+          "observedAt": 1791993313
+        },
+        {
+          "value": 914.873256,
+          "observedAt": 1792008314
+        },
+        {
+          "value": 936.36152,
+          "observedAt": 1792019413
+        },
+        {
+          "value": 928.895721,
+          "observedAt": 1792027513
+        },
+        {
+          "value": 932.673823,
+          "observedAt": 1792044313
+        },
+        {
+          "value": 921.64859,
+          "observedAt": 1792062914
+        },
+        {
+          "value": 903.345714,
+          "observedAt": 1792078514
+        },
+        {
+          "value": 908.199444,
+          "observedAt": 1792092014
+        },
+        {
+          "value": 891.572082,
+          "observedAt": 1792103112
+        },
+        {
+          "value": 893.551667,
+          "observedAt": 1792110913
+        },
+        {
+          "value": 908.19312,
+          "observedAt": 1792126514
+        },
+        {
+          "value": 906.080852,
+          "observedAt": 1792143313
+        },
+        {
+          "value": 907.8769,
+          "observedAt": 1792159814
+        },
+        {
+          "value": 918.516079,
+          "observedAt": 1792173613
+        },
+        {
+          "value": 930.181136,
+          "observedAt": 1792184113
+        },
+        {
+          "value": 931.410741,
+          "observedAt": 1792192213
+        },
+        {
+          "value": 916.677554,
+          "observedAt": 1792199712
+        },
+        {
+          "value": 946.097198,
+          "observedAt": 1792215612
+        },
+        {
+          "value": 931.010781,
+          "observedAt": 1792229713
+        },
+        {
+          "value": 914.075789,
+          "observedAt": 1792242314
+        },
+        {
+          "value": 908.349337,
+          "observedAt": 1792254013
+        },
+        {
+          "value": 902.949848,
+          "observedAt": 1792262113
+        },
+        {
+          "value": 913.399698,
+          "observedAt": 1792270213
+        },
+        {
+          "value": 924.627458,
+          "observedAt": 1792276814
+        },
+        {
+          "value": 909.881424,
+          "observedAt": 1792282513
+        },
+        {
+          "value": 929.309977,
+          "observedAt": 1792298713
+        },
+        {
+          "value": 924.303397,
+          "observedAt": 1792314313
+        },
+        {
+          "value": 907.213395,
+          "observedAt": 1792329014
+        },
+        {
+          "value": 895.289762,
+          "observedAt": 1792341013
+        },
+        {
+          "value": 898.911225,
+          "observedAt": 1792349413
+        },
+        {
+          "value": 896.124172,
+          "observedAt": 1792357513
+        },
+        {
+          "value": 893.781826,
+          "observedAt": 1792364413
+        },
+        {
+          "value": 885.007078,
+          "observedAt": 1792371616
+        },
+        {
+          "value": 918.54656,
+          "observedAt": 1792389314
+        },
+        {
+          "value": 909.172679,
+          "observedAt": 1792414213
+        },
+        {
+          "value": 904.655561,
+          "observedAt": 1792435814
+        },
+        {
+          "value": 906.720693,
+          "observedAt": 1792449313
+        },
+        {
+          "value": 903.919796,
+          "observedAt": 1792458913
+        },
+        {
+          "value": 910.127585,
+          "observedAt": 1792476014
+        },
+        {
+          "value": 901.447052,
+          "observedAt": 1792510814
+        },
+        {
+          "value": 903.234313,
+          "observedAt": 1792524614
+        },
+        {
+          "value": 900.632414,
+          "observedAt": 1792535413
+        },
+        {
+          "value": 904.574466,
+          "observedAt": 1792543812
+        },
+        {
+          "value": 909.526013,
+          "observedAt": 1792560013
+        },
+        {
+          "value": 893.335352,
+          "observedAt": 1792577714
+        },
+        {
+          "value": 897.824176,
+          "observedAt": 1792596013
+        },
+        {
+          "value": 885.173199,
+          "observedAt": 1792610413
+        },
+        {
+          "value": 905.565647,
+          "observedAt": 1792621512
+        },
+        {
+          "value": 903.945996,
+          "observedAt": 1792630213
+        },
+        {
+          "value": 905.397377,
+          "observedAt": 1792646713
+        },
+        {
+          "value": 891.972609,
+          "observedAt": 1792665014
+        },
+        {
+          "value": 869.248321,
+          "observedAt": 1792683013
+        },
+        {
+          "value": 893.776395,
+          "observedAt": 1792696813
+        },
+        {
+          "value": 890.774696,
+          "observedAt": 1792707913
+        },
+        {
+          "value": 886.269483,
+          "observedAt": 1792716614
+        },
+        {
+          "value": 883.980703,
+          "observedAt": 1792733112
+        },
+        {
+          "value": 870.53986,
+          "observedAt": 1792751114
+        },
+        {
+          "value": 887.947755,
+          "observedAt": 1792768513
+        },
+        {
+          "value": 898.234613,
+          "observedAt": 1792782914
+        },
+        {
+          "value": 903.053434,
+          "observedAt": 1792793413
+        },
+        {
+          "value": 899.717781,
+          "observedAt": 1792802413
+        },
+        {
+          "value": 902.297452,
+          "observedAt": 1792818013
+        },
+        {
+          "value": 879.235953,
+          "observedAt": 1792833613
+        },
+        {
+          "value": 895.401984,
+          "observedAt": 1792848013
+        },
+        {
+          "value": 895.685843,
+          "observedAt": 1792860012
+        },
+        {
+          "value": 868.59794,
+          "observedAt": 1792868413
+        },
+        {
+          "value": 902.288623,
+          "observedAt": 1792877113
+        },
+        {
+          "value": 887.627499,
+          "observedAt": 1792884613
+        },
+        {
+          "value": 875.084307,
+          "observedAt": 1792891813
+        },
+        {
+          "value": 899.246223,
+          "observedAt": 1792910413
+        },
+        {
+          "value": 863.323865,
+          "observedAt": 1792929314
+        },
+        {
+          "value": 889.387831,
+          "observedAt": 1792943713
+        },
+        {
+          "value": 887.287546,
+          "observedAt": 1792954213
+        },
+        {
+          "value": 889.526932,
+          "observedAt": 1792962912
+        },
+        {
+          "value": 890.820708,
+          "observedAt": 1792970113
+        },
+        {
+          "value": 899.838242,
+          "observedAt": 1792977613
+        },
+        {
+          "value": 896.285404,
+          "observedAt": 1792995913
+        },
+        {
+          "value": 881.369513,
+          "observedAt": 1793020813
+        },
+        {
+          "value": 863.025888,
+          "observedAt": 1793042413
+        },
+        {
+          "value": 881.069288,
+          "observedAt": 1793056213
+        },
+        {
+          "value": 879.800673,
+          "observedAt": 1793066413
+        },
+        {
+          "value": 873.121855,
+          "observedAt": 1793086813
+        },
+        {
+          "value": 883.510987,
+          "observedAt": 1793107813
+        },
+        {
+          "value": 884.068261,
+          "observedAt": 1793127013
+        },
+        {
+          "value": 882.25867,
+          "observedAt": 1793140513
+        },
+        {
+          "value": 889.736578,
+          "observedAt": 1793151613
+        },
+        {
+          "value": 864.454626,
+          "observedAt": 1793172313
+        },
+        {
+          "value": 881.275715,
+          "observedAt": 1793196613
+        },
+        {
+          "value": 861.754405,
+          "observedAt": 1793215813
+        },
+        {
+          "value": 876.939968,
+          "observedAt": 1793229912
+        },
+        {
+          "value": 862.921113,
+          "observedAt": 1793241613
+        },
+        {
+          "value": 877.706933,
+          "observedAt": 1793263816
+        },
+        {
+          "value": 856.150778,
+          "observedAt": 1793288412
+        },
+        {
+          "value": 831.524278,
+          "observedAt": 1793306113
+        },
+        {
+          "value": 862.044946,
+          "observedAt": 1793319313
+        },
+        {
+          "value": 883.77788,
+          "observedAt": 1793339412
+        },
+        {
+          "value": 852.13581,
+          "observedAt": 1793360413
+        },
+        {
+          "value": 856.883303,
+          "observedAt": 1793380213
+        },
+        {
+          "value": 863.416301,
+          "observedAt": 1793395213
+        },
+        {
+          "value": 867.597601,
+          "observedAt": 1793408113
+        },
+        {
+          "value": 865.713013,
+          "observedAt": 1793429413
+        },
+        {
+          "value": 845.991112,
+          "observedAt": 1793451913
+        },
+        {
+          "value": 858.255737,
+          "observedAt": 1793468414
+        },
+        {
+          "value": 864.336792,
+          "observedAt": 1793479213
+        },
+        {
+          "value": 873.535171,
+          "observedAt": 1793490013
+        },
+        {
+          "value": 875.014759,
+          "observedAt": 1793500514
+        },
+        {
+          "value": 842.000009,
+          "observedAt": 1793525712
+        },
+        {
+          "value": 838.155895,
+          "observedAt": 1793550012
+        },
+        {
+          "value": 858.948432,
+          "observedAt": 1793565312
+        },
+        {
+          "value": 849.942017,
+          "observedAt": 1793577013
+        },
+        {
+          "value": 850.678158,
+          "observedAt": 1793587513
+        },
+        {
+          "value": 844.339928,
+          "observedAt": 1793613914
+        },
+        {
+          "value": 863.623451,
+          "observedAt": 1793650512
+        },
+        {
+          "value": 870.849066,
+          "observedAt": 1793672412
+        },
+        {
+          "value": 853.611657,
+          "observedAt": 1793698813
+        },
+        {
+          "value": 857.707345,
+          "observedAt": 1793726113
+        },
+        {
+          "value": 848.190292,
+          "observedAt": 1793744412
+        },
+        {
+          "value": 835.942001,
+          "observedAt": 1793759112
+        },
+        {
+          "value": 853.585875,
+          "observedAt": 1793785214
+        },
+        {
+          "value": 855.843175,
+          "observedAt": 1793813412
+        },
+        {
+          "value": 842.909385,
+          "observedAt": 1793832313
+        },
+        {
+          "value": 847.899012,
+          "observedAt": 1793847012
+        },
+        {
+          "value": 839.255549,
+          "observedAt": 1793872513
+        },
+        {
+          "value": 859.90352,
+          "observedAt": 1793900713
+        },
+        {
+          "value": 847.922279,
+          "observedAt": 1793919013
+        },
+        {
+          "value": 838.812059,
+          "observedAt": 1793933413
+        },
+        {
+          "value": 854.841347,
+          "observedAt": 1793959213
+        },
+        {
+          "value": 823.838646,
+          "observedAt": 1793985613
+        },
+        {
+          "value": 847.826448,
+          "observedAt": 1794003013
+        },
+        {
+          "value": 837.922413,
+          "observedAt": 1794016213
+        },
+        {
+          "value": 822.890636,
+          "observedAt": 1794037813
+        },
+        {
+          "value": 828.867317,
+          "observedAt": 1794061213
+        },
+        {
+          "value": 833.735489,
+          "observedAt": 1794077413
+        },
+        {
+          "value": 827.751814,
+          "observedAt": 1794090013
+        },
+        {
+          "value": 838.359026,
+          "observedAt": 1794101413
+        },
+        {
+          "value": 833.178715,
+          "observedAt": 1794124212
+        },
+        {
+          "value": 823.244499,
+          "observedAt": 1794148213
+        },
+        {
+          "value": 835.86131,
+          "observedAt": 1794164413
+        },
+        {
+          "value": 832.911164,
+          "observedAt": 1794177613
+        },
+        {
+          "value": 849.693748,
+          "observedAt": 1794189312
+        },
+        {
+          "value": 848.699717,
+          "observedAt": 1794216613
+        },
+        {
+          "value": 840.994449,
+          "observedAt": 1794254112
+        },
+        {
+          "value": 838.056792,
+          "observedAt": 1794278114
+        },
+        {
+          "value": 830.653929,
+          "observedAt": 1794306014
+        },
+        {
+          "value": 840.305826,
+          "observedAt": 1794351913
+        },
+        {
+          "value": 834.225947,
+          "observedAt": 1794364813
+        },
+        {
+          "value": 842.979496,
+          "observedAt": 1794390613
+        },
+        {
+          "value": 829.244068,
+          "observedAt": 1794417913
+        },
+        {
+          "value": 848.535937,
+          "observedAt": 1794440112
+        },
+        {
+          "value": 842.580638,
+          "observedAt": 1794456615
+        },
+        {
+          "value": 825.782763,
+          "observedAt": 1794487213
+        },
+        {
+          "value": 797.117584,
+          "observedAt": 1794515113
+        },
+        {
+          "value": 830.084954,
+          "observedAt": 1794532813
+        },
+        {
+          "value": 828.40902,
+          "observedAt": 1794557412
+        },
+        {
+          "value": 831.095934,
+          "observedAt": 1794586513
+        },
+        {
+          "value": 822.514008,
+          "observedAt": 1794607213
+        },
+        {
+          "value": 814.784405,
+          "observedAt": 1794622213
+        },
+        {
+          "value": 819.056031,
+          "observedAt": 1794646513
+        },
+        {
+          "value": 799.428358,
+          "observedAt": 1794669913
+        },
+        {
+          "value": 788.614811,
+          "observedAt": 1794686112
+        },
+        {
+          "value": 794.591254,
+          "observedAt": 1794699913
+        },
+        {
+          "value": 794.591254,
+          "observedAt": 1794712212
+        },
+        {
+          "value": 783.772042,
+          "observedAt": 1794739513
+        },
+        {
+          "value": 806.751667,
+          "observedAt": 1794763513
+        },
+        {
+          "value": 800.436181,
+          "observedAt": 1794779712
+        },
+        {
+          "value": 790.604852,
+          "observedAt": 1794793513
+        },
+        {
+          "value": 795.410536,
+          "observedAt": 1794818114
+        },
+        {
+          "value": 779.532901,
+          "observedAt": 1794855012
+        },
+        {
+          "value": 790.529865,
+          "observedAt": 1794881413
+        },
+        {
+          "value": 790.477943,
+          "observedAt": 1794911713
+        },
+        {
+          "value": 794.465842,
+          "observedAt": 1794943213
+        },
+        {
+          "value": 795.046834,
+          "observedAt": 1794966013
+        },
+        {
+          "value": 786.657997,
+          "observedAt": 1794992713
+        },
+        {
+          "value": 765.761083,
+          "observedAt": 1795024513
+        },
+        {
+          "value": 777.333872,
+          "observedAt": 1795047013
+        },
+        {
+          "value": 768.300259,
+          "observedAt": 1795072513
+        },
+        {
+          "value": 747.006992,
+          "observedAt": 1795106112
+        },
+        {
+          "value": 760.362253,
+          "observedAt": 1795129813
+        },
+        {
+          "value": 792.165037,
+          "observedAt": 1795146912
+        }
+      ]
+    }
+  ]
+}

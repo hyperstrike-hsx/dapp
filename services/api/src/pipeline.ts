@@ -4,6 +4,8 @@ import { keccak256, toUtf8Bytes } from "ethers";
 import {
   calculateIndex,
   referencePrice,
+  ASK_REFERENCE_POLICY,
+  DEFAULT_HRP_POLICY,
   type VenueObservation,
   type ConstituentInput,
 } from "@hyperstrike/index-core";
@@ -48,10 +50,18 @@ export type ReplayInput = {
   indexId: string;
   observedAt: number;
   divisorE8: string;
+  /** Absent = two-sided HRP-1. The methodology is part of the committed input. */
+  methodology?: "HS-MVA-1";
   basket: {
     constituentId: string;
     weightE18: string;
     basePriceE8: string;
+    /**
+     * Each venue's own ask at basket approval. When present, a venue is read as
+     * a price relative to its own base, so persistent level differences between
+     * venues (fees, audience) cancel and a venue outage cannot shift the index.
+     */
+    venueBaseE8?: Record<string, string>;
     observations: Record<string, unknown>[];
   }[];
 };
@@ -70,6 +80,15 @@ export function compositionRoot(
       id: c.constituentId,
       weightE18: BigInt(c.weightE18).toString(),
       basePriceE8: BigInt(c.basePriceE8).toString(),
+      ...(c.venueBaseE8
+        ? {
+            venueBaseE8: Object.fromEntries(
+              Object.entries(c.venueBaseE8)
+                .sort(([a], [b]) => (a < b ? -1 : 1))
+                .map(([venue, base]) => [venue, BigInt(base).toString()]),
+            ),
+          }
+        : {}),
     }));
   return keccak256(
     toUtf8Bytes(
@@ -95,6 +114,21 @@ function reviveQuote(q: Record<string, unknown>): VenueObservation {
   }
   return copy as VenueObservation;
 }
+/** Rescales a venue quote onto the constituent's base level; quotes from a venue with no base are dropped. */
+export function basisAdjusted(
+  quotes: VenueObservation[],
+  basePriceE8: bigint,
+  venueBaseE8?: Record<string, string>,
+): VenueObservation[] {
+  if (!venueBaseE8) return quotes;
+  return quotes.flatMap((q) => {
+    const base = venueBaseE8[q.providerId];
+    if (!base || BigInt(base) <= 0n) return [];
+    const scale = (v?: bigint) =>
+      v === undefined ? undefined : (v * basePriceE8) / BigInt(base);
+    return [{ ...q, askE8: scale(q.askE8), bidE8: scale(q.bidE8) }];
+  });
+}
 export function replay(input: ReplayInput) {
   const constituents: ConstituentInput[] = input.basket.map((i) => ({
     constituentId: i.constituentId,
@@ -102,8 +136,15 @@ export function replay(input: ReplayInput) {
     basePriceE8: BigInt(i.basePriceE8),
     hrp: referencePrice(
       i.constituentId,
-      i.observations.map(reviveQuote),
+      basisAdjusted(
+        i.observations.map(reviveQuote),
+        BigInt(i.basePriceE8),
+        i.venueBaseE8,
+      ),
       input.observedAt * 1000,
+      input.methodology === "HS-MVA-1"
+        ? ASK_REFERENCE_POLICY
+        : DEFAULT_HRP_POLICY,
     ),
   }));
   return {
@@ -111,30 +152,27 @@ export function replay(input: ReplayInput) {
     index: calculateIndex(constituents, BigInt(input.divisorE8)),
   };
 }
-export function commitCalculation(db: DatabaseSync, input: ReplayInput) {
-  const canonical = {
+/** Canonical ordering: the committed hash never depends on fetch or iteration order. */
+export function canonicalInput(input: ReplayInput): ReplayInput {
+  const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return {
     ...input,
     basket: [...input.basket]
-      .sort((a, b) =>
-        a.constituentId < b.constituentId
-          ? -1
-          : a.constituentId > b.constituentId
-            ? 1
-            : 0,
-      )
+      .sort((a, b) => order(a.constituentId, b.constituentId))
       .map((i) => ({
         ...i,
         observations: [...i.observations].sort((a, b) =>
-          String(a.providerId) < String(b.providerId)
-            ? -1
-            : String(a.providerId) > String(b.providerId)
-              ? 1
-              : 0,
+          order(String(a.providerId), String(b.providerId)),
         ),
       })),
   };
+}
+export const inputHash = (canonical: ReplayInput) =>
+  `0x${createHash("sha256").update(stringify(canonical)).digest("hex")}` as const;
+export function commitCalculation(db: DatabaseSync, input: ReplayInput) {
+  const canonical = canonicalInput(input);
   const serialized = stringify(canonical),
-    hash = `0x${createHash("sha256").update(serialized).digest("hex")}`;
+    hash = inputHash(canonical);
   const output = replay(canonical);
   db.prepare("INSERT INTO replay_records VALUES(?,?,?,?,?)").run(
     input.indexId,

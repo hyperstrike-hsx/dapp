@@ -25,7 +25,14 @@ type Basket = {
     mappings: { providerId: string; instrument: string }[];
   }[];
 };
-export function validateBasket(b: Basket, providers: HttpProviderConfig[]) {
+export type { Basket };
+export function validateBasket(
+  b: Basket,
+  providers: readonly { id: string }[],
+  // Genesis has no prior composition to protect, so no announcement period;
+  // every later version keeps the seven-day notice (also enforced on chain).
+  options: { genesis?: boolean; minProviders?: number } = {},
+) {
   if (
     !/^0x[0-9a-fA-F]{64}$/.test(b.versionId) ||
     !Number.isSafeInteger(b.approvedAt) ||
@@ -46,7 +53,7 @@ export function validateBasket(b: Basket, providers: HttpProviderConfig[]) {
     b.constituents.length
   )
     throw Error("Duplicate constituent");
-  if (b.approvedAt > b.activatesAt - 7 * 86400)
+  if (!options.genesis && b.approvedAt > b.activatesAt - 7 * 86400)
     throw Error("Composition needs seven-day announcement");
   for (const c of b.constituents) {
     if (BigInt(c.basePriceE8) <= 0n || BigInt(c.weightE18) <= 0n)
@@ -60,7 +67,8 @@ export function validateBasket(b: Basket, providers: HttpProviderConfig[]) {
     )
       throw Error(`Ineligible constituent ${c.constituentId}`);
     if (
-      new Set(c.mappings.map((m) => m.providerId)).size < 2 ||
+      new Set(c.mappings.map((m) => m.providerId)).size <
+        (options.minProviders ?? 2) ||
       c.mappings.some((m) => !providers.some((p) => p.id === m.providerId))
     )
       throw Error("Two independent configured providers required");
@@ -101,7 +109,12 @@ export function validateBasket(b: Basket, providers: HttpProviderConfig[]) {
       )
         throw Error("Sleeve allocation");
       const first = BigInt(members[0].weightE18);
-      if (members.some((c) => BigInt(c.weightE18) !== first))
+      // Sleeves that do not divide evenly carry at most a few wei of dust.
+      const dust = (c: { weightE18: string }) =>
+        BigInt(c.weightE18) > first
+          ? BigInt(c.weightE18) - first
+          : first - BigInt(c.weightE18);
+      if (members.some((c) => dust(c) >= BigInt(members.length)))
         throw Error("Equal weights within sleeves required");
     }
   }

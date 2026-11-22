@@ -208,9 +208,9 @@ export function IndexDetail({
               : `${index.count} equally weighted constituents. ${100 / index.count}% per constituent.`}
           </p>
           <p>
-            Reference prices use qualifying two-sided quotes, robust outlier
-            rejection and capped liquidity weights. At least two independent
-            venues are required.
+            Reference prices are the lowest executable asks on five venues,
+            with robust outlier rejection and liquidity weights capped at 40%.
+            At least three venues must agree.
           </p>
         </section>
         <section>
@@ -243,9 +243,9 @@ export function IndexDetail({
             </>
           ) : (
             <p>
-              The initial approved basket and source coverage have not been
-              published. Constituent data will appear here once verified, with
-              exact weights and inclusion decisions.
+              The basket above is the committed composition. Its on-chain
+              version and signed contributions appear here once the oracle is
+              deployed.
             </p>
           )}
         </section>
@@ -284,7 +284,7 @@ export function CreatorForm({
     creationReferenceTime: template === "MOVE" ? (ref?.observedAt ?? 0) : 0,
     creationReferenceValueE8: template === "MOVE" ? value : 0n,
     resolutionTime,
-    tradeCloseTime: resolutionTime - 300,
+    tradeCloseTime: resolutionTime - 900,
     settlementPolicyId: SETTLEMENT_POLICY_ID,
   };
   const healthy =

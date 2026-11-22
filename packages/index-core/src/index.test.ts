@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   referencePrice,
+  ASK_REFERENCE_POLICY,
   cappedWeights,
   calculateIndex,
   continuityDivisor,
@@ -83,6 +84,93 @@ describe("reference price deterministic engine", () => {
       expect(r.valueE8).toBe(101n * E8);
       expect(r.confidenceBps).toBeLessThan(9000);
     }
+  });
+  describe("HS-MVA-1 consolidated ask reference", () => {
+    const ask = (
+      providerId: string,
+      usd: number,
+      listed = 50,
+      bidUsd?: number,
+      ageMs = 0,
+    ): VenueObservation => ({
+      constituentId: "internal-1",
+      providerId,
+      observedAtMs: now - ageMs,
+      receivedAtMs: now - ageMs,
+      askE8: BigInt(Math.round(usd * 100)) * (E8 / 100n),
+      askDepthUsdE8: BigInt(Math.round(usd * 100)) * (E8 / 100n) * BigInt(listed),
+      bidE8: bidUsd ? BigInt(Math.round(bidUsd * 100)) * (E8 / 100n) : undefined,
+      rawPayloadHash: "0xab",
+    });
+    const price = (qs: VenueObservation[]) =>
+      referencePrice("internal-1", qs, now, ASK_REFERENCE_POLICY);
+    it("needs three venues and prices ask-only quotes", () => {
+      expect(price([ask("a", 100), ask("b", 101)]).status).toBe("UNAVAILABLE");
+      const r = price([ask("a", 100), ask("b", 101), ask("c", 104)]);
+      expect(r.status).toBe("AVAILABLE");
+      if (r.status === "AVAILABLE") {
+        expect(r.valueE8).toBe(101n * E8);
+        expect(r.components.sources).toBe(400);
+        // No resting bid anywhere is a fixed corroboration penalty.
+        expect(r.components.spread).toBe(300);
+      }
+    });
+    it("takes the depth-weighted median with no venue above 40%", () => {
+      const r = price([
+        ask("a", 100, 1),
+        ask("b", 101, 1),
+        ask("c", 102, 1),
+        ask("d", 103, 1),
+        ask("e", 110, 100_000),
+      ]);
+      // The deep venue is capped at 40%, so it cannot drag the median to 110.
+      if (r.status === "AVAILABLE") expect(r.valueE8).toBe(103n * E8);
+      else throw Error("unavailable");
+    });
+    it("rejects an outlier ask and a venue with no ask, and is permutation invariant", () => {
+      const qs = [
+        ask("a", 100),
+        ask("b", 101),
+        ask("c", 102),
+        ask("d", 150),
+        { ...ask("e", 100), askE8: undefined },
+      ];
+      const r = price(qs);
+      expect(price([...qs].reverse())).toEqual(r);
+      if (r.status !== "AVAILABLE") throw Error("unavailable");
+      expect(r.valueE8).toBe(101n * E8);
+      expect(r.rejected).toEqual(
+        expect.arrayContaining([
+          { providerId: "d", reason: "OUTLIER" },
+          { providerId: "e", reason: "NO_ASK" },
+        ]),
+      );
+    });
+    it("uses bids only as corroboration and forgives one venue cache interval", () => {
+      const tight = price([
+        ask("a", 100, 50, 98),
+        ask("b", 100),
+        ask("c", 100),
+        ask("d", 100, 50, undefined, 300_000),
+      ]);
+      if (tight.status !== "AVAILABLE") throw Error("unavailable");
+      expect(tight.valueE8).toBe(100n * E8);
+      expect(tight.components.spread).toBe(100);
+      expect(tight.components.staleness).toBe(0);
+      expect(tight.confidenceBps).toBe(9900);
+      const old = price([
+        ask("a", 100),
+        ask("b", 100),
+        ask("c", 100),
+        ask("d", 100, 50, undefined, 450_000),
+        ask("e", 100, 50, undefined, 600_001),
+      ]);
+      if (old.status !== "AVAILABLE") throw Error("unavailable");
+      expect(old.components.staleness).toBe(350);
+      expect(old.rejected).toEqual([
+        { providerId: "e", reason: "STALE_OR_FUTURE" },
+      ]);
+    });
   });
   it("rejects one extreme outlier and is permutation invariant", () => {
     const qs = [

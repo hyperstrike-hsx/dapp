@@ -38,7 +38,7 @@ export function opportunities(
             creationReferenceTime: template === "MOVE" ? ref.observedAt : 0,
             creationReferenceValueE8:
               template === "MOVE" ? BigInt(ref.valueE8) : 0n,
-            tradeCloseTime: resolutionTime - 300,
+            tradeCloseTime: resolutionTime - 900,
             resolutionTime,
             settlementPolicyId: SETTLEMENT_POLICY_ID,
           };

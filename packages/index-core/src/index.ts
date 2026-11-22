@@ -40,9 +40,30 @@ export type HrpPolicy = {
   maxSpreadBps: bigint;
   minDepthUsdE8: bigint;
   disabledProviders: readonly string[];
+  /** TWO_SIDED (default) prices venue mids; ASK prices the lowest executable ask. */
+  mode?: "TWO_SIDED" | "ASK";
+  minSources?: number;
+  /** Age below this carries no staleness penalty (a venue's own cache cadence). */
+  freshMs?: number;
 };
 export const DEFAULT_HRP_POLICY: HrpPolicy = {
   maxAgeMs: 300_000,
+  maxSpreadBps: 1500n,
+  minDepthUsdE8: 100n * E8,
+  disabledProviders: [],
+};
+/**
+ * HS-MVA-1: consolidated lowest executable ask. Public CS2 venues are sell-side
+ * books (seller pays the fee, so the ask is the buyer's all-in cost); resting
+ * bids exist on a minority of venues and only cross-check the ask. Three
+ * independent venues are the minimum because a lone ask is cheap to post.
+ */
+export const ASK_REFERENCE_POLICY: HrpPolicy = {
+  mode: "ASK",
+  minSources: 3,
+  maxAgeMs: 600_000,
+  // Venue price lists are themselves cached for up to five minutes.
+  freshMs: 300_000,
   maxSpreadBps: 1500n,
   minDepthUsdE8: 100n * E8,
   disabledProviders: [],
@@ -100,6 +121,10 @@ export function referencePrice(
   policy = DEFAULT_HRP_POLICY,
 ): ReferencePrice {
   const rejected: { providerId: string; reason: string }[] = [];
+  const ask = policy.mode === "ASK";
+  const minSources = policy.minSources ?? 2;
+  const twoSided = (q: VenueObservation) =>
+    !!q.bidE8 && !!q.askE8 && q.bidE8 > 0n && q.bidE8 < q.askE8;
   const counts = new Map<string, number>();
   inputs.forEach((q) =>
     counts.set(q.providerId, (counts.get(q.providerId) ?? 0) + 1),
@@ -122,21 +147,22 @@ export function referencePrice(
         nowMs - q.observedAtMs > policy.maxAgeMs
       )
         reason = "STALE_OR_FUTURE";
-      else if (!q.bidE8 || !q.askE8 || q.bidE8 <= 0n || q.bidE8 >= q.askE8)
-        reason = "NOT_TWO_SIDED";
+      else if (ask ? !q.askE8 || q.askE8 <= 0n : !twoSided(q))
+        reason = ask ? "NO_ASK" : "NOT_TWO_SIDED";
       else if (
-        ((q.askE8 - q.bidE8) * 20_000n) / (q.askE8 + q.bidE8) >
-        policy.maxSpreadBps
+        !ask &&
+        ((q.askE8! - q.bidE8!) * 20_000n) / (q.askE8! + q.bidE8!) >
+          policy.maxSpreadBps
       )
         reason = "SPREAD";
       if (reason) rejected.push({ providerId: q.providerId, reason });
       return !reason;
     })
-    .map((q) => ({ ...q, mid: (q.bidE8! + q.askE8!) / 2n }))
+    .map((q) => ({ ...q, mid: ask ? q.askE8! : (q.bidE8! + q.askE8!) / 2n }))
     .sort((a, b) =>
       a.providerId < b.providerId ? -1 : a.providerId > b.providerId ? 1 : 0,
     );
-  if (quotes.length < 2) return { status: "UNAVAILABLE", rejected };
+  if (quotes.length < minSources) return { status: "UNAVAILABLE", rejected };
   const m = median(quotes.map((q) => q.mid));
   const mad = median(quotes.map((q) => abs(q.mid - m)));
   const limit =
@@ -148,9 +174,10 @@ export function referencePrice(
     rejected.push({ providerId: q.providerId, reason: "OUTLIER" });
     return false;
   });
-  if (valid.length < 2) return { status: "UNAVAILABLE", rejected };
+  if (valid.length < minSources) return { status: "UNAVAILABLE", rejected };
   const depth = valid.map((q) => {
-    const observed = (q.bidDepthUsdE8 ?? 0n) + (q.askDepthUsdE8 ?? 0n);
+    const observed =
+      (ask ? 0n : (q.bidDepthUsdE8 ?? 0n)) + (q.askDepthUsdE8 ?? 0n);
     return observed > 0n
       ? observed
       : (q.rollingVolumeUsdE8 ?? 0n) > 0n
@@ -174,13 +201,30 @@ export function referencePrice(
     }
   }
   const age = Math.max(...valid.map((q) => nowMs - q.observedAtMs));
-  const spread = median(
-    valid.map((q) => ((q.askE8! - q.bidE8!) * 10_000n) / q.mid),
+  // Ask mode: bids are corroboration only. No resting bid anywhere costs a
+  // fixed 300 bps; where bids exist, the tightest venue spread is the evidence.
+  const bids = valid.filter(twoSided);
+  const spreads = (ask ? bids : valid).map(
+    (q) => ((q.askE8! - q.bidE8!) * 10_000n) / q.mid,
   );
+  const spread = !spreads.length
+    ? 600n
+    : ask
+      ? spreads.reduce((a, b) => (a < b ? a : b))
+      : median(spreads);
   const dispersion = median(valid.map((q) => (abs(q.mid - m) * 10_000n) / m));
   const components = {
-    sources: valid.length === 2 ? 1400 : 0,
-    staleness: Math.floor((age * 700) / policy.maxAgeMs),
+    sources: ask
+      ? valid.length === 3
+        ? 400
+        : 0
+      : valid.length === 2
+        ? 1400
+        : 0,
+    staleness: Math.floor(
+      (Math.max(0, age - (policy.freshMs ?? 0)) * 700) /
+        (policy.maxAgeMs - (policy.freshMs ?? 0)),
+    ),
     spread: Math.min(1000, (Number(spread) / 2) | 0),
     dispersion: Math.min(1200, Number(dispersion)),
     liquidity: median(depth) < policy.minDepthUsdE8 ? 800 : 0,

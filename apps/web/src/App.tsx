@@ -872,7 +872,7 @@ export default function App() {
                     </button>
                   ))}
                   <footer>
-                    <span>SKINPORT USD ASKS · NOT FOR SETTLEMENT</span>
+                    <span>FIVE-VENUE USD ASKS · PUBLISHED FEED</span>
                     <button onClick={() => nav("Indexes")}>
                       ALL INDEXES →
                     </button>
@@ -1064,9 +1064,9 @@ export default function App() {
                 <span className="overline">THE BENCHMARK BEFORE THE BET</span>
                 <h1>{indexDetail ?? "Know what moves."}</h1>
                 <p>
-                  Five views of the skin economy. Real Skinport listing prices,
-                  frozen preview baskets and a base of 1,000. Indicative only —
-                  never used for settlement. Market collateral remains USDC.
+                  Five views of the skin economy. Real executable prices from
+                  five marketplaces, frozen baskets and a base of 1,000. Markets
+                  settle on the signed on-chain series. Collateral is USDC.
                 </p>
               </div>
               {indexDetail ? (
@@ -1097,14 +1097,14 @@ export default function App() {
                       <IndexArtwork ticker={i.ticker} />
                       <p>
                         {i.ticker === "HS-BLUE20"
-                          ? "Preview: twenty premium weapon skins. A proxy basket, not yet the approved collectible index."
+                          ? "Twenty premium weapon skins, one wear per skin. Equal weight, five-venue pricing."
                           : i.ticker === "HS-CASE20"
-                            ? "Preview: twenty cases listed on Skinport for at least 90 days. Equal-weight USD asks."
+                            ? "Twenty seasoned cases priced above $1. Equal weight, five-venue pricing."
                             : i.ticker === "HS-KNIFE20"
-                              ? "Preview: twenty knife configurations selected by listed inventory. Equal-weight USD asks."
+                              ? "Twenty knives ranked by traded volume, at most two per family. Equal weight."
                               : i.ticker === "HS-GLOVE10"
-                                ? "Preview: ten glove configurations selected by listed inventory. Equal-weight USD asks."
-                                : "Preview: fifty configurations across knives, gloves, weapon skins, cases and premium weapons."}
+                                ? "Ten gloves ranked by traded volume, at most two per family. Equal weight."
+                                : "Fifty constituents across knives, gloves, weapon skins, cases and premium weapons."}
                       </p>
                       <PreviewSummary index={indicative[i.indexId]} />
                       <small>

@@ -11,18 +11,25 @@ export type IndicativeIndex = {
   observedAt: number | null;
   coverage: number;
   count: number;
+  /** Multi-venue feed only: index confidence and the committed composition version. */
+  confidenceBps?: number;
+  versionId?: string;
   constituents: {
     name: string;
     baseUsd: number;
     priceUsd: number | null;
     weight: number;
     updatedAt: number | null;
+    /** Venues whose quote passed the freshness and outlier filters. */
+    sources?: number;
   }[];
   history: { value: number; observedAt: number }[];
 };
 export type IndicativeFeed = {
-  source: "Skinport";
+  /** Human-readable venue list. */
+  source: string;
   sourceUrl: string;
+  venues?: { id: string; label: string; site: string; ok: boolean }[];
   currency: "USD";
   methodology: string;
   checkedAt: number;

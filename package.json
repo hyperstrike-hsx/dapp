@@ -19,6 +19,8 @@
     "replay-index": "tsx services/api/src/replay.ts",
     "oracle:sign": "tsx services/api/src/signer.ts",
     "oracle:publish": "tsx services/api/src/publisher.ts",
+    "oracle:daemon": "tsx services/api/src/oracle-daemon.ts",
+    "genesis:build": "node --import tsx scripts/build-genesis.mts",
     "chain:index": "tsx services/api/src/chain-indexer.ts",
     "native:deploy": "node contracts/script/deploy-native.mjs",
     "build": "pnpm -r --if-present build",

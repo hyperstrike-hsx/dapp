@@ -9,8 +9,44 @@ import { openStore, stringify } from "./store";
 import { opportunities } from "./opportunities";
 import { getHsxChart } from "./hsx-chart";
 import { createIndicativeFeed } from "./indicative";
+import type { IndicativeFeed } from "@hyperstrike/market-types";
+import { refreshComposite } from "./composite-feed";
+import { loadGenesis } from "./oracle-engine";
+import { METHODOLOGY } from "./genesis";
 export const db = openStore();
-const indicativeFeed = createIndicativeFeed(db);
+createIndicativeFeed(db); // keeps the retired single-venue tables readable
+// Same multi-venue computation as the published static snapshot, refreshed at most every five minutes.
+let composite: { at: number; feed: IndicativeFeed } | undefined;
+let compositePending: Promise<IndicativeFeed> | undefined;
+async function indicativeFeed(): Promise<IndicativeFeed> {
+  if (composite && Date.now() - composite.at < 300_000) return composite.feed;
+  compositePending ??= (async () => {
+    const stored = db
+      .prepare("SELECT data FROM indicative_cache WHERE id=?")
+      .get(METHODOLOGY);
+    const previous: IndicativeFeed | undefined =
+      composite?.feed ?? (stored ? JSON.parse(String(stored.data)) : undefined);
+    let feed: IndicativeFeed;
+    try {
+      if (process.env.HS_INDICATIVE_ENABLED === "false")
+        throw Error("Index feed disabled");
+      feed = await refreshComposite(previous, loadGenesis());
+      db.prepare(
+        "INSERT INTO indicative_cache VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at,data=excluded.data",
+      ).run(METHODOLOGY, Date.now(), JSON.stringify(feed));
+    } catch (error) {
+      if (!previous) throw error;
+      feed = {
+        ...previous,
+        error: "Venue data unavailable. Last values are not current quotes.",
+        indexes: previous.indexes.map((i) => ({ ...i, status: "STALE" })),
+      };
+    }
+    composite = { at: Date.now(), feed };
+    return feed;
+  })().finally(() => (compositePending = undefined));
+  return compositePending;
+}
 const now = () => Math.floor(Date.now() / 1000);
 const parse = (row: unknown) =>
   row ? JSON.parse((row as { data: string }).data) : null;

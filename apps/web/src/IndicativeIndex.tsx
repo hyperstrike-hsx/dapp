@@ -23,7 +23,7 @@ export function useIndicativeIndexes() {
         });
         if (!response.ok) throw Error("Feed unavailable");
         const next = (await response.json()) as IndicativeFeed;
-        if (!Array.isArray(next.indexes) || next.source !== "Skinport")
+        if (!Array.isArray(next.indexes) || typeof next.source !== "string")
           throw Error("Invalid feed");
         if (alive) setFeed(ageIndicativeFeed(next));
       } catch {
@@ -39,10 +39,10 @@ export function useIndicativeIndexes() {
                   })),
                 }
               : {
-                  source: "Skinport",
-                  sourceUrl: "https://skinport.com/",
+                  source: "",
+                  sourceUrl: "",
                   currency: "USD",
-                  methodology: "skinport-ask-preview-v1",
+                  methodology: "HS-MVA-1",
                   checkedAt: Math.floor(Date.now() / 1000),
                   error: "Price API unavailable.",
                   indexes: INDEXES.map((i) => ({
@@ -104,7 +104,7 @@ export function PreviewChart({ index }: { index?: IndicativeIndex }) {
   const path = points
     .map(
       (p, i) =>
-        `${i ? "L" : "M"}${10 + (580 * (p.observedAt - start)) / (duration || 1)} ${max === min ? 60 : 105 - ((p.value - min) / (max - min)) * 90}`,
+        `${i ? "L" : "M"}${10 + (580 * (p.observedAt - start)) / (duration || 1)} ${max - min < 0.005 ? 60 : 105 - ((p.value - min) / (max - min)) * 90}`,
     )
     .join(" ");
   return (
@@ -112,7 +112,7 @@ export function PreviewChart({ index }: { index?: IndicativeIndex }) {
       className="preview-chart"
       viewBox="0 0 600 120"
       role="img"
-      aria-label={`Indicative Skinport ask-price history, ${points.length} observations. Not settlement data.`}
+      aria-label={`Index history, ${points.length} multi-venue observations.`}
     >
       {[15, 60, 105].map((y) => (
         <line key={y} x1="0" x2="600" y1={y} y2={y} stroke="#ffffff12" />
@@ -122,14 +122,17 @@ export function PreviewChart({ index }: { index?: IndicativeIndex }) {
     </svg>
   );
 }
+/** The change as displayed: two decimals, so a rounding residue never reads as a fall. */
+const shown = (index: IndicativeIndex) =>
+  Math.round(index.changeSinceBasePct! * 100) / 100 || 0;
 export const changeLabel = (index?: IndicativeIndex) =>
   index?.changeSinceBasePct == null
     ? "—"
-    : `${index.changeSinceBasePct >= 0 ? "+" : "−"}${Math.abs(index.changeSinceBasePct).toFixed(2)}%`;
+    : `${shown(index) >= 0 ? "+" : "−"}${Math.abs(shown(index)).toFixed(2)}%`;
 export const trendOf = (index?: IndicativeIndex) =>
   index?.changeSinceBasePct == null
     ? "flat"
-    : index.changeSinceBasePct >= 0
+    : shown(index) >= 0
       ? "up"
       : "down";
 /** Tiny history line for tickers and boards. Decorative: the value sits beside it. */
@@ -144,7 +147,7 @@ export function Spark({ index }: { index?: IndicativeIndex }) {
   const path = points
     .map(
       (p, i) =>
-        `${i ? "L" : "M"}${(1 + (62 * (p.observedAt - start)) / duration).toFixed(1)} ${(max === min ? 10 : 18 - ((p.value - min) / (max - min)) * 16).toFixed(1)}`,
+        `${i ? "L" : "M"}${(1 + (62 * (p.observedAt - start)) / duration).toFixed(1)} ${(max - min < 0.005 ? 10 : 18 - ((p.value - min) / (max - min)) * 16).toFixed(1)}`,
     )
     .join(" ");
   return (
@@ -169,7 +172,7 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
       <span className="preview-label">
         INDICATIVE ·{" "}
         {index?.status === "OK"
-          ? "SKINPORT USD ASKS"
+          ? "5-VENUE USD REFERENCE"
           : (index?.status ?? "CONNECTING")}
       </span>
       <strong>{previewValue(index)}</strong>
@@ -183,10 +186,15 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
         <span>
           {index?.coverage ?? 0}/{index?.count ?? "—"} <small>COVERAGE</small>
         </span>
+        {index?.confidenceBps != null && (
+          <span>
+            {(index.confidenceBps / 100).toFixed(1)}% <small>CONFIDENCE</small>
+          </span>
+        )}
       </div>
       <PreviewChart index={index} />
       <small>
-        NOT FOR SETTLEMENT ·{" "}
+        PUBLISHED FEED · MARKETS SETTLE ON SIGNED ON-CHAIN DATA ·{" "}
         {index?.observedAt
           ? `SOURCE ${timestamp(index.observedAt)}`
           : "NO SOURCE OBSERVATION YET"}
@@ -199,45 +207,43 @@ export function PreviewDetail({ index }: { index?: IndicativeIndex }) {
     <section className="preview-detail">
       <div>
         <span className="overline">
-          {API_ENABLED ? "LIVE MARKET PREVIEW" : "PUBLISHED MARKET SNAPSHOT"} /
-          DISPLAY ONLY
+          {API_ENABLED ? "LIVE INDEX" : "PUBLISHED INDEX SNAPSHOT"} / FIVE
+          VENUES
         </span>
         <h2>The market, in perspective.</h2>
         <p>
-          Public{" "}
-          <a href="https://skinport.com/" target="_blank" rel="noreferrer">
-            Skinport
-          </a>{" "}
-          minimum listing prices in USD.{" "}
+          The lowest executable USD ask for every constituent, read from five
+          independent marketplaces: Skinport, Market.CSGO, DMarket, Waxpeer and
+          LIS-SKINS. Each price is the liquidity-weighted median across venues,
+          with no venue above 40% and outliers beyond 12.5% rejected. At least
+          three venues must agree or the constituent is left out.{" "}
           {API_ENABLED
-            ? "Upstream refresh every five minutes."
-            : "Published snapshots target ten-minute updates; scheduling and deployment can lag. Check the source timestamp below."}{" "}
-          This is an ask-price proxy, not executed sales, a USDC quote, or an
-          approved settlement benchmark.
+            ? "Refreshed every five minutes."
+            : "Published snapshots target ten-minute updates; check the source timestamp below."}
         </p>
         <p>
-          Frozen preview basket, rebased to 1,000 on{" "}
-          {timestamp(index?.baseAt ?? null)}. No historical returns are
-          invented. Missing constituents make the last complete value stale.
+          Methodology HS-MVA-1. Baskets were selected by 30-day traded volume
+          from items quoted on all five venues and are frozen, with a base of
+          1,000 on {timestamp(index?.baseAt ?? null)}. Markets settle only on
+          the quorum-signed on-chain series computed from the same inputs.
         </p>
         {index?.ticker === "HS-BLUE20" && (
           <p>
-            BLUE20 preview uses weapon skins priced at $250 or more when
-            selected. It does not yet represent the approved premium-collectible
-            universe.
+            BLUE20 holds twenty premium weapon skins priced at $100 or more at
+            selection, one wear per skin.
           </p>
         )}
       </div>
       <PreviewSummary index={index} />
       <details className="preview-composition">
         <summary>
-          Preview basket · {index?.constituents.length ?? 0} constituents ·
-          exact weights
+          Basket · {index?.constituents.length ?? 0} constituents · exact
+          weights
         </summary>
         <p>
-          Selected by listed inventory (not trading volume) at first
-          initialization. Membership and base prices persist on the server. This
-          composition is separate from the canonical index below.
+          Ranked by 30-day traded volume with family and finish caps. The
+          composition hash is committed on chain; membership changes only
+          through an announced rebalance.
         </p>
         <div className="preview-table-scroll">
           <table>
@@ -246,7 +252,8 @@ export function PreviewDetail({ index }: { index?: IndicativeIndex }) {
                 <th>Item / wear</th>
                 <th>Weight</th>
                 <th>Base USD</th>
-                <th>Latest USD ask</th>
+                <th>Reference USD</th>
+                <th>Venues</th>
               </tr>
             </thead>
             <tbody>
@@ -260,6 +267,7 @@ export function PreviewDetail({ index }: { index?: IndicativeIndex }) {
                       ? "Unavailable"
                       : `$${c.priceUsd.toFixed(2)}`}
                   </td>
+                  <td>{c.sources ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
