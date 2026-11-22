@@ -21,14 +21,16 @@ contract NativeBinaryMarket is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     T.Definition private definition_;
-    ProtocolAccess public immutable access;
-    ProtocolConfig public immutable config;
-    IERC20 public immutable collateral;
-    FeeVault public immutable fees;
-    address public immutable factory;
-    address public immutable settlement;
-    address public immutable creator;
-    bytes32 public immutable marketKey;
+    // Set once by initialize(): every market is an EIP-1167 clone of one implementation, so creating
+    // a market costs a fraction of a HyperEVM small block instead of nearly all of it.
+    ProtocolAccess public access;
+    ProtocolConfig public config;
+    IERC20 public collateral;
+    FeeVault public fees;
+    address public factory;
+    address public settlement;
+    address public creator;
+    bytes32 public marketKey;
     uint256[2] public reserve;
     uint256[2] public totalClaims;
     mapping(address => mapping(uint8 => uint256)) public balanceOf;
@@ -41,7 +43,15 @@ contract NativeBinaryMarket is ReentrancyGuard {
     event StateChanged(T.State state);
     event Redeemed(address indexed account, uint256 yesAmount, uint256 noAmount, uint256 payout);
 
-    constructor(T.Definition memory d, ProtocolAccess a, ProtocolConfig c, FeeVault f, address s, address owner) {
+    constructor() {
+        factory = address(1); // the implementation itself can never be initialized or seeded
+    }
+
+    /// Called by the factory in the same transaction that clones this market. Immutable afterwards.
+    function initialize(T.Definition calldata d, ProtocolAccess a, ProtocolConfig c, FeeVault f, address s, address owner)
+        external
+    {
+        require(factory == address(0) && owner != address(0) && s != address(0), "initialized");
         definition_ = d;
         access = a;
         config = c;
@@ -67,7 +77,9 @@ contract NativeBinaryMarket is ReentrancyGuard {
 
     function seed(uint256 amount) external nonReentrant {
         require(msg.sender == factory && !initialized && amount > 0 && amount <= config.pilotCap(), "seed");
-        require(collateral.balanceOf(address(this)) == amount, "seed funding");
+        // >=, never ==: the market address is predictable, so a 1-wei pre-funding donation must not
+        // be able to block creation. Any surplus is unbacked dust, swept after final redemption.
+        require(collateral.balanceOf(address(this)) >= amount, "seed funding");
         initialized = true;
         reserve = [amount, amount];
         totalClaims = [amount, amount];

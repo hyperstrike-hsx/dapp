@@ -16,6 +16,7 @@ import {NativeBinaryMarket} from "../src/native/NativeBinaryMarket.sol";
 import {MarketFactory} from "../src/native/MarketFactory.sol";
 import {SettlementManager} from "../src/native/SettlementManager.sol";
 import {FeeVault} from "../src/native/FeeVault.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 interface VmNative {
     function warp(uint256) external;
@@ -26,6 +27,8 @@ interface VmNative {
     function stopPrank() external;
     function deal(address, uint256) external;
     function expectRevert() external;
+    function computeCreateAddress(address, uint256) external pure returns (address);
+    function getNonce(address) external view returns (uint64);
 }
 
 contract PilotCollateral is ERC20 {
@@ -64,14 +67,9 @@ contract NativeProtocolTest {
         access.grantRole(access.ORACLE_ADMIN_ROLE(), address(this));
         access.grantRole(access.PAUSER_ROLE(), address(this));
         access.grantRole(access.RESOLUTION_ROLE(), address(this));
-        registry = new IndexRegistry(access);
-        registry.schedule(
-            indexId,
-            IndexRegistry.Version(
-                versionId, uint64(block.timestamp + 7 days), keccak256("methodology"), keccak256("composition")
-            )
-        );
-        vm.warp(block.timestamp + 7 days);
+        bytes32[5] memory ids = [versionId, versionId, versionId, versionId, versionId];
+        bytes32 c = keccak256("composition");
+        registry = new IndexRegistry(access, ids, [c, c, c, c, c], keccak256("methodology"));
         address[3] memory addresses = [vm.addr(1), vm.addr(2), vm.addr(3)];
         signers = new OracleSignerRegistry(access, addresses);
         oracle = new IndexOracle(registry, signers);
@@ -83,7 +81,7 @@ contract NativeProtocolTest {
         strike.mint(alice, 100e18);
         fees = new FeeVault(usd, treasury);
         settlement = new SettlementManager(oracle, access, payable(treasury));
-        factory = new MarketFactory(access, config, strike, settlement, fees);
+        factory = new MarketFactory(access, config, strike, settlement, fees, address(new NativeBinaryMarket()));
         usd.mint(alice, 1_000_000e6);
         vm.startPrank(alice);
         strike.approve(address(factory), type(uint256).max);
@@ -113,7 +111,7 @@ contract NativeProtocolTest {
     function definition() private view returns (T.Definition memory) {
         uint64 t = config.expiry(T.Expiry.DAILY, block.timestamp);
         return T.Definition(
-            T.Template.LEVEL, indexId, T.Direction.UP, 1000e8, 0, 0, t - 300, t, config.SETTLEMENT_POLICY()
+            T.Template.LEVEL, indexId, T.Direction.UP, 1000e8, 0, 0, t - 900, t, config.SETTLEMENT_POLICY()
         );
     }
 
@@ -130,6 +128,7 @@ contract NativeProtocolTest {
         publish(d.resolutionTime - 300, price, 9500);
         publish(d.resolutionTime, price, 9500);
         publish(d.resolutionTime + 300, price, 9500);
+        vm.warp(block.timestamp + 240); // the oracle publication window must have closed
         settlement.propose(m);
         vm.warp(block.timestamp + 1 hours);
         settlement.finalize(m);
@@ -276,17 +275,19 @@ contract NativeProtocolTest {
         publish(d.resolutionTime - 300, 1100e8, 9500);
         publish(d.resolutionTime, 1100e8, 9500);
         publish(d.resolutionTime + 300, 1100e8, 9500);
+        vm.warp(block.timestamp + 240); // the oracle publication window must have closed
         settlement.propose(m);
         vm.expectRevert();
         settlement.finalize(m);
         vm.deal(alice, 1 ether);
         vm.prank(alice);
         settlement.challenge{value: 0.1 ether}(m, 0, keccak256("evidence"));
-        vm.warp(block.timestamp + 1 hours);
+        // Absolute times: via-IR may cache block.timestamp across warps within one function.
+        vm.warp(uint256(d.resolutionTime) + 2 hours);
         vm.expectRevert();
         settlement.finalize(m);
         settlement.adjudicate(m, false, keccak256("report"));
-        vm.warp(d.resolutionTime + 300 + 2 hours);
+        vm.warp(uint256(d.resolutionTime) + 4 hours);
         settlement.finalize(m);
         require(m.state() == T.State.RESOLVED_YES, "final");
         require(settlement.bondRefund(treasury) == 0.1 ether, "slashed bond");
@@ -298,8 +299,69 @@ contract NativeProtocolTest {
         publish(d.resolutionTime - 900, 1000e8, 9500);
         publish(d.resolutionTime, 1100e8, 9500);
         publish(d.resolutionTime + 900, 1200e8, 9500);
+        vm.warp(block.timestamp + 240); // the oracle publication window must have closed
         (uint192 value, uint8 result) = settlement.compute(m);
         require(value == 1050e8 && result == uint8(T.State.RESOLVED_YES), "fallback TWAP");
+    }
+
+    function testVoidedSlotIsSkippedInsteadOfInvalidatingTheMarket() public {
+        NativeBinaryMarket m = createMarket();
+        T.Definition memory d = m.definition();
+        publish(d.resolutionTime - 900, 1100e8, 9500);
+        publish(d.resolutionTime - 300, 1100e8, 9500);
+        publish(d.resolutionTime, 9000e8, 9500); // a bad print the resolution committee voids
+        publish(d.resolutionTime + 300, 1100e8, 9500);
+        publish(d.resolutionTime + 900, 1100e8, 9500);
+        vm.warp(uint256(d.resolutionTime) + 900 + 240);
+        registry.voidSlots(indexId, d.resolutionTime, d.resolutionTime, keccak256("report"));
+        (uint192 value, uint8 result) = settlement.compute(m);
+        require(value == 1100e8 && result == uint8(T.State.RESOLVED_YES), "voided slot skipped");
+        // A pauser-declared incident no longer rewrites history.
+        registry.setIncident(indexId, true, keccak256("incident"));
+        (value, result) = settlement.compute(m);
+        require(value == 1100e8 && result == uint8(T.State.RESOLVED_YES), "incident is not retroactive");
+        vm.prank(alice);
+        vm.expectRevert();
+        registry.voidSlots(indexId, d.resolutionTime, d.resolutionTime, keccak256("report"));
+    }
+
+    function testHourWindowSurvivesAnOracleOutageAtResolution() public {
+        NativeBinaryMarket m = createMarket();
+        T.Definition memory d = m.definition();
+        publish(d.resolutionTime - 3600, 1000e8, 9500);
+        publish(d.resolutionTime - 1800, 1100e8, 9500);
+        // One hour without any observation around the resolution instant.
+        publish(d.resolutionTime + 1800, 1100e8, 9500);
+        publish(d.resolutionTime + 3600, 1100e8, 9500);
+        vm.expectRevert(); // publication window still open
+        settlement.compute(m);
+        vm.warp(uint256(d.resolutionTime) + 3600 + 240);
+        (uint192 value, uint8 result) = settlement.compute(m);
+        require(value == 1075e8 && result == uint8(T.State.RESOLVED_YES), "hour fallback");
+    }
+
+    function testPauserCanOnlyPauseAndAdminUnpauses() public {
+        address bob = address(0xB0B);
+        access.grantRole(access.PAUSER_ROLE(), bob);
+        vm.prank(bob);
+        access.pause(false, true, false);
+        vm.prank(bob);
+        access.pause(false, false, false); // cannot clear a flag
+        require(access.creationPaused() && !access.tradingPaused(), "sticky");
+        vm.prank(bob);
+        vm.expectRevert();
+        access.unpause(false, true, false);
+        access.unpause(false, true, false);
+        require(!access.creationPaused(), "admin unpause");
+    }
+
+    function testSeedAboveQuarterOfPilotCapIsRejected() public {
+        T.Definition memory d = definition();
+        vm.prank(alice);
+        vm.expectRevert();
+        factory.create(d, T.Expiry.DAILY, 25_001e6);
+        vm.prank(alice);
+        factory.create(d, T.Expiry.DAILY, 25_000e6);
     }
 
     function testCanonicalCalendar() public view {
@@ -314,5 +376,117 @@ contract NativeProtocolTest {
         bytes[] memory signed=signatures(o);
         vm.expectRevert();
         oracle.publish(o,signed);
+    }
+
+    function testGenesisVersionsAreLiveAndLaterVersionsNeedNotice() public {
+        require(registry.versionAt(keccak256("HS-CASE20"), uint64(block.timestamp)) == versionId, "genesis");
+        require(registry.compositionAt(indexId, uint64(block.timestamp)) == keccak256("composition"), "root");
+        IndexRegistry.Version memory v =
+            IndexRegistry.Version(keccak256("v2"), uint64(block.timestamp + 6 days), keccak256("m"), keccak256("c2"));
+        vm.expectRevert();
+        registry.schedule(indexId, v);
+        v.activatesAt = uint64(block.timestamp + 7 days);
+        registry.schedule(indexId, v);
+        require(registry.versionAt(indexId, uint64(block.timestamp + 7 days - 1)) == versionId, "old until activation");
+        require(registry.versionAt(indexId, uint64(block.timestamp + 7 days)) == keccak256("v2"), "activated");
+        bytes32[5] memory ids = [versionId, versionId, bytes32(0), versionId, versionId];
+        bytes32 c = keccak256("composition");
+        vm.expectRevert();
+        new IndexRegistry(access, ids, [c, c, c, c, c], keccak256("methodology"));
+    }
+
+    function testDonationToPredictedMarketAddressCannotBlockCreation() public {
+        address predicted = Clones.predictDeterministicAddress(
+            factory.marketImplementation(), T.key(definition()), address(factory)
+        );
+        usd.mint(predicted, 1);
+        NativeBinaryMarket m = createMarket();
+        require(address(m) == predicted && m.lockedCollateral() == 1000e6, "created despite donation");
+        vm.prank(alice);
+        m.buy(0, 100e6, 1, uint64(block.timestamp + 60));
+        resolve(m, 1100e8);
+        vm.prank(alice);
+        m.redeem();
+        vm.prank(alice);
+        m.redeemPool();
+        m.sweepDust();
+        require(usd.balanceOf(address(m)) == 0 && usd.balanceOf(treasury) >= 1, "donation swept");
+    }
+
+    function proposed() private returns (NativeBinaryMarket m) {
+        m = createMarket();
+        T.Definition memory d = m.definition();
+        publish(d.resolutionTime - 300, 1100e8, 9500);
+        publish(d.resolutionTime, 1100e8, 9500);
+        publish(d.resolutionTime + 300, 1100e8, 9500);
+        vm.warp(block.timestamp + 240); // the oracle publication window must have closed
+        settlement.propose(m);
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        settlement.challenge{value: 0.1 ether}(m, 0, keccak256("evidence"));
+    }
+
+    function testUnadjudicatedChallengeExpiresAndCannotBeRepeated() public {
+        NativeBinaryMarket m = proposed();
+        uint256 t = block.timestamp;
+        vm.warp(t + 3 days - 1);
+        vm.expectRevert();
+        settlement.expireChallenge(m);
+        vm.expectRevert();
+        settlement.finalize(m);
+        vm.warp(t + 3 days);
+        vm.prank(address(0xBEEF)); // permissionless
+        settlement.expireChallenge(m);
+        require(settlement.bondRefund(treasury) == 0.1 ether, "bond to treasury");
+        vm.expectRevert();
+        settlement.expireChallenge(m);
+        vm.startPrank(alice);
+        vm.expectRevert();
+        settlement.challenge{value: 0.1 ether}(m, 0, keccak256("again"));
+        vm.stopPrank();
+        vm.expectRevert(); // fresh one-hour window
+        settlement.finalize(m);
+        vm.warp(t + 3 days + 1 hours);
+        settlement.finalize(m);
+        require(m.state() == T.State.RESOLVED_YES, "final");
+        vm.prank(treasury);
+        settlement.withdrawBond();
+        require(treasury.balance == 0.1 ether, "withdrawn");
+    }
+
+    function testNoSecondChallengeAfterAdjudication() public {
+        NativeBinaryMarket m = proposed();
+        settlement.adjudicate(m, true, keccak256("report"));
+        require(settlement.bondRefund(alice) == 0.1 ether, "upheld refund");
+        vm.startPrank(alice);
+        vm.expectRevert();
+        settlement.challenge{value: 0.1 ether}(m, 1, keccak256("again"));
+        vm.stopPrank();
+        vm.expectRevert();
+        settlement.expireChallenge(m);
+        vm.warp(block.timestamp + 1 hours);
+        settlement.finalize(m);
+    }
+
+    function testMarketsAreCheapClonesAndCannotBeReinitialized() public {
+        NativeBinaryMarket m = createMarket();
+        T.Definition memory d = definition();
+        vm.expectRevert(); // already initialized by the factory
+        m.initialize(d, access, config, fees, address(this), address(this));
+        NativeBinaryMarket impl = NativeBinaryMarket(factory.marketImplementation());
+        vm.expectRevert(); // implementation is locked
+        impl.initialize(d, access, config, fees, address(this), address(this));
+        vm.expectRevert();
+        impl.seed(1);
+        require(address(m).code.length == 45, "EIP-1167 clone");
+        require(m.creator() == alice && m.factory() == address(factory) && m.settlement() == address(settlement), "wiring");
+        // Creation must fit comfortably inside a 3M-gas HyperEVM small block, wallet buffer included.
+        publish(uint64(block.timestamp / 300 * 300 + 300), 1000e8, 9800);
+        d = definition();
+        d.direction = T.Direction.DOWN;
+        vm.prank(alice);
+        uint256 g = gasleft();
+        factory.create(d, T.Expiry.DAILY, 1000e6);
+        require(g - gasleft() < 700_000, "creation gas");
     }
 }

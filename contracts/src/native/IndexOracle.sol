@@ -11,6 +11,9 @@ contract IndexOracle is EIP712 {
     bytes32 public constant OBSERVATION_TYPEHASH = keccak256(
         "IndexObservation(bytes32 indexId,bytes32 versionId,uint64 observedAt,uint192 valueE8,uint32 confidenceBps,bytes32 constituentRoot,bytes32 sourceDataRoot,uint64 sequence)"
     );
+    // Venue reads, replay by independent signers and inclusion must all fit in here. Slots can
+    // never be back-filled, so this is deliberately generous relative to the five-minute cadence.
+    uint256 public constant PUBLICATION_WINDOW = 240;
     IndexRegistry public immutable registry;
     OracleSignerRegistry public immutable signers;
     mapping(bytes32 => T.Observation) private latestObservation;
@@ -62,7 +65,7 @@ contract IndexOracle is EIP712 {
             "observation"
         );
         require(
-            o.observedAt <= block.timestamp && block.timestamp - o.observedAt <= 90 && o.observedAt % 300 == 0,
+            o.observedAt <= block.timestamp && block.timestamp - o.observedAt <= PUBLICATION_WINDOW && o.observedAt % 300 == 0,
             "cadence/freshness"
         );
         require(

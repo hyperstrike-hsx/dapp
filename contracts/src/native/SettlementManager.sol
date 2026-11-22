@@ -13,6 +13,7 @@ contract SettlementManager is ReentrancyGuard {
     address payable public immutable treasury;
     uint256 public constant CHALLENGE_WINDOW = 1 hours;
     uint256 public constant CHALLENGE_BOND = 0.1 ether;
+    uint256 public constant ADJUDICATION_TIMEOUT = 3 days;
 
     struct Proposal {
         uint192 valueE8;
@@ -25,10 +26,14 @@ contract SettlementManager is ReentrancyGuard {
 
     mapping(address => Proposal) public proposals;
     mapping(address => uint256) public bondRefund;
+    // One challenge per market: results are a deterministic function of oracle data, so repeated
+    // challenges could only delay finality.
+    mapping(address => uint64) public challengedAt;
 
     event Proposed(address indexed market, uint192 valueE8, uint8 result, uint64 proposedAt);
     event Challenged(address indexed market, address challenger, uint8 reason, bytes32 evidence);
     event Adjudicated(address indexed market, bool upheld, bytes32 report);
+    event ChallengeExpired(address indexed market, address challenger);
     event Finalized(address indexed market, uint8 result);
 
     constructor(IndexOracle o, ProtocolAccess a, address payable t) {
@@ -43,7 +48,8 @@ contract SettlementManager is ReentrancyGuard {
         view
         returns (bool usable, uint192 value)
     {
-        if (block.timestamp < time + radius || oracle.registry().incident(indexId)) return (false, 0);
+        // The last sample may land up to the oracle's publication window after its slot.
+        if (block.timestamp < time + radius + oracle.PUBLICATION_WINDOW()) return (false, 0);
         uint256 weighted;
         uint64 previousSequence;
         uint64 previousTime;
@@ -51,7 +57,7 @@ contract SettlementManager is ReentrancyGuard {
         uint256 count;
         for (uint64 ts = time - radius; ts <= time + radius; ts += 300) {
             T.Observation memory o = oracle.at(indexId, ts);
-            if (o.valueE8 == 0 || o.confidenceBps < 8500) {
+            if (o.valueE8 == 0 || o.confidenceBps < 8500 || oracle.registry().voided(indexId, ts)) {
                 if (ts == time - radius || ts == time + radius) return (false, 0);
                 continue;
             }
@@ -73,6 +79,9 @@ contract SettlementManager is ReentrancyGuard {
         T.Definition memory d = m.definition();
         (bool ok, uint192 v) = windowValue(d.indexId, d.resolutionTime, 300);
         if (!ok) (ok, v) = windowValue(d.indexId, d.resolutionTime, 900);
+        // Last resort before INVALID: an hour either side, so a short oracle outage at the
+        // resolution instant cannot by itself void every expiring market.
+        if (!ok) (ok, v) = windowValue(d.indexId, d.resolutionTime, 3600);
         if (!ok) {
             require(block.timestamp >= d.resolutionTime + 1 days, "awaiting oracle");
             return (0, uint8(T.State.INVALID));
@@ -91,11 +100,12 @@ contract SettlementManager is ReentrancyGuard {
     function challenge(NativeBinaryMarket market, uint8 reason, bytes32 evidence) external payable {
         Proposal storage p = proposals[address(market)];
         require(
-            p.proposedAt > 0 && !p.challenged && block.timestamp < p.proposedAt + CHALLENGE_WINDOW
-                && msg.value == CHALLENGE_BOND && reason < 5 && evidence != bytes32(0),
+            p.proposedAt > 0 && !p.challenged && challengedAt[address(market)] == 0
+                && block.timestamp < p.proposedAt + CHALLENGE_WINDOW && msg.value == CHALLENGE_BOND && reason < 5 && evidence != bytes32(0),
             "challenge"
         );
         p.challenged = true;
+        challengedAt[address(market)] = uint64(block.timestamp);
         p.challenger = msg.sender;
         p.evidenceHash = evidence;
         emit Challenged(address(market), msg.sender, reason, evidence);
@@ -113,6 +123,24 @@ contract SettlementManager is ReentrancyGuard {
         bondRefund[upheld ? p.challenger : treasury] += CHALLENGE_BOND;
         p.challenger = address(0);
         emit Adjudicated(address(market), upheld, report);
+    }
+
+    /// Liveness: an unadjudicated challenge lapses after ADJUDICATION_TIMEOUT; anyone may clear it.
+    function expireChallenge(NativeBinaryMarket market) external {
+        Proposal storage p = proposals[address(market)];
+        require(
+            p.challenged && block.timestamp >= uint256(challengedAt[address(market)]) + ADJUDICATION_TIMEOUT,
+            "not expired"
+        );
+        (uint192 value, uint8 result) = compute(market);
+        p.valueE8 = value;
+        p.result = result;
+        p.challenged = false;
+        p.proposedAt = uint64(block.timestamp);
+        bondRefund[treasury] += CHALLENGE_BOND;
+        emit ChallengeExpired(address(market), p.challenger);
+        p.challenger = address(0);
+        emit Proposed(address(market), value, result, p.proposedAt);
     }
 
     function withdrawBond() external nonReentrant {

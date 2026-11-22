@@ -10,6 +10,12 @@ remappings = ['@openzeppelin/contracts/=../node_modules/@openzeppelin/contracts/
 via_ir = true
 allow_paths = ['../node_modules']
 
+[invariant]
+runs = 64
+depth = 96
+fail_on_revert = false
+
 [profile.ci]
 fuzz = { runs = 10000 }
+invariant = { runs = 512, depth = 256, fail_on_revert = false }
 verbosity = 3

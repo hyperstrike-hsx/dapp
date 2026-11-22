@@ -15,6 +15,8 @@ contract ProtocolConfig {
     uint256 public constant creatorShareBps = 3000;
     uint256 public constant strikeCost = 1e18;
     uint256 public constant maxPriceImpactBps = 2500;
+    // Trading stops before the first sample of the 15-minute settlement window is observed.
+    uint64 public constant TRADE_CLOSE_LEAD = 900;
     IndexOracle public immutable oracle;
 
     constructor(IERC20Metadata c, IndexOracle o, uint256 cap) {
@@ -29,10 +31,10 @@ contract ProtocolConfig {
         uint256 day = now_ / 1 days;
         uint256 candidate = day * 1 days + 16 hours;
         if (slot == T.Expiry.DAILY) {
-            if (candidate <= now_ + 5 minutes) candidate += 1 days;
+            if (candidate <= now_ + TRADE_CLOSE_LEAD) candidate += 1 days;
         } else if (slot == T.Expiry.WEEKLY) {
             candidate += ((5 + 7 - (day + 4) % 7) % 7) * 1 days;
-            if (candidate <= now_ + 5 minutes) candidate += 7 days;
+            if (candidate <= now_ + TRADE_CLOSE_LEAD) candidate += 7 days;
         } else {
             uint256 year = 1970;
             uint256 rest = day;
@@ -48,7 +50,7 @@ contract ProtocolConfig {
                 month++;
             }
             candidate += (monthDays(year, month) - rest - 1) * 1 days;
-            if (candidate <= now_ + 5 minutes) {
+            if (candidate <= now_ + TRADE_CLOSE_LEAD) {
                 month++;
                 if (month == 13) {
                     year++;
@@ -73,12 +75,12 @@ contract ProtocolConfig {
         require(oracle.registry().canonical(d.indexId) && !oracle.registry().incident(d.indexId), "canonical index");
         T.Observation memory ref = oracle.latest(d.indexId);
         require(
-            ref.observedAt <= block.timestamp && block.timestamp - ref.observedAt <= 300 && ref.confidenceBps >= 9000,
+            ref.observedAt <= block.timestamp && block.timestamp - ref.observedAt <= 300 + oracle.PUBLICATION_WINDOW() && ref.confidenceBps >= 9000,
             "unsafe index"
         );
         require(
             d.settlementPolicyId == SETTLEMENT_POLICY && d.resolutionTime == expiry(slot, block.timestamp)
-                && d.tradeCloseTime == d.resolutionTime - 300,
+                && d.tradeCloseTime == d.resolutionTime - TRADE_CLOSE_LEAD,
             "expiry/policy"
         );
         require(d.thresholdE8 > 0, "threshold");

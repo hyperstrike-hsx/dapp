@@ -15,6 +15,8 @@ contract IndexRegistry {
 
     mapping(bytes32 => bool) public canonical;
     mapping(bytes32 => bool) public incident;
+    // Five-minute slots whose observations the resolution committee has declared unusable.
+    mapping(bytes32 => mapping(uint64 => bool)) public voided;
     mapping(bytes32 => Version[]) private versions;
 
     event VersionScheduled(
@@ -25,14 +27,27 @@ contract IndexRegistry {
         bytes32 compositionRoot
     );
     event Incident(bytes32 indexed indexId, bool active, bytes32 reportHash);
+    event SlotsVoided(bytes32 indexed indexId, uint64 from, uint64 to, bytes32 reportHash);
 
-    constructor(ProtocolAccess a) {
+    /// Genesis versions (canonical order CS50, KNIFE20, GLOVE10, BLUE20, CASE20) activate at deployment:
+    /// no market exists yet, so there is nothing to announce against. Later versions keep 7-day notice.
+    constructor(ProtocolAccess a, bytes32[5] memory versionIds, bytes32[5] memory compositionRoots, bytes32 methodology)
+    {
         access = a;
-        canonical[keccak256("HS-CS50")] = true;
-        canonical[keccak256("HS-KNIFE20")] = true;
-        canonical[keccak256("HS-GLOVE10")] = true;
-        canonical[keccak256("HS-BLUE20")] = true;
-        canonical[keccak256("HS-CASE20")] = true;
+        require(methodology != bytes32(0), "methodology");
+        bytes32[5] memory ids = [
+            keccak256("HS-CS50"),
+            keccak256("HS-KNIFE20"),
+            keccak256("HS-GLOVE10"),
+            keccak256("HS-BLUE20"),
+            keccak256("HS-CASE20")
+        ];
+        for (uint256 i; i < 5; i++) {
+            require(versionIds[i] != bytes32(0) && compositionRoots[i] != bytes32(0), "genesis");
+            canonical[ids[i]] = true;
+            versions[ids[i]].push(Version(versionIds[i], uint64(block.timestamp), methodology, compositionRoots[i]));
+            emit VersionScheduled(ids[i], versionIds[i], uint64(block.timestamp), methodology, compositionRoots[i]);
+        }
     }
 
     function schedule(bytes32 indexId, Version calldata v) external {
@@ -65,6 +80,20 @@ contract IndexRegistry {
             if (list[i - 1].activatesAt <= timestamp) return list[i - 1].compositionRoot;
         }
         return bytes32(0);
+    }
+
+    /// The incident flag only halts creation and trading going forward. It never reaches back into
+    /// settlement: a lone pauser must not be able to turn a correctly observed result into INVALID.
+    /// Bad data is removed slot by slot here, by the resolution committee, with a published report.
+    function voidSlots(bytes32 indexId, uint64 from, uint64 to, bytes32 reportHash) external {
+        require(access.hasRole(access.RESOLUTION_ROLE(), msg.sender), "role");
+        require(
+            canonical[indexId] && reportHash != bytes32(0) && from % 300 == 0 && to % 300 == 0 && from <= to
+                && to - from <= 6 hours && to <= block.timestamp && block.timestamp - from <= 2 days,
+            "range"
+        );
+        for (uint64 ts = from; ts <= to; ts += 300) voided[indexId][ts] = true;
+        emit SlotsVoided(indexId, from, to, reportHash);
     }
 
     function setIncident(bytes32 indexId, bool active, bytes32 reportHash) external {

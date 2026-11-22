@@ -19,10 +19,19 @@ contract ProtocolAccess is AccessControlDefaultAdminRules {
 
     constructor(address multisig) AccessControlDefaultAdminRules(2 days, multisig) {}
 
+    /// A pauser can only switch things off. Flags it does not name stay as they are.
     function pause(bool minting, bool creation, bool trading) external onlyRole(PAUSER_ROLE) {
-        mintPaused = minting;
-        creationPaused = creation;
-        tradingPaused = trading;
-        emit PauseChanged(minting, creation, trading);
+        mintPaused = mintPaused || minting;
+        creationPaused = creationPaused || creation;
+        tradingPaused = tradingPaused || trading;
+        emit PauseChanged(mintPaused, creationPaused, tradingPaused);
+    }
+
+    /// Resuming is the admin multisig's decision. Redemption is never pausable.
+    function unpause(bool minting, bool creation, bool trading) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (minting) mintPaused = false;
+        if (creation) creationPaused = false;
+        if (trading) tradingPaused = false;
+        emit PauseChanged(mintPaused, creationPaused, tradingPaused);
     }
 }
