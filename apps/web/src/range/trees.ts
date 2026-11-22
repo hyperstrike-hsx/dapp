@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { drawnOnce } from "./memory";
 import type { Kit } from "./kit";
 import { applyWind, type Wind } from "./wind";
 
@@ -924,7 +925,7 @@ function foliageTexture(pixels: AtlasPixels, anisotropy: number) {
     levels.push({ data: to, width: half, height: half });
     from = to; width = half;
   }
-  const texture = new THREE.DataTexture(colour, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  const texture = drawnOnce(new THREE.DataTexture(colour, size, size, THREE.RGBAFormat, THREE.UnsignedByteType));
   texture.mipmaps = levels as unknown as THREE.DataTexture["mipmaps"];
   texture.generateMipmaps = false;
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -946,7 +947,7 @@ function surfaceTexture(source: Uint8ClampedArray, width: number, height: number
       out[at] = 128 - dx * scale; out[at + 1] = 128 - dy * scale; out[at + 2] = source[at + 1]; out[at + 3] = source[at + 2];
     }
   }
-  const texture = new THREE.DataTexture(out, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  const texture = drawnOnce(new THREE.DataTexture(out, width, height, THREE.RGBAFormat, THREE.UnsignedByteType));
   texture.generateMipmaps = true;
   texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = anisotropy;
@@ -1191,7 +1192,7 @@ function sheetTextures(sheet: { colour: Uint8ClampedArray; surface: Uint8Clamped
     surface[at] += (fine - 127.5) * grain * 1.6;
     colour[at + 3] = surface[at + 1];
   }
-  const map = new THREE.DataTexture(colour, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+  const map = drawnOnce(new THREE.DataTexture(colour, width, height, THREE.RGBAFormat, THREE.UnsignedByteType));
   map.colorSpace = THREE.SRGBColorSpace;
   map.generateMipmaps = true; map.magFilter = THREE.LinearFilter; map.minFilter = THREE.LinearMipmapLinearFilter;
   map.wrapS = THREE.RepeatWrapping; map.wrapT = repeatT ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;

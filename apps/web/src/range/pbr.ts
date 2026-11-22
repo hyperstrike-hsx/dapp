@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { drawnOnce } from "./memory";
 import { shrinkRgba } from "./touch";
 
 // Procedural, tileable PBR texture sets generated once at load.
@@ -146,7 +147,7 @@ class Surface {
       result.anisotropy = anisotropy;
       if (srgb) result.colorSpace = THREE.SRGBColorSpace;
       result.needsUpdate = true;
-      return result;
+      return drawnOnce(result);
     };
     return { map: texture(albedo, true), normalMap: texture(normal, false), ormMap: texture(orm, false) };
   }

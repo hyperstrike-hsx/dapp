@@ -343,6 +343,10 @@ export function createKit(options: RangeOptions) {
       return texture;
     });
     maps[0].colorSpace = THREE.SRGBColorSpace;
+    // A material reads roughness from green and occlusion from red, and both pictures are grey. Kept as two
+    // channels and as one they are the very same numbers in half and in a quarter of the memory.
+    maps[2].format = THREE.RGFormat;
+    if (ao) maps[3].format = THREE.RedFormat;
     return { map: maps[0], normalMap: maps[1], roughnessMap: maps[2], ...(ao ? { aoMap: maps[3] } : {}) };
   };
 
