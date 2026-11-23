@@ -568,7 +568,7 @@ export function buildYard(options: RangeOptions): RangeEnvironment {
   const props = createProps(kit);
   const wind = createWind({ heading: WIND_HEADING, strength: 0.45, gustiness: 0.55 });
   const life = createLife(kit, options, { wind, seed: 11 });
-  const { scene, high, anisotropy, keep, track, photoSet } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1107);
   /** Rolls for what happens while the range runs; the build keeps its own stream so the yard is the same every time. */
@@ -631,8 +631,8 @@ export function buildYard(options: RangeOptions): RangeEnvironment {
 
   // ---- Materials -----------------------------------------------------------
   const finish = (name: string, parameters: THREE.MeshStandardMaterialParameters) => lit(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.6, vertexColors: true, ...parameters }), name);
-  const brick = finish("brick", { ...photoSet("/textures/brick_wall_001-2k", 1, 1, true), roughness: 0.92 });
-  const concrete = finish("concrete", { ...photoSet("/textures/concrete_wall_007-2k", 1, 1, false), roughness: 0.94 });
+  const brick = finish("brick", { ...wall("redStock", 1.6), roughness: 0.92 });
+  const concrete = finish("concrete", { ...wall("blockPainted", 3.2), roughness: 0.94 });
   const tin = finish("tin", { ...photoSet("/textures/corrugated_iron_02-2k", 1, 1, false), metalness: 0.4, envMapIntensity: 0.8, side: THREE.DoubleSide });
   const rust = finish("rust", { ...photoSet("/textures/rusty_metal_02-2k", 1, 1, false), metalness: 0.25, roughness: 0.85 });
   const timber = finish("timber", { ...photoSet("/textures/weathered_brown_planks-2k", 1, 1, false), roughness: 0.9 });

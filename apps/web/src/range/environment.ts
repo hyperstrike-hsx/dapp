@@ -90,7 +90,7 @@ const RIPPLE_FRAGMENT = /* glsl */`
 export function buildRange(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
   const props = createProps(kit);
-  const { scene, high, anisotropy, shootable, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, shootable, keep, track, photoSet, wall, place, instances } = kit;
   // One draught for the whole hall, drawn in under the Bay 01 door and across to the furnace stack:
   // the plants, the birds, smoke, dust and everything that hangs all read it.
   const wind = createWind({ heading: -0.95, strength: 0.14, gustiness: 0.5 });
@@ -109,13 +109,13 @@ export function buildRange(options: RangeOptions): RangeEnvironment {
 
   // ---- Materials -----------------------------------------------------------
   const slab = photoSet("/textures/concrete_floor_worn_001-2k", 38 / 4.2, 52 / 4.2);
-  const cast = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const cast = wall("castStained");
   const corrugated = photoSet("/textures/corrugated_iron_02-2k", 1, 1, false);
   const treadPlate = photoSet("/textures/metal_plate-2k", 1, 1, false);
   const greenSteel = photoSet("/textures/green_metal_rust-2k", 1, 1, false);
   const rustySteel = photoSet("/textures/rusty_metal_02-2k", 1, 1, false);
   const planks = photoSet("/textures/weathered_brown_planks-2k", 1, 1, false);
-  const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
+  const brick = wall("foundryCommon", 1.3);
 
   const machinePaint = keep(paintedSteel(anisotropy, [0.04, 0.062, 0.068], 211, 0.12));
   const darkSteel = keep(steel(anisotropy, [0.1, 0.11, 0.12], 0.46, 23));

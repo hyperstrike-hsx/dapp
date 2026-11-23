@@ -830,8 +830,8 @@ export function buildRooftop(options: RangeOptions): RangeEnvironment {
   // ---- Materials -----------------------------------------------------------
   const asphalt = photoSet("/textures/asphalt_02-2k", 32 / 3.2, 48.2 / 3.2, false);
   const cast = photoSet("/textures/concrete_floor_worn_001-2k", 1, 1);
-  const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
-  const board = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const brick = kit.wall("clinker", 2.6);
+  const board = kit.wall("aggregate");
   const iron = photoSet("/textures/corrugated_iron_02-2k", 1, 1, false);
   const chequer = photoSet("/textures/metal_plate-2k", 1, 1, false);
   const concrete = new THREE.MeshStandardMaterial({ ...cast, color: 0x9a9ca2, roughness: 1, metalness: 0, envMapIntensity: 0.6 });

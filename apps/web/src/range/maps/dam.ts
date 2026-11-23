@@ -669,7 +669,7 @@ function gorgeWall(line: Array<[number, number]>, side: 1 | -1, seed: number, le
 
 export function buildDam(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1958);
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.5, ...parameters });
@@ -677,7 +677,7 @@ export function buildDam(options: RangeOptions): RangeEnvironment {
   kit.updates.push((now) => { clock.value = now / 1000; });
 
   // ---- Materials -----------------------------------------------------------
-  const castSet = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const castSet = wall("cast");
   const formwork = track(formworkTexture());
   formwork.anisotropy = anisotropy;
   const jointMap = { value: formwork };
@@ -698,7 +698,7 @@ export function buildDam(options: RangeOptions): RangeEnvironment {
   const paleConcrete = concreteMaterial(0xe6e5de);
   const darkConcrete = concreteMaterial(0xa9aaa4);
   /** The dam and everything cast with it: vertex colour carries the shade the sun's map cannot reach. */
-  const damConcrete = standard({ ...photoSet("/textures/concrete_wall_007-2k", 1, 1, false), color: 0xdcdad0, vertexColors: true, envMapIntensity: 0.4 });
+  const damConcrete = standard({ ...wall("boardMarked"), color: 0xdcdad0, vertexColors: true, envMapIntensity: 0.4 });
   const worldVarying = (shader: { vertexShader: string; fragmentShader: string }) => {
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vDamWorld;")

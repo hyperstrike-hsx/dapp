@@ -1635,7 +1635,7 @@ const LAMP_SHADER = {
 export function buildDocks(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
   const props = createProps(kit);
-  const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall, place, instances } = kit;
   const metals = kit.metals();
   const random = rng(2077);
   // Flags, tarps, smoke, weeds, litter and the gusts in the rigging all read the one breeze; so does the water.
@@ -1735,13 +1735,13 @@ export function buildDocks(options: RangeOptions): RangeEnvironment {
   const hallSkin = new THREE.MeshStandardMaterial({ ...ribbed, color: 0xa4b0b8, roughness: 1, metalness: 0.3, envMapIntensity: 0.6 });
   const plate = new THREE.MeshStandardMaterial({ ...photoSet("/textures/metal_plate-2k", 1, 1, false), color: 0xc8c4bc, roughness: 1, metalness: 0.55, envMapIntensity: 0.9 });
   const greenPaint = new THREE.MeshStandardMaterial({ ...photoSet("/textures/green_metal_rust-2k", 1, 1, false), color: 0xd8e0d8, roughness: 1, metalness: 0.2, envMapIntensity: 0.7 });
-  const wallSet = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const wallSet = wall("fairFaced");
   const quayWall = new THREE.MeshStandardMaterial({ ...wallSet, color: 0x9d9a92, roughness: 1, metalness: 0, envMapIntensity: 0.5 });
   // One painted-steel, one matt and one smooth finish carry every colour through vertex colours. The plate is drawn
   // at full size: its rivets are a fixed number of texels across, so a smaller sheet would turn them into door knobs.
   const paintAny = pbrMaterial(keep(paintedSteel(anisotropy, [0.78, 0.78, 0.78], 1203, 0.45, 1024)), { vertexColors: true, envMapIntensity: 0.9 });
   const CRANE_GREY = 0x8b959b, HOUSE_WHITE = 0xc5c5bb, GEAR_YELLOW = 0xcb8516;
-  const matte = new THREE.MeshStandardMaterial({ ...photoSet("/textures/painted_plaster_wall-2k", 1, 1, false), vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.45 });
+  const matte = new THREE.MeshStandardMaterial({ ...wall("quayPaint"), vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.45 });
   const smooth = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0, envMapIntensity: 0.7 });
   const glowAny = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
   const glazing = new THREE.MeshStandardMaterial({ color: 0x0a1116, roughness: 0.07, metalness: 0.7, envMapIntensity: 1.5 });

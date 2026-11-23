@@ -6,6 +6,8 @@ import { brushedMetal, disposePbr, paintedSteel, pbrMaterial, steel, tile, timbe
 import type { Glow } from "./volumetric";
 import type { Cue } from "./cues";
 import { leanAssets, leanCanvas, photoRoot } from "./touch";
+import { createReliefWatch, reliefFromNormal } from "./relief";
+import { createWalls } from "./walls";
 
 // Shared parts every range map is built from: the contract a map fulfils, the
 // geometry and texture helpers, the furnace, the sun and the floor.
@@ -311,6 +313,11 @@ export function sunlitFromBoxes(toSun: THREE.Vector3, boxes: THREE.Box3[]) {
 
 export type Kit = ReturnType<typeof createKit>;
 
+/** Photographed surfaces with real depth to them, and how deep (metres): these are drawn in relief. */
+const PHOTO_RELIEF: Record<string, number> = {
+  cobblestone_floor_04: 0.03, corrugated_iron_02: 0.016, sandstone_cracks: 0.018, weathered_brown_planks: 0.008, brick_wall_001: 0.012, snow_02: 0.03,
+};
+
 /** Scene-building tools bound to one map: placement, instancing, texture loading and clean-up. */
 export function createKit(options: RangeOptions) {
   const { scene, renderer, quality, loadingManager } = options;
@@ -334,8 +341,10 @@ export function createKit(options: RangeOptions) {
   /** Photographed PBR maps from `public/textures`; `ao` is optional because newer sets leave it out. */
   const photoSet = (root: string, repeatX: number, repeatY: number, ao = true) => {
     const folder = photoRoot(root);
+    // On the full profile a surface with real depth to it gets a height field for its relief.
+    const depth = high ? PHOTO_RELIEF[root.replace(/^.*\/|-2k$/g, "")] : undefined;
     const maps = ["diffuse", "normal-gl", "roughness", ...(ao ? ["ao"] : [])].map((name) => {
-      const texture = loader.load(`${folder}/${name}.jpg`);
+      const texture = loader.load(`${folder}/${name}.jpg`, name === "normal-gl" && depth ? (loaded) => reliefFromNormal(loaded, depth, track) : undefined);
       texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(repeatX, repeatY);
       texture.anisotropy = anisotropy;
@@ -349,6 +358,15 @@ export function createKit(options: RangeOptions) {
     if (ao) maps[3].format = THREE.RedFormat;
     return { map: maps[0], normalMap: maps[1], roughnessMap: maps[2], ...(ao ? { aoMap: maps[3] } : {}) };
   };
+
+  /** Baked wall finishes (see `walls.ts`): `wall("redStock", 2.8)` for a material mapped at 2.8 m. */
+  const wall = createWalls(renderer, { high, anisotropy, track });
+  // Relief goes on whatever can take it, and is looked for again as heights arrive and things are added.
+  // `?relief=0` draws everything flat, to see what the relief costs and adds.
+  const deep = high && !(typeof window !== "undefined" && /[?&]relief=0\b/.test(window.location.search));
+  const relief = createReliefWatch(scene, { steps: 16, far: 14 });
+  let looked = 0;
+  if (deep) frames.push(() => { if (looked++ % 90 === 0) relief(); });
 
   const place = (mesh: THREE.Mesh, x: number, y: number, z: number, shadow = true, hit = false) => {
     mesh.position.set(x, y, z);
@@ -520,6 +538,7 @@ export function createKit(options: RangeOptions) {
     look: parts.look,
     sunlitAt: parts.sunlitAt,
     captureProbe(pmrem) {
+      if (deep) relief();
       const visible = probeHidden.map((object) => object.visible);
       probeHidden.forEach((object) => { object.visible = false; });
       const strength = parts.reflection.uniforms.reflectionStrength.value;
@@ -538,5 +557,5 @@ export function createKit(options: RangeOptions) {
     },
   });
 
-  return { scene, renderer, high, anisotropy, shootable, mirrorHidden, probeHidden, updates, frames, keep, track, photoSet, place, instances, metals, floor, sunLight, motes, furnace, finish };
+  return { scene, renderer, high, anisotropy, shootable, mirrorHidden, probeHidden, updates, frames, keep, track, photoSet, wall, place, instances, metals, floor, sunLight, motes, furnace, finish };
 }

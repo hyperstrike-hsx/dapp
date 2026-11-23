@@ -122,7 +122,7 @@ function sheet2d(points: P2[], z0: number, z1: number, tile: P2) {
 }
 
 /** Round tube swept along a polyline with parallel-transported frames. */
-function sweep(points: THREE.Vector3[], radius: number, radial = 6) {
+function sweep(points: THREE.Vector3[], radius: number | ((t: number) => number), radial = 6, span: P2 = [0, 1]) {
   const n = points.length, position: number[] = [], normal: number[] = [], uv: number[] = [], index: number[] = [];
   const tangent = new THREE.Vector3(), previous = new THREE.Vector3(), axis = new THREE.Vector3(), side = new THREE.Vector3(), other = new THREE.Vector3(), v = new THREE.Vector3();
   let along = 0;
@@ -140,12 +140,13 @@ function sweep(points: THREE.Vector3[], radius: number, radial = 6) {
       along += points[i].distanceTo(points[i - 1]);
     }
     other.crossVectors(tangent, side);
+    const r = typeof radius === "number" ? radius : radius(n > 1 ? i / (n - 1) : 0);
     for (let j = 0; j <= radial; j += 1) {
       const angle = (j / radial) * TAU;
       v.copy(side).multiplyScalar(Math.cos(angle)).addScaledVector(other, Math.sin(angle));
-      position.push(points[i].x + v.x * radius, points[i].y + v.y * radius, points[i].z + v.z * radius);
+      position.push(points[i].x + v.x * r, points[i].y + v.y * r, points[i].z + v.z * r);
       normal.push(v.x, v.y, v.z);
-      uv.push(j / radial, along);
+      uv.push(span[0] + (span[1] - span[0]) * (j / radial), along);
     }
     previous.copy(tangent);
   }
@@ -615,12 +616,59 @@ function leafSheet() {
   const image = c.getImageData(0, 0, LEAF_W, LEAF_H), data = new Uint8Array(image.data.buffer.slice(0));
   for (let i = 0; i < data.length; i += 4) if (data[i + 3] < 6) { data[i] = 58; data[i + 1] = 104; data[i + 2] = 44; data[i + 3] = 0; }
   canvas.width = canvas.height = 0;
-  const small = shrinkRgba(data, LEAF_W, LEAF_H);
-  const texture = new THREE.DataTexture(small.data, small.width, small.height, THREE.RGBAFormat);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true;
-  texture.needsUpdate = true;
-  return texture;
+
+  // Paint alone is flat: every blade is mottled a little, warmer here and cooler there.
+  const lattice = (px: number, py: number) => { let n = Math.imul(px, 374761393) ^ Math.imul(py, 668265263); n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  const cloud = (px: number, py: number, size: number) => {
+    const fx = px / size, fy = py / size, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const top = lattice(ix, iy) + (lattice(ix + 1, iy) - lattice(ix, iy)) * sx, low = lattice(ix, iy + 1) + (lattice(ix + 1, iy + 1) - lattice(ix, iy + 1)) * sx;
+    return top + (low - top) * sy;
+  };
+  for (let py = 0, at = 0; py < LEAF_H; py += 1) for (let px = 0; px < LEAF_W; px += 1, at += 4) {
+    if (data[at + 3] < 6) continue;
+    const by = 0.83 + 0.24 * cloud(px, py, 46) + 0.1 * cloud(px + 311, py, 9), warm = 0.95 + 0.1 * cloud(px + 977, py + 53, 90);
+    data[at] = Math.min(255, data[at] * by * warm); data[at + 1] = Math.min(255, data[at + 1] * by); data[at + 2] = Math.min(255, data[at + 2] * by * (2 - warm));
+  }
+
+  // The veins in relief, at half the size: what is paler or darker than the blade around it stands
+  // proud of it or is sunk into it, and the blade swells between the veins.
+  const NW = LEAF_W / 2, NH = LEAF_H / 2, light = new Float32Array(NW * NH), cover = new Float32Array(NW * NH);
+  for (let y = 0, i = 0; y < NH; y += 1) for (let x = 0; x < NW; x += 1, i += 1) {
+    let sum = 0, count = 0;
+    for (let k = 0; k < 4; k += 1) { const at = ((y * 2 + (k >> 1)) * LEAF_W + x * 2 + (k & 1)) * 4; if (data[at + 3] > 96) { sum += data[at] * 0.3 + data[at + 1] * 0.59 + data[at + 2] * 0.11; count += 1; } }
+    if (count) { light[i] = sum / count / 255; cover[i] = 1; }
+  }
+  const blur = (from: Float32Array, radius: number) => {
+    const pass = (src: Float32Array, dst: Float32Array, count: number, lines: number, stride: number, lineStride: number) => {
+      for (let line = 0; line < lines; line += 1) {
+        const start = line * lineStride; let sum = 0;
+        for (let k = -radius; k <= radius; k += 1) sum += src[start + Math.min(count - 1, Math.max(0, k)) * stride];
+        for (let k = 0; k < count; k += 1) { dst[start + k * stride] = sum / (radius * 2 + 1); sum += src[start + Math.min(count - 1, k + radius + 1) * stride] - src[start + Math.max(0, k - radius) * stride]; }
+      }
+    };
+    const across = new Float32Array(from.length), both = new Float32Array(from.length);
+    pass(from, across, NW, NH, 1, NW); pass(across, both, NH, NW, NW, 1);
+    return both;
+  };
+  const around = blur(light, 7), share = blur(cover, 7), relief = new Float32Array(NW * NH);
+  for (let i = 0; i < relief.length; i += 1) if (cover[i]) relief[i] = light[i] - around[i] / Math.max(0.05, share[i]);
+  const smooth = blur(relief, 1), bumps = new Uint8Array(NW * NH * 4), STEEP = 11;
+  for (let y = 0, i = 0; y < NH; y += 1) for (let x = 0; x < NW; x += 1, i += 1) {
+    let nx = 0, ny = 0;
+    if (cover[i]) { nx = (smooth[y * NW + Math.max(0, x - 1)] - smooth[y * NW + Math.min(NW - 1, x + 1)]) * STEEP; ny = (smooth[Math.max(0, y - 1) * NW + x] - smooth[Math.min(NH - 1, y + 1) * NW + x]) * STEEP; }
+    const inv = 1 / Math.hypot(nx, ny, 1);
+    bumps[i * 4] = 127.5 + 127.5 * nx * inv; bumps[i * 4 + 1] = 127.5 + 127.5 * ny * inv; bumps[i * 4 + 2] = 127.5 + 127.5 * inv; bumps[i * 4 + 3] = 255;
+  }
+
+  const sheet = (texels: Uint8Array, width: number, height: number, colour: boolean) => {
+    const small = shrinkRgba(texels, width, height);
+    const texture = new THREE.DataTexture(small.data, small.width, small.height, THREE.RGBAFormat);
+    if (colour) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.generateMipmaps = true;
+    texture.needsUpdate = true;
+    return texture;
+  };
+  return { map: sheet(data, LEAF_W, LEAF_H, true), normalMap: sheet(bumps, NW, NH, false) };
 }
 
 // ---- Leaves grown as strips ----------------------------------------------------------------------
@@ -628,15 +676,18 @@ function leafSheet() {
 /** Geometry of leaves gathered for one mesh: position, normal, uv, tint and (weight, phase) for the wind. */
 type Sink = { p: number[]; n: number[]; u: number[]; c: number[]; s: number[]; i: number[] };
 const sink = (): Sink => ({ p: [], n: [], u: [], c: [], s: [], i: [] });
-type Blade = { droop?: number; fold?: number; twist?: number; segs?: number; tint?: V3; phase?: number; stiff?: number; turn?: number };
+type Blade = { droop?: number; fold?: number; twist?: number; segs?: number; tint?: V3; phase?: number; stiff?: number; turn?: number; across?: number; cup?: number; wave?: number; waves?: number };
 
 /**
- * One leaf: a strip three vertices wide that leaves `base` at `yaw` and `pitch`, bends over by `droop`
- * radians along its length and is folded along its midrib. The cell of the leaf sheet gives it its outline.
+ * One leaf: a strip that leaves `base` at `yaw` and `pitch`, bends over by `droop` radians along its
+ * length and is folded along its midrib. `across` columns each side of the midrib let the fold round
+ * into a gutter (`cup` above 1) and let the margins ripple (`wave`, as a share of the half width, over
+ * `waves` ripples). The cell of the leaf sheet gives it its outline.
  */
 function blade(out: Sink, cell: Rect, base: V3, yaw: number, pitch: number, length: number, width: number, o: Blade = {}) {
   const [u0, v0, u1, v1] = rectOf(cell), segs = o.segs ?? 7, droop = o.droop ?? 1, fold = o.fold ?? 0.15, tint = o.tint ?? [1, 1, 1], phase = o.phase ?? 0, stiff = o.stiff ?? 0;
-  const first = out.p.length / 3, step = length / segs;
+  const half = Math.max(1, Math.round(o.across ?? 1)), cols = half * 2 + 1, cup = o.cup ?? 1, wave = o.wave ?? 0, waves = o.waves ?? 3;
+  const first = out.p.length / 3, step = length / segs, grid = new Float32Array((segs + 1) * cols * 3);
   let x = base[0], y = base[1], z = base[2], heading = yaw;
   for (let i = 0; i <= segs; i += 1) {
     const s = i / segs, angle = pitch - droop * Math.pow(s, 1.4), hx = Math.cos(heading), hz = Math.sin(heading), cp = Math.cos(angle), sp = Math.sin(angle);
@@ -645,12 +696,12 @@ function blade(out: Sink, cell: Rect, base: V3, yaw: number, pitch: number, leng
     const sx = -hz * Math.cos(roll) + upX * Math.sin(roll), sy = upY * Math.sin(roll), sz = hx * Math.cos(roll) + upZ * Math.sin(roll);
     const nx = upX * Math.cos(roll) + hz * Math.sin(roll), ny = upY * Math.cos(roll), nz = upZ * Math.cos(roll) - hx * Math.sin(roll);
     const hw = width / 2, cf = Math.cos(fold), sf = Math.sin(fold), shade = 0.72 + 0.28 * s, weight = s * s * (1 - stiff);
-    for (let k = -1; k <= 1; k += 1) {
-      const lift = Math.abs(k) * hw * sf;
-      out.p.push(x + sx * k * hw * cf + nx * lift, y + sy * k * hw * cf + ny * lift, z + sz * k * hw * cf + nz * lift);
-      const tx = nx * cf - sx * k * sf, ty = ny * cf - sy * k * sf, tz = nz * cf - sz * k * sf;
-      out.n.push(tx, ty, tz);
-      out.u.push(u0 + (u1 - u0) * s, v0 + (v1 - v0) * (k + 1) / 2);
+    for (let k = -half; k <= half; k += 1) {
+      const u = k / half, a = Math.abs(u), wide = u * hw * cf;
+      const ripple = wave ? wave * hw * a * a * Math.sin(s * waves * TAU + phase * 40 + (k > 0 ? 0 : 1.9)) * Math.min(1, s * 3) : 0;
+      const lift = hw * sf * Math.pow(a, cup) + ripple, at = (i * cols + k + half) * 3;
+      grid[at] = x + sx * wide + nx * lift; grid[at + 1] = y + sy * wide + ny * lift; grid[at + 2] = z + sz * wide + nz * lift;
+      out.u.push(u0 + (u1 - u0) * s, v0 + (v1 - v0) * (k + half) / (cols - 1));
       out.c.push(tint[0] * shade, tint[1] * shade, tint[2] * shade);
       out.s.push(weight, phase);
     }
@@ -660,23 +711,32 @@ function blade(out: Sink, cell: Rect, base: V3, yaw: number, pitch: number, leng
       heading += (o.turn ?? 0) / segs;
     }
   }
-  for (let i = 0; i < segs; i += 1) for (let k = 0; k < 2; k += 1) {
-    const a = first + i * 3 + k, b = a + 3;
+  // Normals from the surface itself, so that folds, gutters and ripples all catch the light.
+  for (let i = 0; i <= segs; i += 1) for (let k = 0; k < cols; k += 1) {
+    const ahead = (Math.min(segs, i + 1) * cols + k) * 3, behind = (Math.max(0, i - 1) * cols + k) * 3, right = (i * cols + Math.min(cols - 1, k + 1)) * 3, left = (i * cols + Math.max(0, k - 1)) * 3, at = (i * cols + k) * 3;
+    const ax = grid[ahead] - grid[behind], ay = grid[ahead + 1] - grid[behind + 1], az = grid[ahead + 2] - grid[behind + 2];
+    const kx = grid[right] - grid[left], ky = grid[right + 1] - grid[left + 1], kz = grid[right + 2] - grid[left + 2];
+    const nx = ky * az - kz * ay, ny = kz * ax - kx * az, nz = kx * ay - ky * ax, inv = 1 / (Math.hypot(nx, ny, nz) || 1);
+    out.p.push(grid[at], grid[at + 1], grid[at + 2]);
+    out.n.push(nx * inv, ny * inv, nz * inv);
+  }
+  for (let i = 0; i < segs; i += 1) for (let k = 0; k < cols - 1; k += 1) {
+    const a = first + i * cols + k, b = a + cols;
     out.i.push(a, a + 1, b, a + 1, b + 1, b);
   }
 }
 
 export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1871);
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.5, ...parameters });
   const painted = (texture: THREE.Texture) => { track(texture).anisotropy = anisotropy; return texture; };
 
   // ---- Materials -----------------------------------------------------------
-  const brickSet = photoSet("/textures/brick_wall_001-2k", 1, 1, true);
-  const plasterSet = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const brickSet = wall("whitewashed", 1.15);
+  const plasterSet = wall("limewash");
   const rustSet = photoSet("/textures/rusty_metal_02-2k", 1, 1, false);
   const brick = standard({ ...brickSet, color: 0xd6c4b2, normalScale: new THREE.Vector2(1.2, 1.2), envMapIntensity: 0.4 });
   const stone = standard({ ...plasterSet, color: 0xcbbfa6, envMapIntensity: 0.45 });
@@ -987,9 +1047,9 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
   }
 
   // ---- Leaves of our own ---------------------------------------------------------
-  const leafMap = track(leafSheet());
-  leafMap.anisotropy = anisotropy;
-  const leafMaterial = new THREE.MeshStandardMaterial({ map: leafMap, vertexColors: true, side: THREE.DoubleSide, alphaTest: 0.4, alphaToCoverage: high, roughness: 0.5, metalness: 0, envMapIntensity: 0.55 });
+  const leafSet = leafSheet(), leafMap = track(leafSet.map), leafBumps = track(leafSet.normalMap);
+  leafMap.anisotropy = anisotropy; leafBumps.anisotropy = anisotropy;
+  const leafMaterial = new THREE.MeshStandardMaterial({ map: leafMap, normalMap: leafBumps, normalScale: new THREE.Vector2(1, 1), vertexColors: true, side: THREE.DoubleSide, alphaTest: 0.4, alphaToCoverage: high, roughness: 0.5, metalness: 0, envMapIntensity: 0.55 });
   leafMaterial.onBeforeCompile = (shader) => {
     applyWind(shader, wind);
     shader.vertexShader = shader.vertexShader
@@ -1036,7 +1096,8 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
       const age = k / Math.max(1, count - 1), yaw = turn + k * 2.4 + (r() - 0.5) * 0.5, long = size * (1.5 + r() * 0.7) * (0.62 + 0.38 * Math.sin(Math.PI * Math.pow(age, 0.5)));
       const young = k === 0;
       blade(out, CELLS.banana, [top[0], top[1] - 0.12 * age * size, top[2]], yaw, young ? 1.45 : 1.3 - age * 0.95, long, young ? long * 0.1 : long * (0.34 + r() * 0.05), {
-        droop: young ? 0.15 : 0.55 + age * 1.25 + r() * 0.3, fold: young ? 0.9 : 0.22 - age * 0.5, twist: (r() - 0.5) * 0.7, segs: high ? 9 : 6, phase: r(), turn: (r() - 0.5) * 0.4,
+        droop: young ? 0.15 : 0.55 + age * 1.25 + r() * 0.3, fold: young ? 0.9 : 0.22 - age * 0.5, twist: (r() - 0.5) * 0.7, segs: high ? 12 : 6, phase: r(), turn: (r() - 0.5) * 0.4,
+        across: high ? 2 : 1, cup: 1.5, wave: young ? 0 : 0.07 + age * 0.05, waves: 3 + r() * 2.5,
         tint: vary(r, age > 0.8 ? [1.05, 0.92, 0.6] : [1, 1, 1]),
       });
     }
@@ -1075,9 +1136,15 @@ export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
     for (let k = 0; k < count; k += 1) {
       const yaw = turn + k * 2.4 + (r() - 0.5) * 0.5, stalk = size * (0.8 + r() * 0.9), out2 = 0.25 + r() * 0.3, long = size * (0.62 + r() * 0.34);
       const tip: V3 = [at[0] + Math.cos(yaw) * stalk * out2, at[1] + stalk * Math.sqrt(1 - out2 * out2), at[2] + Math.sin(yaw) * stalk * out2];
-      growing(stem, sweep(path([at, [at[0] + Math.cos(yaw) * stalk * out2 * 0.3, at[1] + stalk * 0.55, at[2] + Math.sin(yaw) * stalk * out2 * 0.3], tip]), 0.012 * size + 0.006, 5), undefined, undefined, undefined, { detail: true });
+      // The stalk leaves the clump upright and arches out under its leaf, thinning as it goes.
+      const knee: V3 = [at[0] + Math.cos(yaw) * stalk * out2 * 0.2, at[1] + stalk * 0.66, at[2] + Math.sin(yaw) * stalk * out2 * 0.2], steps = high ? 8 : 4;
+      const arc = Array.from({ length: steps + 1 }, (_, i) => { const t = i / steps, a = (1 - t) * (1 - t), b = 2 * t * (1 - t), c = t * t; return new THREE.Vector3(at[0] * a + knee[0] * b + tip[0] * c, at[1] * a + knee[1] * b + tip[1] * c, at[2] * a + knee[2] * b + tip[2] * c); });
+      const thick = 0.015 * size + 0.007;
+      growing(stem, sweep(arc, (t) => thick * (1 - 0.55 * t), 6, [0.52, 0.98]), undefined, undefined, undefined, { detail: true });
       const down = -0.35 - r() * 0.5;
-      blade(out, cell, [tip[0] - Math.cos(yaw) * long * 0.22 * Math.cos(down), tip[1] - Math.sin(down) * long * 0.22, tip[2] - Math.sin(yaw) * long * 0.22 * Math.cos(down)], yaw, down, long, long * 0.95, { droop: 0.35, fold: 0.2, segs: 3, phase: r(), twist: (r() - 0.5) * 0.5, tint: vary(r, tint) });
+      blade(out, cell, [tip[0] - Math.cos(yaw) * long * 0.22 * Math.cos(down), tip[1] - Math.sin(down) * long * 0.22, tip[2] - Math.sin(yaw) * long * 0.22 * Math.cos(down)], yaw, down, long, long * 0.95, {
+        droop: 0.45 + r() * 0.45, fold: 0.17 + r() * 0.08, cup: 1.45, across: high ? 3 : 1, wave: 0.13, waves: 1.6 + r() * 1.6, segs: high ? 9 : 4, phase: r(), twist: (r() - 0.5) * 0.5, tint: vary(r, tint),
+      });
     }
   };
   /** A climber hanging from `at`, or with `up` climbing from it: crossed cards of the vine cell. */

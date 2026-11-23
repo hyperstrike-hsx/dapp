@@ -932,7 +932,7 @@ const FILM_GLSL = /* glsl */`
 `;
 export function buildCinema(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, renderer, high, anisotropy, keep, track, photoSet } = kit;
+  const { scene, renderer, high, anisotropy, keep, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const cueAt = new THREE.Vector3();
   const say = (name: CueName, x: number, y: number, z: number, gain = 1, pitch = 1) => options.cue?.(name, cueAt.set(x, y, z), { gain, pitch });
@@ -1084,7 +1084,7 @@ export function buildCinema(options: RangeOptions): RangeEnvironment {
 
   // ---- Materials -------------------------------------------------------------------------------
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => practical(new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.6, ...parameters }));
-  const plasterSet = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plasterSet = wall("skim");
   const plaster = standard({ ...plasterSet, color: 0xbfae8a });
   const plasterOchre = standard({ ...plasterSet, color: 0x9c7c56 });
   const paper = track(wallpaperTexture());
