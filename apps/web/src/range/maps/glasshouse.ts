@@ -668,15 +668,15 @@ function blade(out: Sink, cell: Rect, base: V3, yaw: number, pitch: number, leng
 
 export function buildGlasshouse(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1871);
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.5, ...parameters });
   const painted = (texture: THREE.Texture) => { track(texture).anisotropy = anisotropy; return texture; };
 
   // ---- Materials -----------------------------------------------------------
-  const brickSet = photoSet("/textures/brick_wall_001-2k", 1, 1, true);
-  const plasterSet = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const brickSet = wall("whitewashed", 1.15);
+  const plasterSet = wall("limewash");
   const rustSet = photoSet("/textures/rusty_metal_02-2k", 1, 1, false);
   const brick = standard({ ...brickSet, color: 0xd6c4b2, normalScale: new THREE.Vector2(1.2, 1.2), envMapIntensity: 0.4 });
   const stone = standard({ ...plasterSet, color: 0xcbbfa6, envMapIntensity: 0.45 });

@@ -550,7 +550,7 @@ function depositTexture() {
 
 export function buildVault(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1207);
 
@@ -676,7 +676,7 @@ export function buildVault(options: RangeOptions): RangeEnvironment {
   const greenMap = drawn(slabTexture(457, "#1d3a2c", ["rgba(44,78,60,.5)", "rgba(6,12,10,.6)", "rgba(64,92,72,.3)"], ["rgba(156,192,166,.5)", "rgba(214,228,210,.4)", "rgba(96,140,112,.5)", "rgba(4,8,7,.6)"], "rgba(0,0,0,.7)"));
   const cream = standard({ map: creamMap, roughness: 0.34, envMapIntensity: 0.9 });
   const green = standard({ map: greenMap, roughness: 0.2, envMapIntensity: 1.1 });
-  const plasterSet = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plasterSet = wall("lustro");
   const plaster = standard({ ...plasterSet, color: 0xd6c8a8, envMapIntensity: 0.45 });
   const ceilingPlaster = standard({ ...plasterSet, color: 0xe9e0c8, envMapIntensity: 0.4 });
   const timber = standard({ ...photoSet("/textures/lacquered_cherry_wood-2k", 1, 1, false), color: new THREE.Color(3.2, 2.0, 1.45), roughness: 0.6, envMapIntensity: 0.9 });

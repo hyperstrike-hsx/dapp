@@ -710,7 +710,7 @@ function ribGeometry(depth: number, width: number) {
 
 export function buildMetro(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall, place, instances } = kit;
   const metals = kit.metals();
   const props = createProps(kit);
   // One wind for the station: the piston draught. It lies almost still until a train pushes the
@@ -736,7 +736,7 @@ export function buildMetro(options: RangeOptions): RangeEnvironment {
   const tileAmber = tileMaterial(0xcf7a16, 0.4);
   const tileDark = tileMaterial(0x2b2a26, 0.3);
 
-  const plasterMaps = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plasterMaps = wall("distemper");
   const plasterMaterial = (color: number, amount: number, sootFrom: number, sootTo: number) => weather(new THREE.MeshStandardMaterial({
     ...plasterMaps, color, roughness: 0.95, metalness: 0, envMapIntensity: 0.55, side: THREE.DoubleSide,
   }), amount, 0, sootFrom, sootTo);

@@ -1420,7 +1420,7 @@ function beamBuilder(toSun: THREE.Vector3) {
 
 export function buildBazaar(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet, place } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall, place } = kit;
   const metals = kit.metals();
   const random = rng(909);
   /** Instancing that tolerates an empty list and takes an optional colour per instance. */
@@ -1477,8 +1477,8 @@ export function buildBazaar(options: RangeOptions): RangeEnvironment {
 
   // ---- Materials -----------------------------------------------------------
   const wood = photoSet("/textures/lacquered_cherry_wood-2k", 1, 1, false);
-  const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
-  const plaster = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const brick = wall("buffBrick", 2.2);
+  const plaster = wall("adobeWash");
   const concrete = photoSet("/textures/concrete_floor_worn_001-2k", 1, 1);
   const flagRough = photoSet("/textures/concrete_floor_worn_001-2k", 96 / 3.6, 104 / 3.6);
   const planks = photoSet("/textures/weathered_brown_planks-2k", 1, 1, false);

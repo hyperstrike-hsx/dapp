@@ -605,7 +605,7 @@ export function buildOffice(options: RangeOptions): RangeEnvironment {
   // ---- Materials -------------------------------------------------------------
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.6, ...parameters });
   const weave = kit.photoSet("/textures/fabric_pattern_07-2k", 20.08 / 1.5, 38.5 / 1.5, false);
-  const plasterSet = kit.photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plasterSet = kit.wall("painted");
   const woodSet = kit.photoSet("/textures/lacquered_cherry_wood-2k", 1, 1, false);
   const plaster = standard({ ...plasterSet, color: 0x8f969b });
   const darkPlaster = standard({ ...plasterSet, color: 0x3d4247 });

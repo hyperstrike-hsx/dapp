@@ -900,7 +900,7 @@ function statusTexture() {
 
 export function buildHangar(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall, place, instances } = kit;
   // One wind for the whole place: it comes in off the apron through the open doors, in gusts, and everything that
   // moves in air reads it (plants, birds, blown leaves, the windsock, the idle propeller, the hoist chain).
   const wind = createWind({ heading: 3.45, strength: 0.4, gustiness: 0.62 });
@@ -915,10 +915,10 @@ export function buildHangar(options: RangeOptions): RangeEnvironment {
   // ---- Materials -----------------------------------------------------------
   const FLOOR = { width: 230, depth: 73, z: 3.5 };
   const slab = photoSet("/textures/concrete_floor_worn_001-2k", FLOOR.width / 4.6, FLOOR.depth / 4.6);
-  const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
+  const brick = wall("yellowStock", 2.8);
   const corrugated = photoSet("/textures/corrugated_iron_02-2k", 1, 1, false);
   const treadPlate = photoSet("/textures/metal_plate-2k", 1, 1, false);
-  const castWall = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const castWall = wall("precast");
   const asphalt = photoSet("/textures/asphalt_02-2k", FLOOR.width / 6, 3, false);
   const hardpan = photoSet("/textures/sandstone_cracks-2k", 1, 1, false);
   const paint = (rgb: V3, seed: number, wear: number, size = 512, extra: THREE.MeshStandardMaterialParameters = {}) =>

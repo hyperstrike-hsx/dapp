@@ -970,7 +970,7 @@ export function buildOutpost(options: RangeOptions): RangeEnvironment {
   const wind = createWind({ heading: Math.atan2(-WIND.x, -WIND.z), strength: 0.5, gustiness: 0.65 });
   const life = createLife(kit, options, { wind, seed: 5 });
   const trees = createTrees(kit, { seed: 5, wind, sun: () => sun });
-  const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall, place, instances } = kit;
   // The lower tier spends half the noise on its snow.
   snowOctaves = high ? 4 : 2;
   const metals = kit.metals();
@@ -992,7 +992,7 @@ export function buildOutpost(options: RangeOptions): RangeEnvironment {
   const ironSet = photoSet("/textures/corrugated_iron_02-2k", 1, 1, false);
   const plateSet = photoSet("/textures/metal_plate-2k", 1, 1, false);
   const plankSet = photoSet("/textures/weathered_brown_planks-2k", 1, 1, false);
-  const concreteSet = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const concreteSet = wall("boardMarkedUpright");
   const fabricSet = photoSet("/textures/fabric_pattern_07-2k", 1, 1, false);
   // The set's colour map carries dark scuffs that repeat badly on open snow, so snow takes only its relief and roughness.
   const SNOW_TINT = new THREE.Color(0xe6ecf4);

@@ -663,7 +663,7 @@ type HouseSpec = {
 
 export function buildCanal(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(1307);
   /** Chance for what happens while the range runs; the build keeps its own stream, so the map is the same every time. */
@@ -703,8 +703,8 @@ export function buildCanal(options: RangeOptions): RangeEnvironment {
   const netMap = track(netTexture());
   netMap.anisotropy = anisotropy;
   const M = {
-    brick: standard({ ...photoSet("/textures/brick_wall_001-2k", 1, 1, true), normalScale: new THREE.Vector2(1.2, 1.2) }),
-    plaster: standard({ ...photoSet("/textures/painted_plaster_wall-2k", 1, 1, false) }),
+    brick: standard({ ...wall("dutch", 1.7), normalScale: new THREE.Vector2(1.2, 1.2) }),
+    plaster: standard({ ...wall("marmorino", 2.6) }),
     wood: standard({ ...photoSet("/textures/weathered_brown_planks-2k", 1, 1, false), envMapIntensity: 0.4 }),
     stone: standard({ map: stoneSet.map, normalMap: stoneSet.normalMap, roughness: 0.92 }),
     tile: standard({ map: tileSet.map, normalMap: tileSet.normalMap, roughness: 0.82 }),

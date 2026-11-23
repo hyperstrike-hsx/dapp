@@ -590,7 +590,7 @@ function caskGeometry() {
 
 export function buildReactor(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall } = kit;
   const metals = kit.metals();
 
   // Everything static is baked into one mesh per material (and per shadow / hit / fine class),
@@ -752,7 +752,7 @@ export function buildReactor(options: RangeOptions): RangeEnvironment {
   const slab = photoSet("/textures/concrete_floor_worn_001-2k", 40 / 4.2, 66 / 4.2);
   // Photographed board-marked concrete at 2.4 m a tile, with the 4.8 m shutter-panel sheet
   // (joints, tie holes, run-off) multiplied over it.
-  const cast = photoSet("/textures/concrete_wall_007-2k", 2, 2, false);
+  const cast = wall("shuttered", 4.8);
   const formwork = track(formworkTexture());
   formwork.anisotropy = anisotropy;
   formwork.colorSpace = THREE.NoColorSpace;

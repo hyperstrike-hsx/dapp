@@ -827,15 +827,15 @@ function slateTexture() {
 
 export function buildCourtyard(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet, place, instances } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall, place, instances } = kit;
   const metals = kit.metals();
   const random = rng(2026);
 
   // ---- Materials -----------------------------------------------------------
   const sand = photoSet("/textures/sandstone_cracks-2k", 96 / 3.4, 104 / 3.4, false);
-  const plaster = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plaster = wall("daub");
   const plankSet = photoSet("/textures/weathered_brown_planks-2k", 1, 1, false);
-  const brickSet = photoSet("/textures/brick_wall_001-2k", 1, 1, false);
+  const brickSet = wall("mudBrick", 1.2);
   const cobbleSet = photoSet("/textures/cobblestone_floor_04-2k", 1, 1, false);
   const rustSet = photoSet("/textures/rusty_metal_02-2k", 1, 1, false);
   const fabricSet = photoSet("/textures/fabric_pattern_07-2k", 1, 1, false);

@@ -986,7 +986,7 @@ void main() {
 
 export function buildPiazza(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, keep, track, photoSet } = kit;
+  const { scene, high, anisotropy, keep, track, photoSet, wall } = kit;
   // One wind for the whole square. It comes up the street from the low sun and crosses the lanes toward the lit fronts,
   // so a gust shows first in the side square's plane tree, then in the leaves on the cobbles, then in the washing.
   const WIND_HEADING = 1.15;
@@ -1107,15 +1107,15 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
 
   // ---- Materials -----------------------------------------------------------
   const cobble = photoSet("/textures/cobblestone_floor_04-2k", 150 / 2.1, 130 / 2.1, false);
-  const plaster = photoSet("/textures/painted_plaster_wall-2k", 1, 1, false);
+  const plaster = wall("intonaco");
   const concrete = photoSet("/textures/concrete_floor_worn_001-2k", 0.8, 0.8);
-  const brick = photoSet("/textures/brick_wall_001-2k", 1, 1);
+  const brick = wall("tuscan", 2.6);
   const plasterMaterial = family(new THREE.MeshStandardMaterial({ ...plaster, roughness: 1, metalness: 0, envMapIntensity: 0.6 }));
-  const travertine = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const travertine = wall("travertine", 2.6);
   const planks = photoSet("/textures/weathered_brown_planks-2k", 1, 1, false);
   const gingham = photoSet("/textures/fabric_pattern_07-2k", 1, 1, false);
   // Carved stone: a bedded, weather-stained photo set lifted to the ivory of old travertine.
-  const stone = new THREE.MeshStandardMaterial({ ...travertine, color: new THREE.Color(2.25, 2.2, 2.3), normalScale: new THREE.Vector2(0.7, 0.7), roughness: 1, metalness: 0, envMapIntensity: 0.6 });
+  const stone = new THREE.MeshStandardMaterial({ ...travertine, color: new THREE.Color(1.12, 1.1, 1.15), normalScale: new THREE.Vector2(0.7, 0.7), roughness: 1, metalness: 0, envMapIntensity: 0.6 });
   const trim = stone;
   // Bare boards, pale indoors and weathered under the eaves, are one draw; so are the linens, the brasses, the dark glazes, the patinas and the fired clays.
   const plankWood = family(new THREE.MeshStandardMaterial({ ...planks, roughness: 1, metalness: 0, envMapIntensity: 0.45 }));
@@ -2727,7 +2727,7 @@ export function buildPiazza(options: RangeOptions): RangeEnvironment {
 
   // ---- Street furniture in the cobbles -------------------------------------
   // Stone gutter channels down both sides, still running with rain, with iron gullies; manhole covers in the open square.
-  const wetStone = offMirror(new THREE.MeshStandardMaterial({ map: travertine.map, normalMap: travertine.normalMap, color: new THREE.Color(0.95, 0.93, 0.98), roughness: 0.2, metalness: 0, envMapIntensity: 1.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const wetStone = offMirror(new THREE.MeshStandardMaterial({ map: travertine.map, normalMap: travertine.normalMap, color: new THREE.Color(0.47, 0.46, 0.49), roughness: 0.2, metalness: 0, envMapIntensity: 1.3, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   for (const x of [-8.12, 8.12]) place(new THREE.Mesh(projectUv(new THREE.PlaneGeometry(0.46, 37.3).rotateX(-Math.PI / 2).translate(x, 0.004, -9.3), 0.92), wetStone), 0, 0, 0, false);
   const coverPaint = (context: CanvasRenderingContext2D, base: string, raised: string, groove: string) => {
     const disc = (x: number, y: number, r: number, fill: string) => { context.fillStyle = fill; context.beginPath(); context.arc(x, y, r, 0, Math.PI * 2); context.fill(); };

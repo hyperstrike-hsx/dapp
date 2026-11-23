@@ -312,7 +312,7 @@ function forestTexture() {
 
 export function buildRuin(options: RangeOptions): RangeEnvironment {
   const kit = createKit(options);
-  const { scene, high, anisotropy, track, photoSet } = kit;
+  const { scene, high, anisotropy, track, photoSet, wall } = kit;
   const metals = kit.metals();
   const random = rng(4711);
   const standard = (parameters: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, envMapIntensity: 0.5, ...parameters });
@@ -412,7 +412,7 @@ export function buildRuin(options: RangeOptions): RangeEnvironment {
   };
 
   // ---- Materials -----------------------------------------------------------
-  const wallSet = photoSet("/textures/concrete_wall_007-2k", 1, 1, false);
+  const wallSet = wall("weatheredAshlar");
   const sandSet = photoSet("/textures/sandstone_cracks-2k", 1, 1, false);
   const cobbleSet = photoSet("/textures/cobblestone_floor_04-2k", 1, 1, false);
   const ashlar = weathered(standard({ ...wallSet, normalScale: new THREE.Vector2(1.4, 1.4), envMapIntensity: 0.45 }), { key: "ashlar", keep: 0.55, tint: [1.32, 1.32, 1.17], moss: 0.7 });
