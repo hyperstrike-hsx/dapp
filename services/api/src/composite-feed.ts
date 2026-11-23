@@ -1,4 +1,11 @@
-import type { IndicativeFeed, IndicativeIndex } from "@hyperstrike/market-types";
+import {
+  isPreview,
+  priorHistory,
+  type IndexPoint,
+  type IndicativeFeed,
+  type IndicativeIndex,
+  type PriorSegment,
+} from "@hyperstrike/market-types";
 import type { ReferencePrice } from "@hyperstrike/index-core";
 import { replay } from "./pipeline";
 import { METHODOLOGY, type GenesisConfig } from "./genesis";
@@ -6,6 +13,50 @@ import { VENUES, readVenues } from "./venues";
 import { buildInput, genesisNames, observationsOf } from "./oracle-engine";
 
 export const HISTORY_LIMIT = 1008; // one week of ten-minute snapshots
+const DAY = 86_400;
+/** The last observation of each UTC day. */
+export function dailyCloses(points: readonly IndexPoint[]) {
+  const closes = new Map<number, IndexPoint>();
+  for (const p of points) closes.set(Math.floor(p.observedAt / DAY), p);
+  return [...closes.values()];
+}
+/**
+ * Every observation of the latest week, and one close a day before that, so a
+ * series keeps its whole length however often it is published. The base point
+ * always stays.
+ */
+export function thin(history: readonly IndexPoint[]) {
+  const [base, ...rest] = history;
+  const recent = rest.findIndex(
+    (p) => p.observedAt >= history.at(-1)!.observedAt - 7 * DAY,
+  );
+  return [
+    base,
+    ...dailyCloses(rest.slice(0, recent)),
+    ...rest.slice(recent).slice(-HISTORY_LIMIT),
+  ];
+}
+/**
+ * What a preview series becomes once new baskets replace it: daily closes,
+ * rescaled with whatever preceded them so the line meets the new base at 1,000.
+ */
+export function supersede(index: IndicativeIndex): PriorSegment[] {
+  const scale = 1000 / index.history.at(-1)!.value;
+  const rescaled = (points: readonly IndexPoint[]) =>
+    points.map((p) => ({
+      value: Math.round(p.value * scale * 1e8) / 1e8,
+      observedAt: p.observedAt,
+    }));
+  const segments = (index.prior ?? []).map((segment) => ({
+    ...segment,
+    points: rescaled(segment.points),
+  }));
+  const closes = rescaled(dailyCloses(index.history));
+  if (segments.at(-1)?.provenance === "PREVIEW")
+    segments.at(-1)!.points.push(...closes);
+  else segments.push({ provenance: "PREVIEW", points: closes });
+  return segments;
+}
 /**
  * Public display feed for methodology HS-MVA-1: the same baskets, venue
  * adapters and integer arithmetic as the on-chain oracle, minus signatures.
@@ -37,9 +88,20 @@ export async function refreshComposite(
     const { constituents, index } = replay(
       buildInput(basket, observedAt, quotes),
     );
-    const before = continued?.indexes.find(
-      (i) => i.indexId === basket.indexId && i.versionId === basket.versionId,
+    const published = continued?.indexes.find(
+      (i) => i.indexId === basket.indexId,
     );
+    const before =
+      published?.versionId === basket.versionId ? published : undefined;
+    // New baskets start a new series at 1,000. A preview they replace stays on
+    // the chart as earlier history; it is never spliced into the series.
+    const prior = priorHistory({
+      prior: before
+        ? before.prior
+        : published?.history.length && isPreview(published)
+          ? supersede(published)
+          : published?.prior,
+    });
     // By construction the index is exactly 1,000 at the basket's approval snapshot.
     const history = before?.history.length
       ? [...before.history]
@@ -76,7 +138,8 @@ export async function refreshComposite(
           sources: h ? h.sources.length : 0,
         };
       }),
-      history: history.slice(-HISTORY_LIMIT),
+      history: thin(history),
+      ...(prior.length ? { prior } : {}),
     } satisfies IndicativeIndex;
   });
   if (!indexes.some((i) => i.status === "OK"))

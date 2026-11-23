@@ -1,70 +1,34 @@
-import { writeFile, access, mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { readVenues, VENUE_IDS } from "../services/api/src/venues";
+import { freezeStage, BASE_DAY } from "../services/api/src/genesis";
+import { GENESIS_PATH } from "../services/api/src/oracle-engine";
 import {
-  buildCandidates,
-  parseSalesTape,
-  selectGenesis,
-  METHODOLOGY,
-  METHODOLOGY_HASH,
-  RULES,
-  type GenesisConfig,
-} from "../services/api/src/genesis";
+  buildGenesis,
+  committedAt,
+  writeGenesis,
+} from "../services/api/src/genesis-build";
 
-// Builds the genesis baskets from live five-venue data. The output is the
-// composition committed on chain at deployment, so it is never overwritten
-// silently: pass --force only before anything has been deployed against it.
-const target = fileURLToPath(
-  new URL("../config/index-genesis.json", import.meta.url),
-);
-const force = process.argv.includes("--force");
-if (!force)
-  try {
-    await access(target);
-    throw Error(
-      `${target} already exists. It is the committed genesis composition; use --force only before deployment.`,
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-const [{ snapshots, failures }, tape] = await Promise.all([
-  readVenues(null),
-  fetch("https://api.skinport.com/v1/sales/history?app_id=730&currency=USD", {
-    headers: { Accept: "application/json", "Accept-Encoding": "br" },
-    signal: AbortSignal.timeout(25_000),
-  }).then(async (r) => {
-    if (!r.ok) throw Error(`Skinport sales history HTTP ${r.status}`);
-    return parseSalesTape(await r.json());
-  }),
-]);
-if (failures.length)
+// Builds the baskets from live five-venue data. Until the official base day
+// the result is a preview and may be rebuilt with --force. On the base day it
+// is the composition committed on chain at deployment, and is never rebuilt.
+const existing = await committedAt();
+const stage = freezeStage(existing, Date.now() / 1000);
+if (stage === "FROZEN")
   throw Error(
-    `Genesis needs every venue; failed: ${failures.map((f) => `${f.providerId} (${f.reason})`).join(", ")}`,
+    `${GENESIS_PATH} holds the official baskets frozen on ${new Date(existing! * 1000).toISOString()}. Later compositions go through IndexRegistry.schedule.`,
   );
-const now = Date.now();
-const { candidates, excluded } = buildCandidates(snapshots, tape, now);
-const approvedAt = Math.floor(now / 1000);
-const config: GenesisConfig = {
-  methodology: METHODOLOGY,
-  methodologyHash: METHODOLOGY_HASH,
-  generatedAt: approvedAt,
-  venues: VENUE_IDS,
-  rules: RULES,
-  baskets: selectGenesis(candidates, approvedAt),
-};
-await mkdir(fileURLToPath(new URL("../config/", import.meta.url)), {
-  recursive: true,
-});
-await writeFile(target, JSON.stringify(config, null, 2) + "\n");
-// Near-miss candidates and the gate each one failed, published beside the baskets.
-await writeFile(
-  target.replace(/\.json$/, ".exclusions.json"),
-  JSON.stringify({ generatedAt: approvedAt, excluded }) + "\n",
-);
+if (stage === "MISSED")
+  throw Error(
+    `The official base day (${BASE_DAY} UTC) passed without a freeze. Choose a new day in INDEX_BASE_AT before building; a late build would not be the base that was announced.`,
+  );
+if (stage === "PREVIEW" && existing !== null && !process.argv.includes("--force"))
+  throw Error(
+    `${GENESIS_PATH} already exists. Pass --force to rebuild the preview baskets; the official ones are frozen on ${BASE_DAY} UTC.`,
+  );
+const built = await buildGenesis();
+await writeGenesis(built);
 console.log(
-  `Genesis written: ${candidates.length} eligible candidates, ${excluded.length} near-miss exclusions recorded.`,
+  `${stage === "OFFICIAL" ? "Official baskets frozen" : `Preview baskets written (official freeze on ${BASE_DAY} UTC)`}: ${built.eligible} eligible candidates, ${built.excluded.length} near-miss exclusions recorded.`,
 );
-for (const b of config.baskets)
+for (const b of built.config.baskets)
   console.log(
     `${b.ticker.padEnd(11)} ${b.constituents.length} constituents  root ${b.compositionRoot}`,
   );

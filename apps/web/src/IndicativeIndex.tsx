@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { INDEXES } from "./markets";
 import { API_ENABLED, INDEX_FEED_URL } from "./dataMode";
-import { ageIndicativeFeed } from "@hyperstrike/market-types";
+import {
+  ageIndicativeFeed,
+  isPreview,
+  priorHistory,
+  INDEX_BASE_AT,
+} from "@hyperstrike/market-types";
 import type {
   IndicativeFeed,
   IndicativeIndex,
@@ -83,10 +88,40 @@ export const previewValue = (index?: IndicativeIndex) =>
       });
 const timestamp = (time: number | null) =>
   time ? new Date(time * 1000).toLocaleString() : "Not available";
+/** A calendar day in UTC, the clock the base day and the history floor are set on. */
+const utcDay = (time: number, month: "long" | "short" = "short") =>
+  new Date(time * 1000).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month,
+    year: "numeric",
+    timeZone: "UTC",
+  });
+/** Header of the index board: says so while the series shown are still previews. */
+export const boardNote = (indexes: IndicativeIndex[]) =>
+  indexes.some(isPreview)
+    ? `PREVIEW · BASE ${utcDay(INDEX_BASE_AT)}`.toUpperCase()
+    : "INDICATIVE · BASE 1,000";
+/** Where a series stands against the official base, in one line. */
+export function basisNote(index?: IndicativeIndex) {
+  if (!index?.baseAt) return null;
+  if (isPreview(index))
+    return `PREVIEW SERIES FROM ${utcDay(index.baseAt)} · OFFICIAL BASE OF 1,000 ON ${utcDay(INDEX_BASE_AT)}`.toUpperCase();
+  const earlier = priorHistory(index).map(
+    (segment) =>
+      `${segment.provenance === "PREVIEW" ? "PREVIEW BASKET" : "BACKFILLED"} FROM ${utcDay(segment.points[0].observedAt)}`,
+  );
+  return `BASE 1,000 ON ${utcDay(index.baseAt)}${
+    earlier.length
+      ? ` · DASHED, NOT PART OF THE INDEX: ${earlier.join(", ")}, RESCALED TO MEET THE BASE`
+      : ""
+  }`.toUpperCase();
+}
 
 export function PreviewChart({ index }: { index?: IndicativeIndex }) {
   const points = index?.history ?? [];
-  if (points.length < 2)
+  // History from before the base: drawn dashed, and never joined to the series.
+  const earlier = index ? priorHistory(index).flatMap((s) => s.points) : [];
+  if (!points.length || points.length + earlier.length < 2)
     return (
       <div className="preview-chart-empty">
         {index?.value != null
@@ -96,28 +131,51 @@ export function PreviewChart({ index }: { index?: IndicativeIndex }) {
             : "Connecting to the public price feed…"}
       </div>
     );
-  const values = points.map((p) => p.value),
+  const values = [...earlier, ...points].map((p) => p.value),
     min = Math.min(...values),
     max = Math.max(...values);
-  const start = points[0].observedAt,
+  const start = (earlier[0] ?? points[0]).observedAt,
     duration = points.at(-1)!.observedAt - start;
-  const path = points
-    .map(
-      (p, i) =>
-        `${i ? "L" : "M"}${10 + (580 * (p.observedAt - start)) / (duration || 1)} ${max - min < 0.005 ? 60 : 105 - ((p.value - min) / (max - min)) * 90}`,
-    )
-    .join(" ");
+  const x = (p: { observedAt: number }) =>
+    10 + (580 * (p.observedAt - start)) / (duration || 1);
+  const line = (run: { value: number; observedAt: number }[]) =>
+    run
+      .map(
+        (p, i) =>
+          `${i ? "L" : "M"}${x(p)} ${max - min < 0.005 ? 60 : 105 - ((p.value - min) / (max - min)) * 90}`,
+      )
+      .join(" ");
+  const path = line(points),
+    base = x(points[0]);
   return (
     <svg
       className="preview-chart"
       viewBox="0 0 600 120"
       role="img"
-      aria-label={`Index history, ${points.length} multi-venue observations.`}
+      aria-label={`Index history, ${points.length} multi-venue observations${earlier.length ? `, after ${earlier.length} earlier daily closes drawn dashed` : ""}.`}
     >
       {[15, 60, 105].map((y) => (
         <line key={y} x1="0" x2="600" y1={y} y2={y} stroke="#ffffff12" />
       ))}
-      <path d={`${path} L590 120 L10 120 Z`} className="preview-chart-area" />
+      {earlier.length > 0 && (
+        <>
+          <path
+            d={line([...earlier, points[0]])}
+            className="preview-chart-prior"
+          />
+          <line
+            x1={base}
+            x2={base}
+            y1="6"
+            y2="120"
+            className="preview-chart-base"
+          />
+        </>
+      )}
+      <path
+        d={`${path} L590 120 L${base} 120 Z`}
+        className="preview-chart-area"
+      />
       <path d={path} fill="none" stroke="#a7edda" strokeWidth="2" />
     </svg>
   );
@@ -167,10 +225,12 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
     index?.changeSinceBasePct == null
       ? null
       : Math.round(index.changeSinceBasePct * 100) / 100;
+  const preview = index ? isPreview(index) : false,
+    basis = basisNote(index);
   return (
     <div className="preview-summary">
       <span className="preview-label">
-        INDICATIVE ·{" "}
+        INDICATIVE · {preview && "PREVIEW · "}
         {index?.status === "OK"
           ? "5-VENUE USD REFERENCE"
           : (index?.status ?? "CONNECTING")}
@@ -181,7 +241,11 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
           {change == null
             ? "—"
             : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}{" "}
-          <small>SINCE BASE</small>
+          <small>
+            {preview
+              ? `SINCE ${utcDay(index!.baseAt!).toUpperCase()}`
+              : "SINCE BASE"}
+          </small>
         </span>
         <span>
           {index?.coverage ?? 0}/{index?.count ?? "—"} <small>COVERAGE</small>
@@ -193,6 +257,7 @@ export function PreviewSummary({ index }: { index?: IndicativeIndex }) {
         )}
       </div>
       <PreviewChart index={index} />
+      {basis && <small>{basis}</small>}
       <small>
         PUBLISHED FEED · MARKETS SETTLE ON SIGNED ON-CHAIN DATA ·{" "}
         {index?.observedAt
@@ -221,12 +286,27 @@ export function PreviewDetail({ index }: { index?: IndicativeIndex }) {
             ? "Refreshed every five minutes."
             : "Published snapshots target ten-minute updates; check the source timestamp below."}
         </p>
-        <p>
-          Methodology HS-MVA-1. Baskets were selected by 30-day traded volume
-          from items quoted on all five venues and are frozen, with a base of
-          1,000 on {timestamp(index?.baseAt ?? null)}. Markets settle only on
-          the quorum-signed on-chain series computed from the same inputs.
-        </p>
+        {index && isPreview(index) ? (
+          <p>
+            Methodology HS-MVA-1. Baskets are selected by 30-day traded volume
+            from items quoted on all five venues. This is a preview series,
+            started at 1,000 on {timestamp(index.baseAt)}. The baskets are
+            frozen and the official base of 1,000 is set on{" "}
+            {utcDay(INDEX_BASE_AT, "long")} (UTC); the preview then stays on
+            the chart as earlier history. Markets settle only on the
+            quorum-signed on-chain series computed from the same inputs.
+          </p>
+        ) : (
+          <p>
+            Methodology HS-MVA-1. Baskets were selected by 30-day traded volume
+            from items quoted on all five venues and are frozen, with a base of
+            1,000 on {timestamp(index?.baseAt ?? null)}.
+            {index && priorHistory(index).length > 0 &&
+              " The dashed line before it is earlier history, rescaled to meet the base; it is not part of the index."}{" "}
+            Markets settle only on the quorum-signed on-chain series computed
+            from the same inputs.
+          </p>
+        )}
         {index?.ticker === "HS-BLUE20" && (
           <p>
             BLUE20 holds twenty premium weapon skins priced at $100 or more at
