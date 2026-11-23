@@ -798,6 +798,16 @@ html {
   fill: #a7edda12;
   stroke: none;
 }
+.preview-chart-prior {
+  fill: none;
+  stroke: #a7edda8c;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+.preview-chart-base {
+  stroke: #ffffff38;
+  stroke-dasharray: 2 3;
+}
 .preview-metrics span[data-trend="down"] {
   color: var(--down);
 }

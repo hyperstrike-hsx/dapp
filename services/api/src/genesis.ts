@@ -1,5 +1,5 @@
 import { id } from "ethers";
-import { INDEXES } from "@hyperstrike/market-types";
+import { INDEXES, INDEX_BASE_AT } from "@hyperstrike/market-types";
 import {
   referencePrice,
   eligibilityScore,
@@ -32,6 +32,18 @@ export const RULES = {
   // Below $1 a one-cent tick moves a case by more than 1%.
   caseMinUsd: 1,
 } as const;
+/**
+ * What may be built at `now` (seconds), given when the committed composition
+ * was built (null: there is none). The baskets are frozen once, on the official
+ * base day: before it every build is a preview, after it nothing is rebuilt,
+ * and a base day that passed without a freeze needs a new date, not a late one.
+ */
+export const BASE_DAY = new Date(INDEX_BASE_AT * 1000).toISOString().slice(0, 10);
+export function freezeStage(committedAt: number | null, now: number) {
+  if (committedAt !== null && committedAt >= INDEX_BASE_AT) return "FROZEN";
+  if (now < INDEX_BASE_AT) return "PREVIEW";
+  return now < INDEX_BASE_AT + 86_400 ? "OFFICIAL" : "MISSED";
+}
 export type Category = "knife" | "glove" | "weapon" | "premium" | "case";
 const WEAPON =
   /^(AK-47|M4A4|M4A1-S|AWP|Glock-18|USP-S|Desert Eagle|P250|Five-SeveN|Tec-9|P90|MP9|MP7|FAMAS|Galil AR|AUG|SG 553|SSG 08|MAC-10|UMP-45|Nova|XM1014|MAG-7|Sawed-Off|Negev|M249|G3SG1|SCAR-20|CZ75-Auto|R8 Revolver|Dual Berettas|PP-Bizon|MP5-SD|P2000|Zeus x27) \| /;

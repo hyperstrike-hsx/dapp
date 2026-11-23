@@ -3,7 +3,12 @@ import { fileURLToPath } from "node:url";
 import type { IndicativeFeed } from "@hyperstrike/market-types";
 import { refreshComposite } from "../services/api/src/composite-feed";
 import { loadGenesis } from "../services/api/src/oracle-engine";
-import { METHODOLOGY } from "../services/api/src/genesis";
+import {
+  METHODOLOGY,
+  BASE_DAY,
+  freezeStage,
+} from "../services/api/src/genesis";
+import { buildGenesis, writeGenesis } from "../services/api/src/genesis-build";
 import { createHsxFeed } from "../services/api/src/hsx-chart";
 
 const directory = fileURLToPath(
@@ -29,6 +34,27 @@ const previous: IndicativeFeed | undefined = await readJson(
 // published state is kept beside the multi-venue feed that replaces it.
 if (previous && previous.methodology !== METHODOLOGY)
   await publish("indicative-indexes.skinport-preview-v1.json", previous);
+// The official baskets are frozen by the first --freeze run of the base day
+// (the scheduled job passes it; a run on someone's machine does not). The
+// preview they replace is kept beside the feed and stays on the chart as
+// earlier history.
+const stage = freezeStage(loadGenesis().generatedAt, Date.now() / 1000);
+if (stage === "OFFICIAL" && process.argv.includes("--freeze"))
+  try {
+    await writeGenesis(await buildGenesis());
+    if (previous)
+      await publish("indicative-indexes.preview-hs-mva-1.json", previous);
+    console.log(`Official baskets frozen on the base day, ${BASE_DAY} UTC.`);
+  } catch (error) {
+    // The preview keeps publishing; the next run of the day tries again.
+    console.warn(
+      `::warning::Official basket freeze failed: ${(error as Error).message}`,
+    );
+  }
+if (stage === "MISSED")
+  console.warn(
+    `::warning::The official base day (${BASE_DAY} UTC) passed without a freeze; still publishing the preview. Choose a new day in INDEX_BASE_AT.`,
+  );
 const indexes = await refreshComposite(previous, loadGenesis());
 const chart = await createHsxFeed()();
 const oldChart = await readJson("hsx-ohlcv.json");

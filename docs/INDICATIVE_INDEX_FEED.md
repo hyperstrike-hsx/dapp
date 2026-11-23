@@ -22,10 +22,25 @@ wallet or credential is published.
 The GitHub Actions job targets ten-minute updates, commits only the two data
 files to `main` and never force-pushes. The browser re-evaluates the 15-minute
 source age itself, so a delayed job shows `STALE` rather than fake freshness.
-Gaps are kept; history is never back-filled.
+Gaps are kept; a series is never back-filled. Observations older than a week
+are kept as one close per UTC day, so a series keeps its whole length.
 
-The history starts at 1,000 when the baskets were frozen. The last state of the
-earlier single-venue preview is archived at
+The official base of 1,000 is set on Wednesday 6 January 2027 (UTC); see
+[the methodology](INDEX_METHODOLOGY.md#base-date-and-earlier-history). Until
+then the feed is a preview started at 1,000 on 21 November 2026 and says so.
+The job runs `pnpm snapshots:publish --freeze`: its first run of the base day
+selects and freezes the official baskets, commits `config/index-genesis.json`
+and its exclusions file once, restarts every series at 1,000, and keeps the
+last preview feed at `/data/indicative-indexes.preview-hs-mva-1.json`. Without
+`--freeze` (any run on a developer's machine) nothing is frozen. If no run
+succeeds that day the preview carries on, the job warns, and a new base day has
+to be chosen.
+
+Each index may carry `prior`: history from before its base, as `PREVIEW` or
+`BACKFILLED` segments rescaled to meet the base at 1,000. It is drawn dashed,
+is not part of the series, and never reaches back before 23 October 2025.
+
+The last state of the earlier single-venue preview is archived at
 `/data/indicative-indexes.skinport-preview-v1.json` and is not continued.
 
 ## Optional runtime API

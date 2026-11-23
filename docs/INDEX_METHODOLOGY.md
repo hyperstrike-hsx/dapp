@@ -68,6 +68,39 @@ confidence is the weight-harmonic mean of constituent confidence minus the
 missing weight. Below 7,500 the index is UNSAFE and nothing is signed. Market
 creation needs ≥ 9,000 on chain; settlement samples need ≥ 8,500.
 
+## Base date and earlier history
+
+Every index is 1,000 at the freeze taken on **Wednesday 6 January 2027 (UTC)**
+(`INDEX_BASE_AT` in `packages/market-types/src/indicative.ts`). It is the first
+weekly drop reset after the Singapore Major (ends 13 December 2026) and the
+Steam Winter Sale (17 December to 4 January), so the base is taken inside
+neither. The base is stamped with the time of the freeze itself, not rounded to
+midnight.
+
+The base cannot be earlier than the day it is observed: a constituent's base is
+its ask on each venue at the freeze, and no five-venue record exists from
+before 21 November 2026. Until the base day the published series is a
+**preview**: same methodology, baskets built on 21 November 2026, labelled as a
+preview wherever it is shown. On the base day the baskets are selected again and
+frozen, and the series restarts at 1,000.
+
+History from before the base is never part of the index. It may be drawn beside
+it, dashed and labelled, rescaled so the line meets the base at 1,000:
+
+- **PREVIEW**: the daily closes of the preview series, on the preview baskets.
+  Published automatically at the freeze.
+- **BACKFILLED**: a reconstruction from another source. None is published yet.
+  None of the five venues offers price history, so it needs a separate licensed
+  source; and because the baskets are picked in January 2027, pricing them back
+  in time flatters them with hindsight. It must say so where it is shown.
+
+Nothing from before **23 October 2025** is published or drawn
+(`INDEX_HISTORY_FLOOR_AT`; the feed drops it and the chart ignores it). That is
+the first full day after the trade-up change of 22 October 2025, which let five
+Covert skins be exchanged for a knife or gloves and repriced both overnight.
+Three of the five indexes are mostly knives and gloves; a line carried back
+through that date would describe a different market.
+
 ## Publication and settlement
 
 Observations are published on five-minute boundaries and must land on chain
@@ -80,7 +113,9 @@ missing. Slots voided by the resolution committee are skipped.
 ## Genesis baskets
 
 `pnpm genesis:build` selects the baskets deterministically from a live snapshot
-(`services/api/src/genesis.ts`); nothing is hand-picked. A candidate must:
+(`services/api/src/genesis.ts`); nothing is hand-picked. Before the base day it
+writes preview baskets (`--force` to replace existing ones); on the base day it
+writes the official ones, once; after that it refuses to run. A candidate must:
 
 - be quoted on **all five** venues with cross-venue ask dispersion ≤ 12.5% and no
   rejected quote;
@@ -106,8 +141,8 @@ The result is `config/index-genesis.json`. Its per-index `compositionRoot`
 (weights, base prices and per-venue bases) is written into `IndexRegistry` at
 deployment, and every published observation must carry it.
 `config/index-genesis.exclusions.json` lists near-miss candidates and the gate
-each failed. Do not regenerate the file after deployment: it is the committed
-composition. Later compositions go through `IndexRegistry.schedule` with seven
+each failed. The official file is the committed composition and is never
+regenerated. Later compositions go through `IndexRegistry.schedule` with seven
 days' notice.
 
 ## Known limits

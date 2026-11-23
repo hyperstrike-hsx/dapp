@@ -55,6 +55,7 @@ import { API_ENABLED } from "./dataMode";
 import {
   useIndicativeIndexes,
   PreviewSummary,
+  boardNote,
   previewValue,
   Spark,
   changeLabel,
@@ -858,7 +859,7 @@ export default function App() {
                     <span>
                       <i /> INDEX BOARD
                     </span>
-                    <small>INDICATIVE · BASE 1,000</small>
+                    <small>{boardNote(Object.values(indicative))}</small>
                   </header>
                   {INDEXES.map((i) => (
                     <button key={i.ticker} onClick={() => openIndex(i.ticker)}>

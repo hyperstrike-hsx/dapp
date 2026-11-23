@@ -2,6 +2,8 @@ name: Publish indicative snapshots
 on:
   schedule:
     - cron: "7,17,27,37,47,57 * * * *"
+    # One more chance to start the official base day (6 January, UTC) on time.
+    - cron: "0 0 6 1 *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -23,12 +25,19 @@ jobs:
         with:
           version: 11.7.0
       - run: pnpm install --frozen-lockfile
-      - run: pnpm snapshots:publish
+      # --freeze: the first run of the official base day freezes the baskets.
+      - run: pnpm snapshots:publish --freeze
       - name: Commit only public data
         run: |
           git add apps/web/public/data/indicative-indexes.json apps/web/public/data/hsx-ohlcv.json
+          # Written once, by the base-day freeze: the baskets and the preview they replace.
+          git add config/index-genesis.json config/index-genesis.exclusions.json
+          preview=apps/web/public/data/indicative-indexes.preview-hs-mva-1.json
+          if [ -f "$preview" ]; then git add "$preview"; fi
           if git diff --cached --quiet; then exit 0; fi
-          git -c user.name='hyperstrike-data[bot]' -c user.email='hyperstrike-data[bot]@users.noreply.github.com' commit -m 'data: refresh indicative snapshots'
+          message='data: refresh indicative snapshots'
+          if ! git diff --cached --quiet -- config; then message='data: freeze the official index baskets'; fi
+          git -c user.name='hyperstrike-data[bot]' -c user.email='hyperstrike-data[bot]@users.noreply.github.com' commit -m "$message"
           git push origin HEAD:main
       # No force-push or automatic conflict resolution: a concurrent main update
       # fails safely. The next run checks out the latest preserved baseline.

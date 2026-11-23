@@ -8,8 +8,14 @@ import {
   METHODOLOGY,
   METHODOLOGY_HASH,
   RULES,
+  freezeStage,
   type GenesisConfig,
 } from "./genesis";
+import {
+  INDEX_BASE_AT,
+  INDEX_HISTORY_FLOOR_AT,
+  isPreview,
+} from "@hyperstrike/market-types";
 import {
   basketRoot,
   buildInput,
@@ -18,7 +24,7 @@ import {
   observationsOf,
   verifyCandidate,
 } from "./oracle-engine";
-import { refreshComposite } from "./composite-feed";
+import { refreshComposite, thin } from "./composite-feed";
 
 const NOW = 1_800_000_000;
 const weapons = ["AK-47", "M4A4", "AWP", "USP-S", "Glock-18", "Desert Eagle"];
@@ -160,25 +166,26 @@ function market(
 }
 async function genesis(
   options: Parameters<typeof market>[0] = {},
+  at = NOW,
 ): Promise<GenesisConfig> {
-  const request = market(options);
+  const request = market({ time: at, ...options });
   const { snapshots } = await readVenues(
     null,
     request,
     undefined,
-    () => NOW * 1000,
+    () => at * 1000,
   );
   const tape = parseSalesTape(
     await (await request("https://api.skinport.com/v1/sales/history")).json(),
   );
-  const { candidates } = buildCandidates(snapshots, tape, NOW * 1000 + 5000);
+  const { candidates } = buildCandidates(snapshots, tape, at * 1000 + 5000);
   return {
     methodology: METHODOLOGY,
     methodologyHash: METHODOLOGY_HASH,
-    generatedAt: NOW,
+    generatedAt: at,
     venues: VENUE_IDS,
     rules: RULES,
-    baskets: selectGenesis(candidates, NOW),
+    baskets: selectGenesis(candidates, at),
   };
 }
 const liveQuotes = async (config: GenesisConfig, request: typeof fetch) => {
@@ -396,5 +403,108 @@ describe("published multi-venue feed", () => {
         market({ down: ["skinport", "lisskins", "waxpeer"] }),
       ),
     ).rejects.toThrow("preserving the published snapshot");
+  });
+  it("freezes the baskets once, on the official base day", () => {
+    const day = 86_400;
+    expect(freezeStage(null, INDEX_BASE_AT - 1)).toBe("PREVIEW");
+    expect(freezeStage(INDEX_BASE_AT - 40 * day, INDEX_BASE_AT - 1)).toBe(
+      "PREVIEW",
+    );
+    expect(freezeStage(INDEX_BASE_AT - 40 * day, INDEX_BASE_AT)).toBe(
+      "OFFICIAL",
+    );
+    expect(freezeStage(INDEX_BASE_AT - 40 * day, INDEX_BASE_AT + day - 1)).toBe(
+      "OFFICIAL",
+    );
+    expect(freezeStage(INDEX_BASE_AT - 40 * day, INDEX_BASE_AT + day)).toBe(
+      "MISSED",
+    );
+    expect(freezeStage(INDEX_BASE_AT + 420, INDEX_BASE_AT + 900)).toBe(
+      "FROZEN",
+    );
+    expect(freezeStage(INDEX_BASE_AT + 420, INDEX_BASE_AT + 400 * day)).toBe(
+      "FROZEN",
+    );
+  });
+  it("keeps the preview as earlier history that meets the official base at 1,000", async () => {
+    const day = 86_400;
+    const started = INDEX_BASE_AT - 40 * day;
+    const run = (
+      previous: Awaited<ReturnType<typeof refreshComposite>> | undefined,
+      config: GenesisConfig,
+      at: number,
+      factor = 1,
+    ) =>
+      refreshComposite(
+        previous && JSON.parse(JSON.stringify(previous)),
+        config,
+        market({ factor, time: at }),
+        () => at * 1000,
+      );
+    const preview = await genesis({}, started);
+    let feed = await run(undefined, preview, started + 600);
+    feed = await run(feed, preview, started + 3 * day, 0.9);
+    feed = await run(feed, preview, INDEX_BASE_AT - 3600, 0.8);
+    for (const i of feed.indexes) {
+      expect(isPreview(i)).toBe(true);
+      expect(i.prior).toBeUndefined();
+      expect(i.value).toBeCloseTo(800, -1);
+    }
+    // Something reconstructed from before the floor must never be published.
+    feed.indexes[0].prior = [
+      {
+        provenance: "BACKFILLED",
+        points: [
+          { value: 700, observedAt: INDEX_HISTORY_FLOOR_AT - 1 },
+          { value: 720, observedAt: INDEX_HISTORY_FLOOR_AT },
+        ],
+      },
+    ];
+    const frozenAt = INDEX_BASE_AT + 420;
+    const official = await genesis({ factor: 0.8 }, frozenAt);
+    feed = await run(feed, official, frozenAt + 180, 0.8);
+    for (const [n, i] of feed.indexes.entries()) {
+      expect(isPreview(i)).toBe(false);
+      expect(i.baseAt).toBe(frozenAt);
+      expect(i.history[0]).toEqual({ value: 1000, observedAt: frozenAt });
+      expect(i.value).toBeCloseTo(1000, 5);
+      const earlier = i.prior!.at(-1)!;
+      expect(earlier.provenance).toBe("PREVIEW");
+      // One close a day: the start, the fall three days in, and the eve of the base.
+      expect(earlier.points.map((p) => p.observedAt)).toEqual([
+        started + 600,
+        started + 3 * day,
+        INDEX_BASE_AT - 3600,
+      ]);
+      expect(earlier.points.at(-1)!.value).toBe(1000);
+      expect(earlier.points[0].value).toBeCloseTo(1250, -1);
+      expect(i.prior!.length).toBe(n === 0 ? 2 : 1);
+    }
+    // The point before the floor is gone; the rest is rescaled with the preview (800 → 1,000).
+    const backfilled = feed.indexes[0].prior![0];
+    expect(backfilled.provenance).toBe("BACKFILLED");
+    expect(backfilled.points.map((p) => p.observedAt)).toEqual([
+      INDEX_HISTORY_FLOOR_AT,
+    ]);
+    expect(backfilled.points[0].value).toBeCloseTo(900, 3);
+    // The official series then runs on its own; earlier history is left as it is.
+    const next = await run(feed, official, frozenAt + 2 * day, 0.88);
+    for (const [n, i] of next.indexes.entries()) {
+      expect(i.value).toBeCloseTo(1100, -1);
+      expect(i.prior).toEqual(feed.indexes[n].prior);
+    }
+  });
+  it("keeps a long series whole: a week in full, one close a day before", () => {
+    const start = INDEX_BASE_AT;
+    const history = Array.from({ length: 30 * 144 + 1 }, (_, n) => ({
+      value: 1000 + n / 100,
+      observedAt: start + n * 600,
+    }));
+    const thinned = thin(history);
+    expect(thinned[0]).toEqual(history[0]);
+    expect(thinned.at(-1)).toEqual(history.at(-1));
+    // The base, 23 earlier days, then every ten-minute observation of the last seven.
+    expect(thinned.length).toBe(1 + 23 + 7 * 144);
+    expect(thin(thinned)).toEqual(thinned);
   });
 });

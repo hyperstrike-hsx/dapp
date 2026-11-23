@@ -25,14 +25,23 @@ set.
 
 ## 2. Freeze the baskets
 
+The baskets are frozen once, on the official base day, **Wednesday 6 January
+2027 (UTC)**. The snapshot job freezes and commits them on its first run of
+that day. GitHub has been starting that job hours late, so to base at 00:00 UTC
+start the "Publish indicative snapshots" workflow by hand at that time, or
+freeze from a trusted machine and commit the result:
+
 ```bash
-pnpm genesis:build --force
+pnpm genesis:build
 ```
 
-Inspect `config/index-genesis.json` and `config/index-genesis.exclusions.json`,
-then commit them. From this point the file must not change: its composition
-roots are written into `IndexRegistry` at deployment and every signed
-observation must match them.
+Inspect `config/index-genesis.json` and `config/index-genesis.exclusions.json`
+before deploying. From the freeze the file does not change, and the build
+refuses to replace it: its composition roots are written into `IndexRegistry`
+at deployment and every signed observation must match them.
+
+Do not deploy before the base day. The composition written on chain would be
+the preview, and the on-chain index would keep that earlier base.
 
 ## 3. Rehearse, then deploy
 

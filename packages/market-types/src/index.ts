@@ -1,6 +1,17 @@
 import { AbiCoder, id, keccak256 } from "ethers";
-export type { IndicativeIndex, IndicativeFeed } from "./indicative";
-export { ageIndicativeFeed } from "./indicative";
+export type {
+  IndicativeIndex,
+  IndicativeFeed,
+  IndexPoint,
+  PriorSegment,
+} from "./indicative";
+export {
+  ageIndicativeFeed,
+  isPreview,
+  priorHistory,
+  INDEX_BASE_AT,
+  INDEX_HISTORY_FLOOR_AT,
+} from "./indicative";
 import type { Hex } from "@hyperstrike/oracle-types";
 export const INDEXES = [
   {
