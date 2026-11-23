@@ -15,10 +15,13 @@ import { applyWind, type Wind } from "./wind";
 // The library adds its own update to kit.updates (it advances the wind and follows the sun).
 //
 // How a tree is put together:
-//   - A branching skeleton is grown from a seed (trunk, limbs, secondary branches, twigs), and every
-//     limb is meshed as a tapered tube with a root flare at the ground. Palms get a ringed, leaning
-//     stem with leaf-base stubs under the crown.
-//   - Foliage is leaf-cluster cards on the twigs, cut from one drawn atlas of species-correct sprays.
+//   - A branching skeleton is grown from a seed (trunk, scaffolds, branches, twigs): limbs arc as
+//     they go, kink where a branch leaves them and end in forks, and their thickness follows the
+//     pipe model (a limb's section is the sum of those it feeds). Every limb is meshed as a tube
+//     with a collar at its base and a buttressed root flare at the ground. Palms get a leaning stem
+//     latticed with old leaf bases, with boots under the crown.
+//   - Foliage is thousands of small sprig cards set round the twigs, each facing its own way, cut
+//     from one drawn atlas of species-correct sprays (conifers: needle sprays raked off each bough).
 //     The atlas carries its own mip chain with alpha coverage preserved, so thin leaves keep their
 //     density at a distance. Card normals are bent towards the crown's masses and depth-in-canopy is
 //     baked to vertex colour, so a crown shades as a volume, not as a pile of cards.
@@ -314,6 +317,14 @@ const CELLS = {
   frond: cell(0, 1536, 1024, 256), fern: cell(1024, 1536, 512, 256), grass: cell(1536, 1536, 256, 256), weeds: cell(1792, 1536, 256, 256),
   twigs: cell(0, 1792, 512, 256), litter: cell(512, 1792, 512, 256), agave: cell(1024, 1792, 256, 256),
   fruit: cell(1284, 1796, 120, 120), core: cell(1412, 1796, 120, 120), snow: cell(1280, 1920, 256, 128), oliveB: cell(1536, 1792, 512, 256),
+};
+
+/** The four quarters of a cell: small sprigs of a dozen leaves, for crowns built from many small cards. */
+const quarters = (rect: Rect): Rect[] => [cell(rect.x, rect.y, 256, 256), cell(rect.x + 256, rect.y, 256, 256), cell(rect.x, rect.y + 256, 256, 256), cell(rect.x + 256, rect.y + 256, 256, 256)];
+const SPRIGS = {
+  plane: [...quarters(CELLS.planeA), ...quarters(CELLS.planeB)],
+  citrus: quarters(CELLS.citrusB),
+  olive: [...quarters(CELLS.olive), cell(1536, 1792, 256, 256), cell(1792, 1792, 256, 256)],
 };
 
 type Ink = { a: Ctx; d: Ctx; random: Random };
@@ -820,12 +831,15 @@ function paintFoliage(size: number, seed: number): AtlasPixels {
   const olive: Spray = { shape: "lance", twigs: 7, perTwig: 9, length: [44, 66], aspect: 0.2, splay: 0.7, hue: [82, 98], sat: 20, light: [29, 37], bark: hsl(40, 12, 34), stalk: 2, look: { rough: 0.55, thru: 0.35, veins: 0 }, under: [0.2, [84, 13, 52]], fan: 0.35 };
   const box: Spray = { shape: "obovate", twigs: 9, perTwig: 10, length: [26, 38], aspect: 0.62, splay: 0.85, hue: [94, 112], sat: 44, light: [19, 27], bark: hsl(50, 20, 24), stalk: 1, look: { rough: 0.4, thru: 0.4, veins: 0 }, young: 0.22, fan: 0.4 };
   const ivy: Spray = { shape: "ivy", twigs: 4, perTwig: 7, length: [70, 104], aspect: 1.0, splay: 1.1, hue: [118, 134], sat: 38, light: [15, 22], bark: hsl(30, 24, 22), stalk: 14, look: { rough: 0.4, thru: 0.4, rib: 26 }, young: 0.1, fan: 0.3 };
-  cellInk("planeA", (rect) => spray(ink, rect, plane), 1);
-  cellInk("planeB", (rect) => spray(ink, rect, { ...plane, twigs: 6, perTwig: 7 }), 2);
   cellInk("citrusA", (rect) => spray(ink, rect, citrus), 3);
-  cellInk("citrusB", (rect) => spray(ink, rect, { ...citrus, twigs: 6, perTwig: 6 }), 4);
-  cellInk("olive", (rect) => spray(ink, rect, olive), 5);
-  cellInk("oliveB", (rect) => spray(ink, rect, { ...olive, twigs: 6, perTwig: 7, fan: 0.7 }), 6);
+  // Sprigs: a twig or three with a dozen leaves each, every cell its own.
+  const sprigs = (rects: Rect[], look: Spray, first: number, perTwig: number, twigs = 2) => rects.forEach((rect, k) => {
+    ink.random = rng(seed * 31 + (first + k) * 977);
+    within(ink, rect, () => spray(ink, rect, { ...look, twigs: twigs + (k % 2), perTwig: perTwig + (k % 3 === 0 ? 1 : 0), fan: (look.fan ?? 0) + (k % 4) * 0.1 }));
+  });
+  sprigs(SPRIGS.plane, plane, 40, 3);
+  sprigs(SPRIGS.citrus, citrus, 50, 4);
+  sprigs(SPRIGS.olive, { ...olive, length: [50, 72], aspect: 0.22 }, 60, 8, 4);
   cellInk("box", (rect) => spray(ink, rect, box), 7);
   cellInk("ivy", (rect) => spray(ink, rect, ivy), 8);
   cellInk("bract", paintBracts.bind(null, ink), 9);
@@ -1015,7 +1029,7 @@ function paintBark(scale: number, seed: number) {
   column(BARK.plane, rgb(166, 162, 138), 0.4, 0.6, (random) => {
     const fresh: Array<[number, number, number]> = [[194, 188, 162], [158, 160, 130], [176, 166, 132], [146, 150, 128], [186, 178, 150], [154, 154, 136]];
     for (let k = 0; k < 120; k += 1) {
-      const x = random() * BARK_W, y = random() * BARK_H, rx = 12 + random() * 30, ry = rx * (1.2 + random() * 1.5), shape = blobShape(random, rx, ry, 12, 0.4), tone = fresh[Math.floor(random() * fresh.length)], level = 0.34 + random() * 0.1;
+      const x = random() * BARK_W, y = random() * BARK_H, rx = 12 + random() * 30, ry = rx * (1.2 + random() * 1.5), shape = blobShape(random, rx, ry, 12, 0.4), tone = fresh[Math.floor(random() * fresh.length)], level = 0.2 + random() * 0.16;
       const inner = blobShape(random, rx * 0.55, ry * 0.55, 9, 0.4), shiftX = (random() - 0.5) * rx * 0.5, shiftY = (random() - 0.5) * ry * 0.5, pale = 1.03 + random() * 0.06;
       tiled(ink, BARK.plane, x, y, ry * 1.5, (c, px, py, colour) => {
         blobPath(c, shape, px, py); c.fillStyle = colour ? rgb(tone[0], tone[1], tone[2], 0.86) : surf(level, 0.56, 0); c.fill();
@@ -1030,7 +1044,9 @@ function paintBark(scale: number, seed: number) {
       tiled(ink, BARK.plane, x, y, ry * 1.6, (c, px, py, colour) => {
         // A plate about to fall stands off the trunk: a soft shadow under its lower edge, no outline.
         if (colour) { blobPath(c, shape, px + 1, py + 2.5); c.fillStyle = rgb(70, 62, 50, 0.3); c.fill(); }
-        blobPath(c, shape, px, py); c.fillStyle = colour ? rgb(tone[0], tone[1], tone[2], 0.92) : surf(0.62, 0.84, 0); c.fill();
+        // Its edge curls up from the stem: a sloping rim on the height sheet under the plate itself.
+        if (!colour) { blobPath(c, shape, px, py); c.strokeStyle = surf(0.56, 0.84, 0); c.lineWidth = 5; c.lineJoin = "round"; c.stroke(); }
+        blobPath(c, shape, px, py); c.fillStyle = colour ? rgb(tone[0], tone[1], tone[2], 0.92) : surf(0.74, 0.84, 0); c.fill();
         // The plate is weathered unevenly: a second, smaller patch of another grey inside it.
         if (colour) { blobPath(c, core, px + rx * 0.1, py - ry * 0.12); c.fillStyle = rgb(tone[0] * 0.9, tone[1] * 0.9, tone[2] * 0.92, 0.6); c.fill(); }
       });
@@ -1061,18 +1077,26 @@ function paintBark(scale: number, seed: number) {
     for (let k = 0; k < 20; k += 1) { const x = random() * BARK_W, y = random() * BARK_H, shape = blobShape(random, 10 + random() * 22, 14 + random() * 30); tiled(ink, BARK.furrowed, x, y, 60, (c, px, py, colour) => { if (!colour) return; blobPath(c, shape, px, py); c.fillStyle = rgb(150, 156, 132, 0.3); c.fill(); }); }
   });
 
-  // 2: palm. Fibrous stem banded by the scars of fallen fronds.
-  column(BARK.palm, rgb(126, 110, 90), 0.5, 0.86, (random) => {
-    fibre(BARK.palm, random, 1900, [10, 60], [126, 110, 90], 50);
-    for (let ring = 0; ring < 32; ring += 1) {
-      const y = ring * 64 + 20, waves = 2 + Math.floor(random() * 3), swing = 4 + random() * 7, shift = random() * TAU;
-      for (const c of [a, d]) {
-        const x0 = BARK.palm * BARK_W, trace = (offset: number) => { c.beginPath(); for (let x = 0; x <= BARK_W; x += 8) { const py = y + offset + Math.sin(x / BARK_W * TAU * waves + shift) * swing; if (x) c.lineTo(x0 + x, py); else c.moveTo(x0 + x, py); } c.stroke(); };
-        c.strokeStyle = c === a ? rgb(160, 144, 118, 0.55) : surf(0.82, 0.8, 0); c.lineWidth = 12; trace(8);
-        c.strokeStyle = c === a ? rgb(64, 52, 40, 0.4) : surf(0.3, 0.92, 0); c.lineWidth = 8; trace(0);
-        c.strokeStyle = c === a ? rgb(52, 42, 32, 0.85) : surf(0.1, 0.92, 0); c.lineWidth = 3; trace(0);
-      }
+  // 2: palm. A lattice of old leaf bases: each a blunt scale standing proud at its cut upper edge, fibrous, dark in the joints.
+  column(BARK.palm, rgb(70, 58, 46), 0.12, 0.92, (random) => {
+    const across = 3, wide = BARK_W / across, tall = 64, rows = BARK_H / tall;
+    for (let row = 0; row < rows; row += 1) for (let k = 0; k < across; k += 1) {
+      const x = (k + (row % 2) * 0.5 + (random() - 0.5) * 0.08) * wide, y = row * tall + tall / 2 + (random() - 0.5) * 8, value = 0.82 + random() * 0.36, warm = random() * 14, half = wide * (0.5 + random() * 0.05), up = tall * (0.92 + random() * 0.12);
+      tiled(ink, BARK.palm, x, y, wide, (c, px, py, colour) => {
+        // Wide and cut square at the top, narrowing to where it clasps the stem below.
+        c.beginPath(); c.moveTo(px - half * 0.86, py - up * 0.55); c.lineTo(px + half * 0.86, py - up * 0.55);
+        c.quadraticCurveTo(px + half * 1.02, py + up * 0.1, px, py + up * 0.98); c.quadraticCurveTo(px - half * 1.02, py + up * 0.1, px - half * 0.86, py - up * 0.55); c.closePath();
+        const grade = c.createLinearGradient(0, py - up * 0.55, 0, py + up);
+        if (colour) { grade.addColorStop(0, rgb((150 + warm) * value, 128 * value, 100 * value)); grade.addColorStop(0.2, rgb((132 + warm) * value, 112 * value, 88 * value)); grade.addColorStop(1, rgb(92 * value, 76 * value, 60 * value)); }
+        else { grade.addColorStop(0, surf(0.96, 0.82, 0)); grade.addColorStop(0.18, surf(0.8, 0.86, 0)); grade.addColorStop(1, surf(0.3, 0.9, 0)); }
+        c.fillStyle = grade; c.fill();
+        c.strokeStyle = colour ? rgb(40, 31, 24, 0.75) : surf(0.06, 0.95, 0); c.lineWidth = 3; c.stroke();
+        // The cut end: a pale rim of fibre.
+        c.strokeStyle = colour ? rgb(176 * value, 156 * value, 124 * value, 0.7) : surf(1, 0.8, 0); c.lineWidth = 2.5;
+        c.beginPath(); c.moveTo(px - half * 0.74, py - up * 0.5); c.lineTo(px + half * 0.74, py - up * 0.5); c.stroke();
+      });
     }
+    fibre(BARK.palm, random, 2600, [8, 34], [126, 108, 86], 50, 0.1);
   });
 
   // 3: scaly. Thin red-brown plates with grey bloom, dark in the gaps.
@@ -1277,6 +1301,7 @@ varying vec4 vTreeVary;
 varying float vTreeRandom;
 float treeThru = 0.0;
 float treeShade = 1.0;
+vec3 treeFace = vec3( 0.0, 0.0, 1.0 );
 `;
 
 /** Snow lies on whatever faces the sky: the test uses the true face, so the underside of a bough stays green. */
@@ -1301,9 +1326,11 @@ const FRAGMENT_NORMAL = /* glsl */ `
 `;
 
 /**
- * Leaves. On top of the standard light: a wrap term so the crown's terminator is soft, light coming
- * through the blade when the sun is behind it (strongest looking towards the sun), both scaled by
- * the sheet's translucency. Shadows still apply: they are in directLight.color by then.
+ * Leaves. On top of the standard light: a wrap term so the crown's terminator is soft, and light
+ * coming through the blade. A blade lit on the side turned away from the eye shows that light
+ * through itself (its own face decides, not the crown's bent normal), most of all looking towards
+ * the sun; all scaled by the sheet's translucency. Shadows still apply: they are in
+ * directLight.color by then.
  */
 const FRAGMENT_LEAF_LIGHT = /* glsl */ `
 void RE_Direct_Leaf( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
@@ -1312,8 +1339,9 @@ void RE_Direct_Leaf( const in IncidentLight directLight, const in vec3 geometryP
   float treeWrap = saturate( ( treeNl + 0.6 ) / 1.6 ) - saturate( treeNl );
   float treeToSun = saturate( dot( geometryViewDir, - directLight.direction ) );
   float treeGlow = treeToSun * treeToSun * treeToSun * ( 0.45 + 0.55 * saturate( 0.4 - treeNl ) );
+  float treeBack = saturate( - dot( treeFace, directLight.direction ) );
   vec3 treeTint = material.diffuseContribution * vec3( 1.5, 1.45, 0.42 );
-  reflectedLight.directDiffuse += directLight.color * treeTint * ( ( treeWrap * 0.7 + treeGlow * 1.5 ) * treeThru * RECIPROCAL_PI );
+  reflectedLight.directDiffuse += directLight.color * treeTint * ( ( treeWrap * 0.7 + treeGlow * 1.0 + treeBack * ( 0.7 + 0.5 * treeToSun ) ) * treeThru * RECIPROCAL_PI );
 }
 #undef RE_Direct
 #define RE_Direct RE_Direct_Leaf
@@ -1352,6 +1380,7 @@ function patchTreeMaterial(material: THREE.MeshStandardMaterial, kind: TreeMater
           treeThru = treeSurface.a;`)
         // Both faces of a card shade with the crown's bent normal: undo the back-face flip.
         .replace("#include <normal_fragment_begin>", /* glsl */ `#include <normal_fragment_begin>
+          treeFace = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
           #ifdef DOUBLE_SIDED
             normal *= faceDirection;
           #endif`)
@@ -1368,7 +1397,7 @@ function patchTreeMaterial(material: THREE.MeshStandardMaterial, kind: TreeMater
             vec3 treeSunView = normalize( ( viewMatrix * vec4( treeSun, 0.0 ) ).xyz );
             reflectedLight.indirectDiffuse *= 1.0 + 0.3 * dot( normal, treeSunView );
             #ifdef USE_ENVMAP
-              reflectedLight.indirectDiffuse += material.diffuseContribution * vec3( 1.5, 1.45, 0.42 ) * getIBLIrradiance( - normal ) * ( treeThru * 0.3 * RECIPROCAL_PI );
+              reflectedLight.indirectDiffuse += material.diffuseContribution * vec3( 1.5, 1.45, 0.42 ) * getIBLIrradiance( - treeFace ) * ( treeThru * 0.5 * RECIPROCAL_PI );
             #endif
             // Sun that has come through a thin cover of leaves: the shadow map is asked again with the
             // surface moved towards the light, so a leaf under 0.3 m of crown glows and one under 3 m does not.
@@ -1439,9 +1468,9 @@ type Lod = {
 const lodOf = (detail: TreeDetail, high: boolean): Lod =>
   detail === "hero" ? (high ? { rank: 2, cut: 0.012, keep: 1, grow: 1, grid: 1, round: 1, fine: true } : { rank: 2, cut: 0.024, keep: 0.5, grow: 1.36, grid: 1, round: 0.72, fine: false })
     : detail === "mid" ? (high ? { rank: 1, cut: 0.03, keep: 0.4, grow: 1.5, grid: 1, round: 0.62, fine: true } : { rank: 1, cut: 0.05, keep: 0.21, grow: 2, grid: 1, round: 0.5, fine: false })
-      : (high ? { rank: 0, cut: 0.09, keep: 0.1, grow: 2.7, grid: 0, round: 0.42, fine: true } : { rank: 0, cut: 0.14, keep: 0.055, grow: 3.4, grid: 0, round: 0.36, fine: false });
+      : (high ? { rank: 0, cut: 0.09, keep: 0.15, grow: 2.5, grid: 0, round: 0.42, fine: true } : { rank: 0, cut: 0.14, keep: 0.08, grow: 3.2, grid: 0, round: 0.36, fine: false });
 
-const sidesFor = (radius: number, lod: Lod) => Math.max(3, Math.round((radius < 0.02 ? 3 : radius < 0.034 ? 4 : radius < 0.07 ? 5 : radius < 0.13 ? 7 : radius < 0.22 ? 9 : 12) * lod.round));
+const sidesFor = (radius: number, lod: Lod) => Math.max(3, Math.round((radius < 0.014 ? 3 : radius < 0.03 ? 4 : radius < 0.06 ? 5 : radius < 0.11 ? 7 : radius < 0.18 ? 10 : radius < 0.26 ? 13 : 16) * lod.round));
 
 /** Drops points from a path for the cheaper detail levels, always keeping the ends (and the first `head` points). */
 function thin(path: Path, step: number, head = 0): Path {
@@ -1459,8 +1488,6 @@ type LimbSpec = {
   angle: [number, number];
   /** Length as a share of the parent's. */
   length: [number, number];
-  /** Radius as a share of the parent's where it leaves. */
-  radius: number;
   /** Pull towards the sky per segment (negative droops). */
   up: number;
   gnarl: number;
@@ -1469,6 +1496,13 @@ type LimbSpec = {
   profile?: (t: number) => number;
   /** 0..1 flattens the heading (spreading crowns). */
   flat?: number;
+  /** Radians the limb turns towards the sky over its first and over its second half (negative: out and down). */
+  curve?: [number, number];
+  /** How many of the children leave together from the parent's tip, as a fork, and how wide the fork opens. */
+  fork?: number;
+  open?: [number, number];
+  /** How far the parent is pushed aside where one of these leaves it. */
+  kink?: number;
 };
 
 type LeafSpec = {
@@ -1492,12 +1526,16 @@ type LeafSpec = {
   /** How far normals bend to the crown's masses, and how dark the deepest leaves go. */
   bend: number;
   dark: number;
-  /** 0..1: sprays follow their twig (bare twigs) instead of lying in the crown's surface. */
+  /** 0..1: sprays follow their twig (bare twigs) instead of facing the light. */
   along?: number;
+  /** Angle between a spray and its twig. */
+  splay?: number;
+  /** How far each blade turns its own way instead of facing out of the crown. */
+  wild?: number;
 };
 
 type TreeSpec = {
-  height: number; radius: number; top: number; segments: number; gnarl: number; lean: number;
+  height: number; radius: number; segments: number; gnarl: number; lean: number;
   flare: number; lobes: number; flute?: number; twist?: number;
   bark: number; tint: V3; metres: number;
   limbs: LimbSpec[];
@@ -1506,47 +1544,125 @@ type TreeSpec = {
   flex: number; limber: number;
   /** Overall height, for the lean. */
   tall: number;
+  /** Exponent of the pipe model: a limb's section is the sum of those it feeds (2 keeps area; lower thins the trunk less). */
+  pipe?: number;
+  /** Multiplies the radius below which limbs are not meshed (a bare tree shows its finest twigs). */
+  twigs?: number;
 };
 
-type Limb = { path: Path; dirs: V3[]; level: number; group: number; length: number };
+type Limb = { path: Path; dirs: V3[]; level: number; group: number; length: number; forked?: boolean };
+type Shoot = { limb: Limb; runs: number[]; area: number[]; kids: Array<{ t: number; shoot: Shoot }> };
 
-/** Grows the skeleton: the trunk, then each level of limbs off the one before. */
+/** Turns a heading towards the sky by `angle` radians (away from it when negative). */
+function lift(dir: V3, angle: number): V3 {
+  const axis = cross(dir, UP), length = Math.hypot(axis[0], axis[1], axis[2]);
+  if (length < 1e-4) return dir;
+  return norm(turn(dir, [axis[0] / length, axis[1] / length, axis[2] / length], angle));
+}
+
+/**
+ * Grows the skeleton: the trunk, then each level of limbs off the one before. A limb arcs as it
+ * goes (out and then up, or up and then drooping, by species), is pushed aside where a branch
+ * leaves it, and may end in a fork. Thickness comes afterwards from the pipe model: every limb's
+ * section is the sum of the sections it feeds, so scaffolds are stout, limbs step down at each
+ * branch and twigs come out fine, whatever the branching.
+ */
 function growTree(spec: TreeSpec, seed: number): { limbs: Limb[]; groups: number } {
-  const random = rng(seed), limbs: Limb[] = [];
+  const random = rng(seed), limbs: Limb[] = [], power = spec.pipe ?? 2.1;
   let groups = 0;
-  const grow = (start: V3, heading: V3, length: number, r0: number, r1: number, level: number, group: number, phase: number, sway0: number, segments: number, gnarl: number, up: number) => {
-    const pts: V3[] = [start], rad = [r0], dirs: V3[] = [heading], bend = [spec.flex * Math.pow(clamp(start[1] / spec.tall, 0, 1.2), 2)], sway = [sway0];
-    let dir = heading, at = start;
+  const grow = (start: V3, heading: V3, length: number, level: number, group: number, phase: number, sway0: number, own: { segments: number; gnarl: number; up: number; curve?: [number, number] }): Shoot => {
+    const child = spec.limbs[level] as LimbSpec | undefined, steps: number[] = [];
+    if (level === 0) {
+      // A trunk starts under the ground and has close rings at its foot, for the root flare.
+      const foot = [0.16, ...(length > 0.8 ? [0.1, 0.16, 0.24, 0.34].map((step) => step * Math.min(1, length / 2.6)) : [])], used = foot.reduce((sum, step) => sum + step, 0);
+      steps.push(...foot);
+      for (let i = 0; i < own.segments; i += 1) steps.push(Math.max(0.05, length - used) / own.segments);
+    } else for (let i = 0; i < own.segments; i += 1) steps.push(length / own.segments);
+    const total = steps.reduce((sum, step) => sum + step, 0);
+    // Where the children leave is settled first, so the limb can bend away from each as it passes.
+    const marks: Array<{ t: number; tip: boolean; k: number; out?: V3 }> = [];
+    if (child) {
+      const count = Math.round(lerp(child.count[0], child.count[1], random())), fork = Math.min(count, child.fork ?? 0), sides = count - fork;
+      for (let k = 0; k < sides; k += 1) marks.push({ t: Math.min(0.97, lerp(child.span[0], child.span[1], (k + random() * 0.7) / Math.max(1, sides - 0.3))), tip: false, k });
+      for (let k = 0; k < fork; k += 1) marks.push({ t: 1, tip: true, k });
+    }
+    const spin = random() * TAU, sways = (at: V3) => spec.flex * Math.pow(clamp(at[1] / spec.tall, 0, 1.2), 2);
+    const pts: V3[] = [start], dirs: V3[] = [heading], runs = [0], bend = [sways(start)], sway = [sway0];
     const reach = spec.limber * Math.min(1.3, length / (spec.tall * 0.35)) * Math.pow(0.62, Math.max(0, level - 1));
-    for (let i = 1; i <= segments; i += 1) {
-      const t = i / segments, wander = anywhere(random);
-      dir = norm([dir[0] + wander[0] * gnarl, dir[1] + wander[1] * gnarl * 0.6 + up, dir[2] + wander[2] * gnarl]);
-      at = add(at, dir, length / segments);
-      pts.push(at); dirs.push(dir); rad.push(lerp(r0, r1, Math.pow(t, 0.8)));
-      bend.push(spec.flex * Math.pow(clamp(at[1] / spec.tall, 0, 1.2), 2));
+    let dir = heading, at = start, run = 0;
+    for (let i = 0; i < steps.length; i += 1) {
+      const t0 = run / total;
+      run += steps[i];
+      const t = run / total, wander = anywhere(random), share = steps[i] / total * 2;
+      if (own.curve) dir = lift(dir, (t <= 0.5 ? own.curve[0] : own.curve[1]) * share);
+      dir = norm([dir[0] + wander[0] * own.gnarl, dir[1] + wander[1] * own.gnarl * 0.6 + own.up, dir[2] + wander[2] * own.gnarl]);
+      for (const mark of marks) {
+        if (mark.tip || mark.t <= t0 || mark.t > t) continue;
+        let out = turn(side(dir), dir, spin + mark.k * 2.39996 + (random() - 0.5) * 0.7);
+        // Limbs off a leaning branch seldom grow straight down.
+        if (level > 0 && out[1] < -0.15 && random() < 0.75) out = norm([out[0], -out[1] * 0.5, out[2]]);
+        mark.out = out;
+        const kink = child!.kink ?? 0;
+        if (kink && level > 0) dir = norm([dir[0] - out[0] * kink, dir[1] - out[1] * kink, dir[2] - out[2] * kink]);
+      }
+      at = add(at, dir, steps[i]);
+      pts.push(at); dirs.push(dir); runs.push(run); bend.push(sways(at));
       sway.push(level ? sway0 + reach * Math.pow(t, 1.6) : 0);
     }
-    limbs.push({ path: { pts, rad, bend, sway, phase }, dirs, level, group, length });
-    const child = spec.limbs[level];
-    if (!child) return;
-    const count = Math.round(lerp(child.count[0], child.count[1], random())), spin = random() * TAU;
-    for (let k = 0; k < count; k += 1) {
-      const t = Math.min(1, lerp(child.span[0], child.span[1], (k + random() * 0.7) / Math.max(1, count - 0.3)));
-      const f = t * segments, i = Math.min(segments - 1, Math.floor(f)), u = f - i;
-      const from = mix3(pts[i], pts[i + 1], u), along = norm(mix3(dirs[i], dirs[i + 1], u)), girth = lerp(rad[i], rad[i + 1], u);
-      let out = turn(side(along), along, spin + k * 2.39996 + (random() - 0.5) * 0.7);
-      // Limbs off a leaning branch seldom grow straight down.
-      if (level > 0 && out[1] < -0.15 && random() < 0.75) out = norm([out[0], -out[1] * 0.5, out[2]]);
-      const angle = lerp(child.angle[0], child.angle[1], random()), c = Math.cos(angle), s = Math.sin(angle);
+    const limb: Limb = { path: { pts, rad: [], bend, sway, phase }, dirs, level, group, length: total, forked: marks.some((mark) => mark.tip) };
+    limbs.push(limb);
+    const shoot: Shoot = { limb, runs, area: [], kids: [] };
+    if (!child) return shoot;
+    const forks = marks.filter((mark) => mark.tip).length, forkSpin = random() * TAU;
+    for (const mark of marks) {
+      const reached = mark.t * total;
+      let i = 0;
+      while (i < steps.length - 1 && runs[i + 1] < reached) i += 1;
+      const u = clamp((reached - runs[i]) / (runs[i + 1] - runs[i])), from = mix3(pts[i], pts[i + 1], u), along = norm(mix3(dirs[i], dirs[i + 1], u));
+      let out: V3, angle: number;
+      if (mark.tip) {
+        const open = child.open ?? [0.3, 0.6];
+        out = turn(side(along), along, forkSpin + mark.k / forks * TAU + (random() - 0.5) * 0.6);
+        angle = lerp(open[0], open[1], random()) * (forks === 1 ? 0.45 : 1);
+      } else {
+        const lean = mark.out ?? side(along), off = dot(lean, along);
+        out = norm([lean[0] - along[0] * off, lean[1] - along[1] * off, lean[2] - along[2] * off], side(along));
+        angle = lerp(child.angle[0], child.angle[1], random());
+      }
+      const c = Math.cos(angle), s = Math.sin(angle);
       let next = norm([along[0] * c + out[0] * s, along[1] * c + out[1] * s, along[2] * c + out[2] * s]);
       if (child.flat) next = norm([next[0], next[1] * (1 - child.flat), next[2]]);
-      const long = length * lerp(child.length[0], child.length[1], random()) * (child.profile ? child.profile(t) : 1);
-      const r = Math.min(girth * 0.9, girth * child.radius * (0.85 + random() * 0.3));
-      grow(from, next, long, r, Math.max(0.004, r * 0.22), level + 1, level === 0 ? groups++ : group, level === 0 ? random() : phase, lerp(sway[i], sway[i + 1], u), child.segments, child.gnarl, child.up);
+      const long = length * lerp(child.length[0], child.length[1], random()) * (child.profile ? child.profile(mark.t) : 1);
+      shoot.kids.push({ t: mark.t, shoot: grow(from, next, long, level + 1, level === 0 ? groups++ : group, level === 0 ? random() : phase, lerp(sway[i], sway[i + 1], u), child) });
     }
+    return shoot;
   };
   const tilt = random() * TAU;
-  grow([0, -0.16, 0], norm([Math.cos(tilt) * spec.lean, 1, Math.sin(tilt) * spec.lean]), spec.height + 0.16, spec.radius, spec.radius * spec.top, 0, 0, 0, 0, spec.segments, spec.gnarl, 0.06);
+  const trunk = grow([0, -0.16, 0], norm([Math.cos(tilt) * spec.lean, 1, Math.sin(tilt) * spec.lean]), spec.height + 0.16, 0, 0, 0, 0, { segments: spec.segments, gnarl: spec.gnarl, up: 0.06 });
+  // Sections, tips first: a little for the shoot's own tip, some for every metre of it, and all it feeds.
+  const sized = (shoot: Shoot): number => {
+    const total = shoot.runs[shoot.runs.length - 1], kids = shoot.kids.map((kid) => ({ t: kid.t, area: sized(kid.shoot) }));
+    shoot.area = shoot.runs.map((run) => {
+      let area = 0.22 + (total - run) * 1.5;
+      for (const kid of kids) if (kid.t >= run / total - 1e-4) area += kid.area;
+      return area;
+    });
+    return shoot.area[0];
+  };
+  const unit = spec.radius / Math.pow(sized(trunk), 1 / power);
+  const fit = (shoot: Shoot, scale: number) => {
+    const { limb, runs } = shoot, total = runs[runs.length - 1];
+    limb.path.rad = shoot.area.map((area, i) => Math.max(0.003, unit * Math.pow(area, 1 / power) * scale * (limb.level === 0 ? 1 + 0.14 * (1 - runs[i] / total) : 1)));
+    for (const kid of shoot.kids) {
+      const reached = kid.t * total;
+      let i = 0;
+      while (i < runs.length - 2 && runs[i + 1] < reached) i += 1;
+      // A branch is never as stout as the limb it leaves.
+      const girth = Math.min(limb.path.rad[i], limb.path.rad[i + 1] * 1.25) * 0.94, base = unit * Math.pow(kid.shoot.area[0], 1 / power) * scale;
+      fit(kid.shoot, base > girth ? scale * girth / base : scale);
+    }
+  };
+  fit(trunk, 1);
   return { limbs, groups: Math.max(1, groups) };
 }
 
@@ -1609,20 +1725,24 @@ function along(limb: Limb, t: number) {
 
 /** Grows a branching tree from its spec and meshes it at a detail level: bark tubes, then the crown. */
 function buildTree(spec: TreeSpec, seed: number, lod: Lod, out: Grown = grown(), extra?: (limbs: Limb[], cards: Card[], centre: V3) => void): Grown {
-  const { limbs, groups } = growTree(spec, seed), flareTurn = rng(seed + 5)() * TAU;
+  const { limbs, groups } = growTree(spec, seed), flareTurn = rng(seed + 5)() * TAU, cut = lod.cut * (spec.twigs ?? 1);
   for (const limb of limbs) {
-    if (limb.level > 0 && limb.path.rad[0] < lod.cut) continue;
-    const path = thin(limb.path, lod.rank === 2 ? 1 : lod.rank === 1 ? 2 : 3, limb.level === 0 ? 3 : 0);
+    if (limb.level > 0 && limb.path.rad[0] < cut) continue;
+    const step = lod.rank === 2 ? 1 : lod.rank === 1 ? 2 : 3;
     if (limb.level === 0) {
-      const pts = path.pts;
+      const path = thin(limb.path, step, lod.rank === 2 ? 5 : 3), pts = path.pts, reach = Math.max(0.12, spec.radius * 1.15);
       tube(out.bark, path, sidesFor(spec.radius, lod), {
-        bark: spec.bark, tint: spec.tint, metres: spec.metres,
+        bark: spec.bark, tint: spec.tint, metres: spec.metres, cap: true,
         // Root flare: the stem widens into buttresses as it meets the ground; flutes twist up an old trunk.
-        swell: (i, a) => 1 + spec.flare * Math.exp(-Math.max(0, pts[i][1] + 0.1) / 0.3) * (1 + 0.5 * Math.cos(spec.lobes * a + flareTurn)) + (spec.flute ?? 0) * Math.cos(3 * a + (spec.twist ?? 0) * pts[i][1] + flareTurn) * clamp(1.4 - pts[i][1] / spec.height),
-        shade: (i) => 0.72 + 0.28 * smooth(0, 0.5, pts[i][1]),
+        swell: (i, a) => {
+          const low = Math.exp(-Math.max(0, pts[i][1] + 0.04) / reach);
+          return 1 + spec.flare * low * (1 + (0.35 + 0.5 * low) * Math.cos(spec.lobes * a + flareTurn)) + (spec.flute ?? 0) * Math.cos(3 * a + (spec.twist ?? 0) * pts[i][1] + flareTurn) * clamp(1.4 - pts[i][1] / spec.height);
+        },
+        shade: (i) => 0.7 + 0.3 * smooth(0, 0.5, pts[i][1]),
       });
     } else {
-      tube(out.bark, path, sidesFor(limb.path.rad[0], lod), { bark: spec.bark, tint: spec.tint, metres: spec.metres, swell: (i) => (i === 0 ? 1.35 : 1) });
+      // A collar where the limb leaves its parent, and a closed end where it forks.
+      tube(out.bark, thin(limb.path, step), sidesFor(limb.path.rad[0], lod), { bark: spec.bark, tint: spec.tint, metres: spec.metres, swell: (i) => (i === 0 ? 1.32 : 1), cap: limb.forked });
     }
   }
   const leaf = spec.leaves;
@@ -1640,32 +1760,36 @@ function buildTree(spec: TreeSpec, seed: number, lod: Lod, out: Grown = grown(),
   for (let k = 0; k < 3; k += 1) centre[k] /= Math.max(1, weight);
   masses.forEach((mass, index) => { for (let k = 0; k < 3; k += 1) mass[k] = weights[index] ? mass[k] / weights[index] : centre[k]; });
   const cards: Card[] = [], vary = rng(seed + 104729), pick = rng(seed + 7919);
-  const sprayAt = (limb: Limb, t: number, turnBy: number) => {
-    const here = along(limb, t), jitter = anywhere(vary), size = vary(), cellPick = vary(), roll = vary(), chosen = pick() < lod.keep;
+  const splay = leaf.splay ?? 0.85, loose = leaf.along ?? 0, wild = leaf.wild ?? 0.8, deepest = spec.limbs.length;
+  // One small spray: it leaves its twig at an angle, any way round it, reaches for the open air and
+  // hangs by its own weight; its blades face the light, each with a turn of its own. Thousands of
+  // them, none lying in one surface, are what gives the crown depth from every side.
+  const sprayAt = (limb: Limb, t: number, index: number, tip: boolean) => {
+    const jitter = anywhere(vary), size = vary(), cellPick = vary(), roll = vary(), spinBy = vary(), chosen = pick() < lod.keep;
     if (!chosen) return;
-    const outward = norm(mix3(norm(sub(here.at, masses[limb.group])), norm(sub(here.at, centre)), 0.4));
-    const loose = leaf.along ?? 0, across = side(here.dir);
-    const normal = norm([outward[0] * (1 - loose) + across[0] * loose * 2 + jitter[0] * 0.55, (outward[1] + 0.3) * (1 - loose) + across[1] * loose * 2 + jitter[1] * 0.55, outward[2] * (1 - loose) + across[2] * loose * 2 + jitter[2] * 0.55]);
-    const fanned = turn(here.dir, normal, turnBy * (1 - loose * 0.6));
-    let axis: V3 = [fanned[0] + jitter[2] * 0.25, fanned[1] - leaf.hang, fanned[2] + jitter[0] * 0.25];
-    const lift = dot(axis, normal);
-    axis = norm([axis[0] - normal[0] * lift, axis[1] - normal[1] * lift, axis[2] - normal[2] * lift], side(normal));
-    const rect = leaf.cells[Math.floor(cellPick * leaf.cells.length)], long = lerp(leaf.size[0], leaf.size[1], size) * lod.grow * rect.h / 512;
-    card(out.foliage, cards, limb.group, add(here.at, axis, -long * 0.06), axis, normal, long, long * leaf.aspect * rect.w / rect.h, rect, ATLAS, {
-      grid: lod.grid, droop: leaf.droop * (0.5 + roll), cup: leaf.cup, bend: here.bend, sway: here.sway, phase: limb.path.phase, random: roll, flutter: leaf.flutter, flip: roll > 0.5, whip: leaf.whip,
+    const here = along(limb, t), outward = norm(mix3(norm(sub(here.at, masses[limb.group])), norm(sub(here.at, centre)), 0.4));
+    const radial = turn(side(here.dir), here.dir, index * 2.39996 + spinBy * 1.3);
+    const lean = (tip ? (index ? splay * 0.7 : 0.12) : splay * (0.7 + roll * 0.5)) * (1 - loose * 0.6), c = Math.cos(lean), s = Math.sin(lean), pull = 0.3 * (1 - loose);
+    const axis = norm([here.dir[0] * c + radial[0] * s + outward[0] * pull, here.dir[1] * c + radial[1] * s + outward[1] * pull - leaf.hang, here.dir[2] * c + radial[2] * s + outward[2] * pull]);
+    const facing: V3 = [outward[0] * 0.55 * (1 - loose) + jitter[0] * wild, (outward[1] * 0.55 + 0.5) * (1 - loose) + jitter[1] * wild, outward[2] * 0.55 * (1 - loose) + jitter[2] * wild];
+    const off = dot(facing, axis), normal = norm([facing[0] - axis[0] * off, facing[1] - axis[1] * off, facing[2] - axis[2] * off], side(axis));
+    const rect = leaf.cells[Math.floor(cellPick * leaf.cells.length)], long = lerp(leaf.size[0], leaf.size[1], size) * lod.grow;
+    card(out.foliage, cards, limb.group, add(here.at, axis, -long * 0.04), axis, normal, long, long * leaf.aspect * rect.w / rect.h, rect, ATLAS, {
+      grid: 0, droop: leaf.droop * (0.5 + roll), cup: leaf.cup, bend: here.bend, sway: here.sway, phase: limb.path.phase, random: roll, flutter: leaf.flutter, flip: roll > 0.5, whip: leaf.whip,
     });
   };
   for (const limb of limbs) {
     if (limb.level < leaf.level) continue;
-    let flipSide = 1;
-    for (let s = limb.length * leaf.from + vary() * leaf.every; s < limb.length * 0.97; s += leaf.every * (0.7 + vary() * 0.6)) { sprayAt(limb, s / limb.length, flipSide * (0.5 + vary() * 0.7)); flipSide = -flipSide; }
-    for (let k = 0; k < leaf.tips; k += 1) sprayAt(limb, 1, (k - (leaf.tips - 1) / 2) * 1.5 + (vary() - 0.5) * 0.6);
+    // Limbs that carry twigs of their own are thinner in leaf: the twigs do the work.
+    const every = leaf.every * (limb.level < deepest ? 1.7 : 1);
+    let index = Math.floor(vary() * 8);
+    for (let s = limb.length * leaf.from + vary() * every; s < limb.length * 0.95; s += every * (0.7 + vary() * 0.6)) { sprayAt(limb, s / limb.length, index, false); index += 1; }
+    for (let k = 0; k < leaf.tips; k += 1) sprayAt(limb, 1, k, true);
   }
   if (extra) extra(limbs, cards, centre);
   finishCanopy(out.foliage, cards, groups, { bend: leaf.bend, dark: leaf.dark, tints: leaf.tints, seed: seed + 31 });
   return out;
 }
-
 
 // ---- The trees -----------------------------------------------------------------------------------
 
@@ -1703,62 +1827,66 @@ function ribbon(g: Geo, cards: Card[] | null, group: number, pts: V3[], faces: V
 }
 
 const planeSpec = (): TreeSpec => ({
-  height: 7.4, radius: 0.31, top: 0.24, segments: 12, gnarl: 0.05, lean: 0.05, flare: 0.5, lobes: 5,
+  height: 4.3, radius: 0.34, segments: 7, gnarl: 0.035, lean: 0.05, flare: 0.6, lobes: 5,
   bark: BARK.plane, tint: [1, 1, 1], metres: 3,
   limbs: [
-    { count: [7, 9], span: [0.4, 1], angle: [0.6, 1.15], length: [0.5, 0.74], radius: 0.5, up: 0.05, gnarl: 0.13, segments: 7, profile: (t) => 1.25 - 0.7 * t, flat: 0.15 },
-    { count: [5, 6], span: [0.25, 1], angle: [0.5, 1.0], length: [0.4, 0.6], radius: 0.5, up: 0.02, gnarl: 0.18, segments: 5 },
-    { count: [3, 5], span: [0.2, 1], angle: [0.5, 1.05], length: [0.4, 0.62], radius: 0.5, up: -0.03, gnarl: 0.22, segments: 3 },
+    // The stem divides at about 4 m into ascending scaffolds, with a couple of limbs below the fork.
+    { count: [6, 7], fork: 3, open: [0.36, 0.6], span: [0.62, 0.92], angle: [0.65, 0.95], length: [0.9, 1.12], up: 0.03, gnarl: 0.09, segments: 9, curve: [-0.08, 0.4], profile: (t) => (t < 0.97 ? 0.76 : 1) },
+    { count: [8, 10], fork: 2, open: [0.3, 0.6], span: [0.2, 0.93], angle: [0.6, 1.05], length: [0.36, 0.5], up: 0.02, gnarl: 0.13, segments: 6, curve: [0.15, -0.22], kink: 0.16, profile: (t) => 1.2 - 0.45 * t },
+    { count: [6, 8], fork: 1, span: [0.2, 0.95], angle: [0.55, 1.0], length: [0.36, 0.52], up: 0, gnarl: 0.18, segments: 3, curve: [0.05, -0.3], kink: 0.2 },
+    { count: [3, 4], fork: 1, span: [0.25, 0.95], angle: [0.5, 1.0], length: [0.42, 0.62], up: -0.02, gnarl: 0.22, segments: 2, curve: [0, -0.2] },
   ],
-  leaves: { cells: [CELLS.planeA, CELLS.planeB], size: [0.74, 1.02], aspect: 0.95, every: 0.3, level: 2, from: 0.25, tips: 4, droop: 0.22, cup: 0, hang: 0.25, flutter: 0.035, whip: 0.05, tints: GREENS, bend: 0.7, dark: 0.46 },
+  leaves: { cells: SPRIGS.plane, size: [0.44, 0.6], aspect: 1, every: 0.14, level: 3, from: 0.18, tips: 3, droop: 0.14, cup: 0, hang: 0.32, flutter: 0.03, whip: 0.04, tints: GREENS, bend: 0.7, dark: 0.5 },
   flex: 0.14, limber: 0.3, tall: 11.5,
 });
 
 const orangeSpec = (): TreeSpec => ({
-  height: 2.15, radius: 0.075, top: 0.5, segments: 8, gnarl: 0.05, lean: 0.04, flare: 0.4, lobes: 4,
+  height: 1.35, radius: 0.085, segments: 4, gnarl: 0.04, lean: 0.04, flare: 0.45, lobes: 4,
   bark: BARK.furrowed, tint: [1.12, 1.06, 0.96], metres: 1.5,
   limbs: [
-    { count: [5, 6], span: [0.58, 1], angle: [0.7, 1.15], length: [0.44, 0.56], radius: 0.6, up: 0.1, gnarl: 0.14, segments: 5, profile: (t) => 1.1 - 0.3 * t },
-    { count: [3, 5], span: [0.3, 1], angle: [0.6, 1.1], length: [0.5, 0.7], radius: 0.55, up: 0.02, gnarl: 0.2, segments: 3 },
-    { count: [2, 3], span: [0.3, 1], angle: [0.6, 1.1], length: [0.5, 0.7], radius: 0.6, up: 0, gnarl: 0.2, segments: 2 },
+    { count: [4, 5], fork: 3, open: [0.45, 0.75], span: [0.72, 0.95], angle: [0.8, 1.15], length: [0.48, 0.62], up: 0.06, gnarl: 0.12, segments: 5, curve: [-0.1, 0.3] },
+    { count: [6, 7], fork: 2, open: [0.4, 0.7], span: [0.25, 0.92], angle: [0.6, 1.1], length: [0.46, 0.6], up: 0.03, gnarl: 0.18, segments: 4, curve: [0.1, -0.1], kink: 0.15 },
+    { count: [4, 5], fork: 1, span: [0.25, 0.95], angle: [0.6, 1.1], length: [0.5, 0.7], up: 0, gnarl: 0.2, segments: 2, curve: [0, -0.15], kink: 0.15 },
   ],
-  leaves: { cells: [CELLS.citrusA, CELLS.citrusB], size: [0.5, 0.68], aspect: 0.95, every: 0.2, level: 2, from: 0.2, tips: 3, droop: 0.18, cup: 0, hang: 0.15, flutter: 0.02, tints: GREENS, bend: 0.75, dark: 0.44 },
+  leaves: { cells: SPRIGS.citrus, size: [0.27, 0.37], aspect: 1, every: 0.06, level: 2, from: 0.12, tips: 3, droop: 0.12, cup: 0, hang: 0.18, flutter: 0.02, tints: GREENS, bend: 0.75, dark: 0.46 },
   flex: 0.05, limber: 0.1, tall: 3.4,
 });
 
 const oliveSpec = (): TreeSpec => ({
-  height: 2.1, radius: 0.27, top: 0.62, segments: 9, gnarl: 0.075, lean: 0.07, flare: 0.5, lobes: 4, flute: 0.16, twist: 2.4,
+  height: 1.55, radius: 0.3, segments: 5, gnarl: 0.09, lean: 0.09, flare: 0.55, lobes: 4, flute: 0.2, twist: 2.4, pipe: 2.3, twigs: 1.5,
   bark: BARK.furrowed, tint: [1.08, 1.08, 1.04], metres: 2.4,
   limbs: [
-    { count: [4, 5], span: [0.6, 1], angle: [0.5, 0.95], length: [0.95, 1.3], radius: 0.6, up: 0.05, gnarl: 0.2, segments: 7, flat: 0.25 },
-    { count: [5, 6], span: [0.28, 1], angle: [0.5, 1.0], length: [0.42, 0.6], radius: 0.5, up: 0.04, gnarl: 0.24, segments: 4 },
-    { count: [4, 6], span: [0.2, 1], angle: [0.5, 1.1], length: [0.4, 0.62], radius: 0.5, up: -0.03, gnarl: 0.25, segments: 2 },
+    { count: [4, 5], fork: 3, open: [0.42, 0.72], span: [0.6, 0.9], angle: [0.7, 1.05], length: [0.95, 1.25], up: 0.04, gnarl: 0.2, segments: 8, curve: [-0.15, 0.35] },
+    { count: [7, 8], fork: 2, open: [0.4, 0.7], span: [0.22, 0.92], angle: [0.55, 1.05], length: [0.4, 0.55], up: 0.03, gnarl: 0.24, segments: 5, curve: [0.1, -0.2], kink: 0.22 },
+    { count: [5, 6], fork: 1, span: [0.2, 0.95], angle: [0.5, 1.1], length: [0.42, 0.62], up: -0.01, gnarl: 0.25, segments: 3, curve: [0, -0.35], kink: 0.2 },
+    { count: [2, 3], fork: 1, span: [0.3, 0.95], angle: [0.5, 1.0], length: [0.45, 0.7], up: -0.04, gnarl: 0.25, segments: 2, curve: [0, -0.3] },
   ],
-  leaves: { cells: [CELLS.olive, CELLS.olive, CELLS.oliveB], size: [0.66, 0.92], aspect: 1.0, every: 0.15, level: 2, from: 0.15, tips: 4, droop: 0.2, cup: 0, hang: 0.2, flutter: 0.022, whip: 0.04, tints: [[1, 1, 1], [1.1, 1.08, 1.0], [0.9, 0.95, 0.92]], bend: 0.65, dark: 0.5 },
+  leaves: { cells: SPRIGS.olive, size: [0.34, 0.48], aspect: 1, every: 0.055, level: 3, from: 0.1, tips: 3, droop: 0.15, cup: 0, hang: 0.25, flutter: 0.022, whip: 0.04, tints: [[1, 1, 1], [1.1, 1.08, 1.0], [0.9, 0.95, 0.92]], bend: 0.65, dark: 0.52 },
   flex: 0.05, limber: 0.2, tall: 4.6,
 });
 
 const bareSpec = (): TreeSpec => ({
-  height: 5.2, radius: 0.19, top: 0.26, segments: 11, gnarl: 0.06, lean: 0.06, flare: 0.45, lobes: 5,
+  height: 2.7, radius: 0.2, segments: 6, gnarl: 0.05, lean: 0.06, flare: 0.5, lobes: 5, twigs: 0.5,
   bark: BARK.furrowed, tint: [0.78, 0.78, 0.8], metres: 2.6,
   limbs: [
-    { count: [5, 7], span: [0.4, 1], angle: [0.5, 0.95], length: [0.5, 0.7], radius: 0.55, up: 0.08, gnarl: 0.14, segments: 7, profile: (t) => 1.15 - 0.4 * t },
-    { count: [3, 5], span: [0.25, 1], angle: [0.45, 0.9], length: [0.45, 0.65], radius: 0.55, up: 0.04, gnarl: 0.2, segments: 5 },
-    { count: [3, 4], span: [0.2, 1], angle: [0.45, 0.9], length: [0.45, 0.65], radius: 0.55, up: 0.02, gnarl: 0.24, segments: 4 },
-    { count: [2, 3], span: [0.2, 1], angle: [0.4, 0.9], length: [0.5, 0.7], radius: 0.6, up: 0, gnarl: 0.25, segments: 2 },
+    { count: [6, 7], fork: 3, open: [0.3, 0.55], span: [0.6, 0.93], angle: [0.6, 1.0], length: [0.82, 1.05], up: 0.04, gnarl: 0.12, segments: 8, curve: [-0.1, 0.35], profile: (t) => (t < 0.97 ? 0.75 : 1) },
+    { count: [5, 7], fork: 2, span: [0.25, 0.92], angle: [0.5, 0.95], length: [0.38, 0.52], up: 0.03, gnarl: 0.18, segments: 5, curve: [0.1, -0.1], kink: 0.2 },
+    { count: [4, 5], fork: 1, span: [0.2, 0.95], angle: [0.45, 0.9], length: [0.42, 0.6], up: 0.02, gnarl: 0.24, segments: 3, curve: [0, -0.15], kink: 0.2 },
+    { count: [3, 4], fork: 1, span: [0.2, 0.95], angle: [0.4, 0.9], length: [0.45, 0.65], up: 0.01, gnarl: 0.3, segments: 2, curve: [0, -0.1], kink: 0.15 },
   ],
-  leaves: { cells: [CELLS.twigs], size: [1.1, 1.5], aspect: 0.9, every: 0.5, level: 3, from: 0.3, tips: 2, droop: 0, cup: 0, hang: -0.1, along: 0.8, flutter: 0.008, tints: [[0.8, 0.8, 0.82], [1, 0.96, 0.9]], bend: 0.25, dark: 0.75 },
+  leaves: { cells: [CELLS.twigs], size: [0.5, 0.72], aspect: 1.8, every: 0.42, level: 3, from: 0.3, tips: 1, droop: 0, cup: 0, hang: -0.05, along: 0.8, flutter: 0.008, tints: [[0.8, 0.8, 0.82], [1, 0.96, 0.9]], bend: 0.25, dark: 0.75 },
   flex: 0.1, limber: 0.22, tall: 8.2,
 });
 
 const shrubSpec = (): TreeSpec => ({
-  height: 0.3, radius: 0.05, top: 0.8, segments: 3, gnarl: 0.05, lean: 0.05, flare: 0.2, lobes: 3,
+  height: 0.3, radius: 0.055, segments: 2, gnarl: 0.05, lean: 0.05, flare: 0.2, lobes: 3,
   bark: BARK.furrowed, tint: [0.95, 0.9, 0.82], metres: 1.2,
   limbs: [
-    { count: [6, 8], span: [0.35, 1], angle: [0.3, 0.8], length: [2.1, 3.0], radius: 0.5, up: 0.07, gnarl: 0.16, segments: 5 },
-    { count: [3, 4], span: [0.3, 1], angle: [0.5, 1.0], length: [0.35, 0.55], radius: 0.6, up: 0.03, gnarl: 0.2, segments: 3 },
+    { count: [7, 9], fork: 2, open: [0.2, 0.5], span: [0.3, 0.9], angle: [0.3, 0.85], length: [1.25, 1.8], up: 0.06, gnarl: 0.15, segments: 5, curve: [-0.1, 0.25] },
+    { count: [5, 6], fork: 1, span: [0.25, 0.95], angle: [0.5, 1.0], length: [0.38, 0.55], up: 0.03, gnarl: 0.2, segments: 3, curve: [0, -0.1], kink: 0.15 },
+    { count: [2, 3], fork: 1, span: [0.3, 0.95], angle: [0.5, 1.0], length: [0.5, 0.7], up: 0, gnarl: 0.2, segments: 2 },
   ],
-  leaves: { cells: [CELLS.citrusA, CELLS.citrusB], size: [0.42, 0.56], aspect: 0.95, every: 0.15, level: 1, from: 0.25, tips: 3, droop: 0.2, cup: 0, hang: 0.15, flutter: 0.02, tints: GREENS, bend: 0.7, dark: 0.45 },
+  leaves: { cells: SPRIGS.citrus, size: [0.22, 0.32], aspect: 1, every: 0.05, level: 1, from: 0.3, tips: 2, droop: 0.15, cup: 0, hang: 0.15, flutter: 0.02, tints: GREENS, bend: 0.7, dark: 0.45 },
   flex: 0.02, limber: 0.12, tall: 1.5,
 });
 
@@ -1768,12 +1896,13 @@ function branching(spec: TreeSpec, variant: number, seed: number, lod: Lod, frui
   spec.height *= stretch; spec.tall *= stretch; spec.radius *= lerp(1, stretch, 0.5);
   const out = grown(), fruitRandom = rng(seed + 77);
   return buildTree(spec, seed + variant * 1013, lod, out, fruit ? (_limbs, cards) => {
-    // Oranges hang under the outer sprays.
+    // Oranges hang under the outer sprays: about ninety on a tree seen close.
+    const share = (lod.rank === 2 ? 90 : lod.rank === 1 ? 40 : 0) / Math.max(1, cards.length);
     for (const item of cards) {
       const roll = fruitRandom(), away = fruitRandom(), down = fruitRandom();
-      if (roll > (lod.rank === 2 ? 0.2 : lod.rank === 1 ? 0.3 : 0)) continue;
+      if (roll > share) continue;
       const g = out.foliage, v = item.first, wind: V4 = [g.w[v * 4], g.w[v * 4 + 1], phased(fruitRandom(), fruitRandom()), 0];
-      ball(g, [item.centre[0] + (away - 0.5) * 0.2, item.centre[1] - 0.06 - down * 0.1, item.centre[2] + (roll * 5 - 0.5) * 0.2], 0.036 + down * 0.008, CELLS.fruit, wind, 0.75, 0.82 + away * 0.3, lod);
+      ball(g, [item.centre[0] + (away - 0.5) * 0.12, item.centre[1] - 0.05 - down * 0.08, item.centre[2] + (roll / share - 0.5) * 0.12], 0.036 + down * 0.008, CELLS.fruit, wind, 0.75, 0.82 + away * 0.3, lod);
     }
   } : undefined);
 }
@@ -1785,14 +1914,14 @@ function buildCypress(variant: number, seed: number, lod: Lod): Grown {
   const trunk: Path = { pts: [], rad: [], bend: [], sway: [], phase: 0 };
   for (const y of [-0.15, 0, 0.12, 0.4, 1.2, height * 0.5, height * 0.86]) { trunk.pts.push([0, y, 0]); trunk.rad.push(lerp(0.12, 0.015, clamp(y / height))); trunk.bend.push(flex * Math.pow(clamp(y / height), 2)); trunk.sway.push(0); }
   tube(out.bark, thin(trunk, lod.rank === 2 ? 1 : 2, 3), sidesFor(0.12, lod), { bark: BARK.scaly, tint: [1.05, 0.98, 0.94], metres: 1.6, swell: (i) => 1 + 0.5 * Math.exp(-Math.max(0, trunk.pts[i][1] + 0.1) / 0.25) });
-  const cards: Card[] = [], count = Math.round(height * 84), pick = rng(seed + 3);
+  const cards: Card[] = [], count = Math.round(height * 150), pick = rng(seed + 3);
   for (let k = 0; k < count; k += 1) {
     const h = 0.03 + 0.95 * Math.pow((k + random()) / count, 0.9), azimuth = k * 2.39996 + random(), inner = k % 3 === 0, jitter = (random() - 0.5) * 1.0, size = random(), tilt = random(), keep = pick() < lod.keep;
     if (!keep) continue;
-    const r = girth(h) * (inner ? 0.5 : 0.78 + random() * 0.26) * (1 + 0.2 * Math.sin(azimuth * 3 + h * 10 + lump)), long = lerp(0.85, 1.3, size) * Math.sqrt(lod.grow) * (h > 0.85 ? 0.7 : 1);
+    const r = girth(h) * (inner ? 0.5 : 0.78 + random() * 0.26) * (1 + 0.2 * Math.sin(azimuth * 3 + h * 10 + lump)), long = lerp(0.6, 1.0, size) * Math.sqrt(lod.grow) * (h > 0.85 ? 0.7 : 1);
     const c = Math.cos(azimuth), s = Math.sin(azimuth), axis = norm([c * (0.16 + tilt * 0.16), 1, s * (0.16 + tilt * 0.16)]);
-    card(out.foliage, cards, 0, [c * r * 0.7, Math.max(0.12, h * height - long * 0.4), s * r * 0.7], axis, [Math.cos(azimuth + jitter), 0.12, Math.sin(azimuth + jitter)], long, long * 0.52 * Math.sqrt(lod.grow), CELLS.cypress, ATLAS, {
-      grid: lod.rank === 2 ? 2 : lod.grid, droop: -0.04, cup: -0.09, bend: flex * h * h, sway: 0.06 * h, phase: random(), random: random(), flutter: 0.014, flip: random() > 0.5, whip: 0.05,
+    card(out.foliage, cards, 0, [c * r * 0.7, Math.max(0.12, h * height - long * 0.4), s * r * 0.7], axis, [Math.cos(azimuth + jitter), 0.12, Math.sin(azimuth + jitter)], long, long * 0.56 * Math.sqrt(lod.grow), CELLS.cypress, ATLAS, {
+      grid: lod.grid, droop: -0.04, cup: -0.09, bend: flex * h * h, sway: 0.06 * h, phase: random(), random: random(), flutter: 0.014, flip: random() > 0.5, whip: 0.05,
     });
   }
   // A dark inner column closes the gaps between sprays.
@@ -1809,22 +1938,27 @@ function buildCypress(variant: number, seed: number, lod: Lod): Grown {
   return out;
 }
 
-/** Spruce: whorls of boughs that sweep down and lift at the tip, each a ridge of needles with branchlets hanging from it; snow loads on request. */
+/**
+ * Spruce: whorls of boughs that sweep down and lift at the tip. Each bough is a woody axis with flat
+ * needle sprays raked off both sides, shortest at the tip, branchlets hanging under it and a paler
+ * shoot at its end; snow loads lie along the ridge on request. Far away a bough is one tented card.
+ */
 function buildSpruce(variant: number, seed: number, lod: Lod): Grown {
   const out = grown(), random = rng(seed + variant * 577), height = [10.5, 7.6, 5.2][variant % 3] * (0.96 + random() * 0.08), spread = height * 0.235, flex = 0.2;
   const trunk: Path = { pts: [], rad: [], bend: [], sway: [], phase: 0 }, base = height * 0.016 + 0.06;
   for (const y of [-0.15, 0, 0.12, 0.4, 1.2, height * 0.35, height * 0.65, height * 0.88, height]) { trunk.pts.push([0, y, 0]); trunk.rad.push(lerp(base, 0.012, Math.pow(clamp(y / height), 0.9))); trunk.bend.push(flex * Math.pow(clamp(y / height), 2)); trunk.sway.push(0); }
-  tube(out.bark, thin(trunk, lod.rank === 2 ? 1 : 2, 3), sidesFor(base, lod), { bark: BARK.scaly, tint: [1, 1, 1], metres: 2, swell: (i) => 1 + 0.45 * Math.exp(-Math.max(0, trunk.pts[i][1] + 0.1) / 0.28) });
-  const cards: Card[] = [];
+  tube(out.bark, thin(trunk, lod.rank === 2 ? 1 : 2, 3), sidesFor(base, lod), { bark: BARK.scaly, tint: [1, 1, 1], metres: 2, swell: (i, a) => 1 + 0.5 * Math.exp(-Math.max(0, trunk.pts[i][1] + 0.05) / 0.22) * (1 + 0.4 * Math.cos(5 * a)) });
+  const cards: Card[] = [], spruce = CELLS.spruce;
   // With distance: fewer whorls of larger boughs.
-  const sparse = lod.rank === 2 ? (lod.fine ? 1 : 1.9) : lod.rank === 1 ? (lod.fine ? 1.6 : 2.2) : (lod.fine ? 2.2 : 3), swell = Math.pow(sparse, 0.45), tent = -0.42;
+  const sparse = lod.rank === 2 ? (lod.fine ? 1 : 1.5) : lod.rank === 1 ? (lod.fine ? 1.3 : 1.9) : (lod.fine ? 2.2 : 3), swell = Math.pow(sparse, 0.45), tent = -0.42;
+  const shape = (t: number) => (t < 0.3 ? lerp(0.62, 1, t / 0.3) : lerp(1, 0.36, (t - 0.3) / 0.7));
   let turnBy = random() * TAU;
-  for (let y = 0.7 + random() * 0.3; y < height - 0.35; y += lerp(0.52, 0.27, y / height) * (0.9 + random() * 0.2) * sparse) {
-    const h = y / height, boughs = lod.rank === 0 ? 4 : h > 0.9 ? 4 : 5 + (random() < 0.5 ? 1 : 0);
+  for (let y = 0.7 + random() * 0.3; y < height - 0.35; y += lerp(0.42, 0.2, y / height) * (0.9 + random() * 0.2) * sparse) {
+    const h = y / height, boughs = lod.rank === 0 ? 4 : h > 0.9 ? 5 : 6 + (random() < 0.5 ? 1 : 0);
     turnBy += 0.7 + random();
     for (let k = 0; k < boughs; k += 1) {
       const azimuth = turnBy + k / boughs * TAU + (random() - 0.5) * 0.35, long = (spread * Math.pow(1 - h, 0.85) + 0.22) * (0.7 + random() * 0.5) * (y < 1.6 ? 0.82 : 1), off = (random() - 0.5) * 0.34 * sparse;
-      const rise = lerp(-0.4, 0.42, Math.pow(h, 1.5)) + (random() - 0.5) * 0.2 - (lod.rank === 0 ? 0.25 : 0), phase = random(), rolls = [random(), random(), random(), random(), random(), random()];
+      const rise = lerp(-0.4, 0.42, Math.pow(h, 1.5)) + (random() - 0.5) * 0.2 - (lod.rank === 0 ? 0.25 : 0), phase = random();
       // The bough: out and down, then lifting towards its tip.
       const c = Math.cos(azimuth), s = Math.sin(azimuth), pts: V3[] = [[c * 0.02, Math.min(height - 0.4, y + off), s * 0.02]], dirs: V3[] = [];
       let dir: V3 = norm([c * Math.cos(rise - 0.12), Math.sin(rise - 0.12), s * Math.cos(rise - 0.12)]);
@@ -1832,37 +1966,44 @@ function buildSpruce(variant: number, seed: number, lod: Lod): Grown {
       for (let i = 1; i <= steps; i += 1) { dirs.push(dir); pts.push(add(pts[i - 1], dir, long / steps)); dir = norm([dir[0], dir[1] + (i < 3 ? -0.07 : 0.11), dir[2]]); }
       dirs.push(dir);
       const limb: Limb = { path: { pts, rad: pts.map((_p, i) => lerp(0.012 + long * 0.011, 0.004, i / steps)), bend: pts.map((p) => flex * Math.pow(clamp(p[1] / height), 2)), sway: pts.map((_p, i) => 0.16 * (long / spread) * Math.pow(i / steps, 1.6)), phase }, dirs, level: 1, group: 0, length: long };
-      if (limb.path.rad[0] >= lod.cut && (lod.rank === 2 || (lod.rank === 1 && long > 1.3))) {
-        const inner: Path = { pts: [pts[0], pts[2], pts[4]], rad: [limb.path.rad[0], limb.path.rad[2], limb.path.rad[4]], bend: [limb.path.bend[0], limb.path.bend[2], limb.path.bend[4]], sway: [limb.path.sway[0], limb.path.sway[2], limb.path.sway[4]], phase };
-        tube(out.bark, inner, 3, { bark: BARK.scaly, tint: [0.9, 0.86, 0.8], metres: 1.2 });
+      if (limb.path.rad[0] >= lod.cut && (lod.rank === 2 || (lod.rank === 1 && long > 1.3))) tube(out.bark, lod.rank === 2 ? limb.path : thin(limb.path, 2), 3, { bark: BARK.scaly, tint: [0.9, 0.86, 0.8], metres: 1.2 });
+      if (lod.rank === 0) {
+        const here = along(limb, 0), there = along(limb, 1), axis = norm(sub(there.at, here.at)), reach = long * 1.25, roll = random();
+        card(out.foliage, cards, 0, here.at, axis, [c * 0.1, 1, s * 0.1], reach, reach * 0.95 * swell, spruce, ATLAS, { grid: 0, droop: 0.1, cup: tent, bend: here.bend, sway: here.sway, phase, random: roll, flutter: 0.012, whip: there.sway - here.sway, flip: roll > 0.5 });
+        card(out.foliage, null, 0, add(here.at, UP, 0.3 * reach * -tent), axis, UP, reach * 0.8, reach * 0.42 * swell, CELLS.snow, ATLAS, { grid: 0, droop: 0.1, bend: here.bend, sway: there.sway * 0.5, phase, random: random(), tag: 0.5 });
+        continue;
       }
-      const sprays = lod.rank === 0 ? 1 : Math.min(lod.rank === 2 ? 3 : 2, long > 1.5 ? 3 : long > 0.75 ? 2 : 1);
-      for (let n = 0; n < sprays; n += 1) {
-        const t0 = n / sprays * 0.86, here = along(limb, t0), there = along(limb, Math.min(1, t0 + 1.2 / sprays));
-        const axis = norm(sub(there.at, here.at)), reach = long / sprays * 1.5, wide = reach * (sprays === 1 ? 0.95 : 1.15 - n * 0.2) * swell;
-        const face = norm([rolls[n] * 0.4 - 0.2 + c * 0.1, 1, rolls[n + 1] * 0.4 - 0.2 + s * 0.1]), acrossBough = norm(cross(axis, face)), ridge = norm(cross(acrossBough, axis));
-        // The top of the bough is a ridge: needles fall away to both sides, so it reads from the side as well as from above.
-        card(out.foliage, cards, 0, here.at, axis, face, reach, wide, CELLS.spruce, ATLAS, { grid: lod.rank > 0 ? 2 : 0, droop: 0.1, cup: tent, bend: here.bend, sway: here.sway, phase, random: rolls[n], flutter: 0.012, whip: there.sway - here.sway, flip: rolls[n] > 0.5 });
-        // Snow load: lying along the ridge, folded away unless the instance asks for snow.
-        if (lod.rank === 2 || n === 0) {
-          const laden = lod.rank === 2;
-          card(out.foliage, null, 0, add(add(here.at, axis, reach * 0.12), ridge, 0.03 + (laden ? 0.21 : 0.33) * -tent * wide), axis, face, reach * 0.8, wide * (laden ? 0.6 : 0.42), CELLS.snow, ATLAS, { grid: laden ? 2 : 0, cup: laden ? tent * 0.6 : 0, droop: 0.1, bend: here.bend, sway: (here.sway + there.sway) / 2, phase, random: rolls[n + 2], tag: 0.5 });
+      const gap = (lod.rank === 2 ? 0.23 : 0.36) * (lod.fine ? 1 : 1.5), pairs = Math.max(1, Math.round(long / gap)), widest = clamp(long * 0.5, 0.36, 0.9) * (lod.rank === 2 ? 1 : 1.3) * (lod.fine ? 1 : 1.2);
+      for (let n = 0; n < pairs; n += 1) {
+        const t = 0.1 + (n + 0.3 + random() * 0.4) / pairs * 0.84, here = along(limb, t), flat = norm(cross(here.dir, UP), [s, 0, -c]);
+        const tint: V3 = t > 0.68 ? [1.1, 1.16, 0.94] : [1, 1, 1];
+        for (const way of [-1, 1]) {
+          const rake = 0.8 + random() * 0.35, cr = Math.cos(rake), sr = Math.sin(rake) * way, size = widest * shape(t) * (0.85 + random() * 0.3), roll = random();
+          const axis = norm([here.dir[0] * cr + flat[0] * sr, here.dir[1] * cr + flat[1] * sr - 0.2 - random() * 0.2, here.dir[2] * cr + flat[2] * sr]);
+          card(out.foliage, cards, 0, here.at, axis, [flat[0] * way * 0.35 + (random() - 0.5) * 0.3, 1, flat[2] * way * 0.35 + (random() - 0.5) * 0.3], size, size * 0.72, spruce, ATLAS, { grid: lod.rank === 2 && lod.fine ? 1 : 0, droop: 0.18, cup: -0.1, bend: here.bend, sway: here.sway, phase, random: roll, flutter: 0.012, whip: 0.04, flip: roll > 0.5, tint });
         }
-        // Branchlets hang like curtains from both edges of the bough.
-        if (long > 0.6) for (const way of lod.rank === 2 ? [-1, 1] : [n % 2 ? 1 : -1]) {
-          const from = along(limb, t0 + (0.2 + rolls[n + 3] * 0.45) / sprays), drop = lerp(0.36, 0.66, rolls[n + 2]) * Math.min(1.15, long) * swell;
-          const foot = add(add(from.at, acrossBough, way * wide * 0.27), ridge, 0.05 * -tent * wide);
-          card(out.foliage, cards, 0, foot, norm([acrossBough[0] * way * 0.3 + axis[0] * 0.15, -1, acrossBough[2] * way * 0.3 + axis[2] * 0.15]), [axis[0] + acrossBough[0] * way * 0.6, 0.25, axis[2] + acrossBough[2] * way * 0.6], drop, drop * 1.15, CELLS.spruce, ATLAS, { grid: lod.rank === 2 ? 1 : 0, droop: 0, cup: 0, bend: from.bend, sway: from.sway, phase, random: rolls[n + 1], flutter: 0.014, whip: 0.05, flip: way > 0 });
+        // Branchlets hang like a comb under the bough.
+        if (long > 0.6 && n % (lod.rank === 2 ? 2 : 3) === 0) {
+          const drop = lerp(0.3, 0.62, random()) * Math.min(1.1, long) * (lod.rank === 2 ? 1 : 1.25), way = random() < 0.5 ? -1 : 1, roll = random();
+          card(out.foliage, cards, 0, add(here.at, UP, -0.02), norm([flat[0] * way * 0.25 + here.dir[0] * 0.2, -1, flat[2] * way * 0.25 + here.dir[2] * 0.2]), [here.dir[0] + flat[0] * way * 0.7, 0.2, here.dir[2] + flat[2] * way * 0.7], drop, drop * 0.78, spruce, ATLAS, { grid: 0, bend: here.bend, sway: here.sway, phase, random: roll, flutter: 0.014, whip: 0.05, flip: way > 0 });
         }
+      }
+      // The young shoot at the end of the bough is paler.
+      { const here = along(limb, 0.84), size = clamp(long * 0.4, 0.3, 0.7), roll = random(); card(out.foliage, cards, 0, here.at, here.dir, [(random() - 0.5) * 0.3, 1, (random() - 0.5) * 0.3], size, size * 0.62, spruce, ATLAS, { grid: 0, droop: 0.1, cup: -0.08, bend: here.bend, sway: here.sway, phase, random: roll, flutter: 0.012, whip: 0.05, tint: [1.12, 1.18, 0.94] }); }
+      // Snow loads: lying along the ridge, folded away unless the instance asks for snow.
+      const loads = lod.rank === 2 ? Math.max(1, Math.round(long / 0.6)) : 1;
+      for (let n = 0; n < loads; n += 1) {
+        const t = 0.08 + (n + 0.5) / loads * 0.8, here = along(limb, t), wide = widest * shape(t) * 1.25;
+        card(out.foliage, null, 0, add(here.at, UP, 0.035), here.dir, UP, long / loads * 1.15, wide, CELLS.snow, ATLAS, { grid: 0, droop: 0.08, bend: here.bend, sway: here.sway, phase, random: random(), tag: 0.5 });
       }
     }
   }
   // The leader and its last shoots.
   for (let k = 0; k < 3; k += 1) {
     const a = k / 3 * TAU + random();
-    card(out.foliage, cards, 0, [0, height - 0.75, 0], norm([Math.cos(a) * 0.12, 1, Math.sin(a) * 0.12]), [Math.cos(a + 1.57), 0.1, Math.sin(a + 1.57)], 1.0, 0.62, CELLS.spruce, ATLAS, { grid: lod.grid, bend: flex, sway: 0.03, phase: random(), random: random(), flutter: 0.01 });
+    card(out.foliage, cards, 0, [0, height - 0.72, 0], norm([Math.cos(a) * 0.1, 1, Math.sin(a) * 0.1]), [Math.cos(a + 1.57), 0.1, Math.sin(a + 1.57)], 0.95, 0.5, spruce, ATLAS, { grid: lod.grid, bend: flex, sway: 0.03, phase: random(), random: random(), flutter: 0.01, tint: [1.08, 1.12, 0.96] });
   }
-  finishCanopy(out.foliage, cards, 1, { bend: 0.42, dark: 0.5, tints: [[1, 1, 1], [0.92, 1, 1.04], [1.06, 1.04, 0.92]], seed: seed + 9, squash: 0.3 });
+  finishCanopy(out.foliage, cards, 1, { bend: 0.42, dark: 0.5, tints: [[1.2, 1.22, 1.16], [1.08, 1.2, 1.22], [1.28, 1.26, 1.08]], seed: seed + 9, squash: 0.3 });
   return out;
 }
 
@@ -1881,27 +2022,30 @@ function palmStem(out: Grown, random: Random, look: PalmLook, lod: Lod, stubsFro
   }
   tube(out.bark, thin(trunk, lod.rank === 2 ? 1 : lod.rank === 1 ? 2 : 4, 1), sidesFor(look.radius, lod), { bark: BARK.palm, tint: [1, 1, 1], metres: 2.6, shade: (_i, t) => 0.8 + 0.2 * smooth(0, 0.1, t) });
   if (lod.rank > 0) {
-    const stubs = Math.round((1 - stubsFrom) * look.height * (lod.rank === 2 ? 13 : 6));
+    const stubs = Math.round((1 - stubsFrom) * look.height * (lod.rank === 2 ? (lod.fine ? 22 : 12) : 7));
     for (let k = 0; k < stubs; k += 1) {
       const t = lerp(stubsFrom, 0.985, (k + random() * 0.5) / stubs), f = t * steps, i = Math.min(steps - 1, Math.floor(f)), u = f - i;
       const centre = mix3(trunk.pts[i], trunk.pts[i + 1], u), up = dirs[i], around = turn(side(up), up, k * 2.39996), r = lerp(trunk.rad[i], trunk.rad[i + 1], u);
-      const foot = add(centre, around, r * 0.86), tip = add(add(foot, around, 0.1 + random() * 0.05), up, 0.13 + random() * 0.08), bend = flex * t * t;
-      tube(out.bark, { pts: [foot, tip], rad: [0.05, 0.028], bend: [bend, bend], sway: [0, 0], phase: 0 }, 3, { bark: BARK.palm, tint: [0.8, 0.72, 0.62], metres: 0.8, cap: true });
+      // A boot: the stub of a cut frond, wide where it clasps the stem, turned up at its end.
+      const foot = add(add(centre, around, r * 0.78), up, -0.05), mid = add(add(foot, around, 0.09 + random() * 0.04), up, 0.1), tip = add(add(mid, around, 0.05 + random() * 0.04), up, 0.13 + random() * 0.09), bend = flex * t * t, tone = 0.7 + random() * 0.25;
+      tube(out.bark, { pts: [foot, mid, tip], rad: [0.075, 0.055, 0.03], bend: [bend, bend, bend], sway: [0, 0, 0], phase: 0 }, lod.rank === 2 ? 4 : 3, { bark: BARK.palm, tint: [0.84 * tone, 0.74 * tone, 0.62 * tone], metres: 0.8, cap: true });
     }
   }
   return { top: trunk.pts[steps], up: dirs[steps] };
 }
 
-/** Date palm: a ringed, leaning stem and a full head of arching feather fronds, the oldest hanging dry. */
+/** Date palm: a ringed, leaning stem booted with old leaf bases, a full head of arching feather fronds, the oldest hanging dry, and strands of dates under it. */
 function buildDatePalm(variant: number, seed: number, lod: Lod): Grown {
   const out = grown(), random = rng(seed + variant * 359), flex = 0.22;
-  const look: PalmLook = [{ height: 8.2, lean: 0.1, radius: 0.22, fronds: 54, long: 3.7 }, { height: 6.2, lean: 0.2, radius: 0.21, fronds: 48, long: 3.5 }, { height: 10.2, lean: 0.06, radius: 0.23, fronds: 58, long: 3.9 }][variant % 3];
-  const crown = palmStem(out, random, look, lod, 0.8, flex), cards: Card[] = [];
-  const fronds = Math.round(look.fronds * (lod.rank === 2 ? 1 : lod.rank === 1 ? 0.62 : 0.4) * (lod.fine ? 1 : 0.62)), steps = lod.rank === 2 ? (lod.fine ? 11 : 7) : lod.rank === 1 ? 6 : 3, frond = CELLS.frond;
+  const look: PalmLook = [{ height: 8.2, lean: 0.1, radius: 0.25, fronds: 76, long: 3.8 }, { height: 6.2, lean: 0.2, radius: 0.24, fronds: 68, long: 3.6 }, { height: 10.2, lean: 0.06, radius: 0.26, fronds: 82, long: 4.0 }][variant % 3];
+  const crown = palmStem(out, random, look, lod, 0.66, flex), cards: Card[] = [];
+  const fronds = Math.round(look.fronds * (lod.rank === 2 ? 1 : lod.rank === 1 ? 0.6 : 0.36) * (lod.fine ? 1 : 0.62)), steps = lod.rank === 2 ? (lod.fine ? 12 : 7) : lod.rank === 1 ? 6 : 3, frond = CELLS.frond;
+  // Leaflets stand off the rib in more than one plane: a shallow pair of rows and a steep one, so a frond has body from any side.
+  const rows: Array<[number, number]> = lod.rank === 2 ? [[0.3, 1], [0.95, 0.8]] : lod.rank === 1 ? [[0.3, 1.1], [0.95, 0.85]] : [[0.5, 1.35]];
   for (let k = 0; k < fronds; k += 1) {
-    const order = (k + 0.5) / fronds, azimuth = k * 2.39996 + random() * 0.5, rise = lerp(1.32, -0.95, Math.pow(order, 0.85)) + (random() - 0.5) * 0.14, old = order > 0.86, young = order < 0.12;
+    const order = (k + 0.5) / fronds, azimuth = k * 2.39996 + random() * 0.5, rise = lerp(1.36, -1.1, Math.pow(order, 0.9)) + (random() - 0.5) * 0.14, old = order > 0.87, young = order < 0.12;
     const long = look.long * (0.82 + random() * 0.3) * (young ? 0.7 : old ? 0.85 : 1), phase = random(), roll = random(), twist0 = (random() - 0.5) * 0.5, twist1 = (random() - 0.5) * 1.6;
-    const c = Math.cos(azimuth), s = Math.sin(azimuth), pts: V3[] = [add(crown.top, [c * 0.1, -0.12 + (1 - order) * 0.3, s * 0.1])], faces: V3[] = [];
+    const c = Math.cos(azimuth), s = Math.sin(azimuth), pts: V3[] = [add(crown.top, [c * 0.12, -0.14 + (1 - order) * 0.34, s * 0.12])], faces: V3[] = [];
     let dir: V3 = norm([c * Math.cos(rise), Math.sin(rise), s * Math.cos(rise)]);
     for (let i = 1; i <= steps; i += 1) {
       const t = i / steps, across = norm(cross(dir, UP), [s, 0, -c]), flatFace = norm(cross(across, dir));
@@ -1910,24 +2054,41 @@ function buildDatePalm(variant: number, seed: number, lod: Lod): Grown {
       dir = norm([dir[0], dir[1] - (young ? 0.05 : 0.17) * (0.5 + t) * (11 / steps), dir[2]]);
     }
     { const across = norm(cross(dir, UP), [s, 0, -c]); faces.push(turn(norm(cross(across, dir)), dir, twist0 + twist1)); }
-    const dry: V3 = old ? [1.7, 1.05, 0.5] : young ? [1.12, 1.1, 0.86] : [1, 1, 1], bendAt = flex * 1.0;
+    const dry: V3 = old ? [1.7, 1.05, 0.5] : young ? [1.14, 1.12, 0.84] : [1, 1, 1], bendAt = flex * 1.0;
     const sway = (t: number) => 0.42 * t * t * (old ? 0.6 : 1);
-    // Two rows of leaflets, raised in a V from the rib.
-    const first = out.foliage.count, z = phased(phase, roll), wide = 0.46 * (0.9 + roll * 0.2) * (lod.rank === 0 ? 1.3 : 1), fold = old ? 0.15 : 0.5;
+    const first = out.foliage.count, z = phased(phase, roll), wide = 0.5 * (0.9 + roll * 0.2) * (lod.rank === 0 ? 1.3 : 1), each = 1 + rows.length * 2;
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps, tangent = norm(sub(pts[Math.min(steps, i + 1)], pts[Math.max(0, i - 1)])), face = faces[i], across = norm(cross(tangent, face));
       const u = (frond.x + 4 + t * (frond.w - 8)) / ATLAS;
-      for (const way of [-1, 0, 1]) {
-        const reach: V3 = way ? [across[0] * way * Math.cos(fold) + face[0] * Math.sin(fold), across[1] * way * Math.cos(fold) + face[1] * Math.sin(fold), across[2] * way * Math.cos(fold) + face[2] * Math.sin(fold)] : [0, 0, 0];
-        const normal = way ? norm([face[0] * Math.cos(fold) - across[0] * way * Math.sin(fold), face[1] * Math.cos(fold) - across[1] * way * Math.sin(fold), face[2] * Math.cos(fold) - across[2] * way * Math.sin(fold)]) : face;
-        out.foliage.vert(add(pts[i], reach, wide), normal, u, (frond.y + (way ? 6 : frond.h - 5)) / ATLAS, [dry[0], dry[1], dry[2], 1], [bendAt, sway(t), z, way * 0.1 * t]);
+      out.foliage.vert(pts[i], face, u, (frond.y + frond.h - 5) / ATLAS, [dry[0], dry[1], dry[2], 1], [bendAt, sway(t), z, 0]);
+      for (const [fold0, span] of rows) for (const way of [-1, 1]) {
+        const fold = old ? fold0 * 0.4 : fold0, cf = Math.cos(fold), sf = Math.sin(fold), shade = fold0 > 0.6 ? 0.88 : 1;
+        const reach: V3 = [across[0] * way * cf + face[0] * sf, across[1] * way * cf + face[1] * sf, across[2] * way * cf + face[2] * sf];
+        const normal = norm([face[0] * cf - across[0] * way * sf, face[1] * cf - across[1] * way * sf, face[2] * cf - across[2] * way * sf]);
+        out.foliage.vert(add(pts[i], reach, wide * span), normal, u, (frond.y + 6) / ATLAS, [dry[0] * shade, dry[1] * shade, dry[2] * shade, 1], [bendAt, sway(t), z, way * 0.1 * t]);
       }
     }
-    for (let i = 0; i < steps; i += 1) { const a = first + i * 3; out.foliage.quad(a + 1, a, a + 3, a + 4); out.foliage.quad(a + 1, a + 4, a + 5, a + 2); }
-    cards.push({ first, count: (steps + 1) * 3, centre: pts[Math.floor(steps * 0.5)], normal: faces[Math.floor(steps * 0.5)], area: long * wide * 2, group: 0 });
+    for (let i = 0; i < steps; i += 1) for (let r = 0; r < rows.length; r += 1) {
+      const rib = first + i * each, left = rib + 1 + r * 2, right = left + 1;
+      out.foliage.quad(rib, left, left + each, rib + each); out.foliage.quad(rib, rib + each, right + each, right);
+    }
+    cards.push({ first, count: (steps + 1) * each, centre: pts[Math.floor(steps * 0.5)], normal: faces[Math.floor(steps * 0.5)], area: long * wide * 2, group: 0 });
     if (lod.rank === 2 && lod.fine) {
       const pick = [0, 3, 6, 9, steps].filter((i, index, list) => i <= steps && list.indexOf(i) === index);
-      tube(out.bark, { pts: pick.map((i) => pts[i]), rad: pick.map((i) => lerp(0.026, 0.007, i / steps)), bend: pick.map(() => bendAt), sway: pick.map((i) => sway(i / steps)), phase }, 3, { bark: BARK.palm, tint: old ? [1.1, 0.95, 0.7] : [0.95, 1.1, 0.6], metres: 1.5 });
+      tube(out.bark, { pts: pick.map((i) => pts[i]), rad: pick.map((i) => lerp(0.03, 0.007, i / steps)), bend: pick.map(() => bendAt), sway: pick.map((i) => sway(i / steps)), phase }, 4, { bark: BARK.palm, tint: old ? [1.1, 0.95, 0.7] : [0.95, 1.1, 0.6], metres: 1.5 });
+    }
+  }
+  // Strands of dates arch out from under the head and hang (shown by `bloom`).
+  if (lod.rank > 0) {
+    const strands = lod.rank === 2 ? 7 : 4;
+    for (let k = 0; k < strands; k += 1) {
+      const azimuth = k / strands * TAU + random() * 0.8, c = Math.cos(azimuth), s = Math.sin(azimuth), long = 1.0 + random() * 0.5, phase = random(), pts: V3[] = [add(crown.top, [c * 0.12, -0.3, s * 0.12])];
+      let dir: V3 = norm([c * 0.75, 0.5, s * 0.75]);
+      for (let i = 1; i <= 5; i += 1) { pts.push(add(pts[i - 1], dir, long / 5)); dir = norm([dir[0], dir[1] - 0.45, dir[2]]); }
+      const hang = (i: number) => 0.2 * Math.pow(i / 5, 2);
+      tube(out.bark, { pts, rad: pts.map((_p, i) => lerp(0.022, 0.012, i / 5)), bend: pts.map(() => flex), sway: pts.map((_p, i) => hang(i)), phase }, 4, { bark: BARK.palm, tint: [1.55, 1.05, 0.42], metres: 1.2 });
+      const dates = lod.rank === 2 ? 9 : 4;
+      for (let n = 0; n < dates; n += 1) ball(out.foliage, [pts[5][0] + (random() - 0.5) * 0.2, pts[5][1] - 0.04 - random() * 0.5, pts[5][2] + (random() - 0.5) * 0.2], 0.05 + random() * 0.03, CELLS.fruit, [flex, hang(5), phased(phase, random()), 0], 0.75, 0.7 + random() * 0.3, lod);
     }
   }
   finishCanopy(out.foliage, cards, 1, { bend: 0.25, dark: 0.5, tints: [[1, 1, 1], [1.06, 1.04, 0.9], [0.93, 0.98, 0.98]], seed: seed + 9 });
@@ -1937,13 +2098,14 @@ function buildDatePalm(variant: number, seed: number, lod: Lod): Grown {
 /** Fan palm: a stout stem cross-hatched with old leaf bases, and pleated fans on long stalks. */
 function buildFanPalm(variant: number, seed: number, lod: Lod): Grown {
   const out = grown(), random = rng(seed + variant * 241), flex = 0.1;
-  const look: PalmLook = [{ height: 3.3, lean: 0.07, radius: 0.19, fronds: 30, long: 1.05 }, { height: 2.2, lean: 0.14, radius: 0.2, fronds: 26, long: 0.95 }, { height: 4.6, lean: 0.05, radius: 0.18, fronds: 34, long: 1.1 }][variant % 3];
+  const look: PalmLook = [{ height: 3.3, lean: 0.07, radius: 0.19, fronds: 44, long: 1.05 }, { height: 2.2, lean: 0.14, radius: 0.2, fronds: 38, long: 0.95 }, { height: 4.6, lean: 0.05, radius: 0.18, fronds: 48, long: 1.1 }][variant % 3];
   const crown = palmStem(out, random, look, lod, 0.35, flex), cards: Card[] = [], fan = CELLS.fan;
   const leaves = Math.round(look.fronds * (lod.rank === 2 ? 1 : lod.rank === 1 ? 0.7 : 0.45) * (lod.fine ? 1 : 0.7)), pleats = lod.rank === 2 ? (lod.fine ? 12 : 8) : lod.rank === 1 ? 6 : 3, sweep = 4.1;
   for (let k = 0; k < leaves; k += 1) {
-    const order = (k + 0.5) / leaves, azimuth = k * 2.39996 + random() * 0.5, rise = lerp(1.3, -1.05, Math.pow(order, 0.9)) + (random() - 0.5) * 0.16, old = order > 0.84;
+    const order = (k + 0.5) / leaves, azimuth = k * 2.39996 + random() * 0.5, old = order > 0.8, rise = (old ? -1.2 : lerp(1.3, -0.9, Math.pow(order / 0.8, 0.9))) + (random() - 0.5) * 0.16;
     const stalk = look.long * (0.8 + random() * 0.35), phase = random(), roll = random(), blade = (0.62 + random() * 0.14) * (lod.rank === 0 ? 1.25 : 1);
-    const c = Math.cos(azimuth), s = Math.sin(azimuth), pts: V3[] = [add(crown.top, [c * 0.08, -0.1 + (1 - order) * 0.2, s * 0.08])];
+    // The oldest fans hang against the stem below the head, a petticoat.
+    const c = Math.cos(azimuth), s = Math.sin(azimuth), pts: V3[] = [add(add(crown.top, [c * (old ? 0.16 : 0.08), -0.1 + (1 - order) * 0.2, s * (old ? 0.16 : 0.08)]), crown.up, old ? -Math.min(look.height * 0.3, (order - 0.8) * 4.5) : 0)];
     let dir: V3 = norm([c * Math.cos(rise), Math.sin(rise), s * Math.cos(rise)]);
     for (let i = 1; i <= 3; i += 1) { pts.push(add(pts[i - 1], dir, stalk / 3)); dir = norm([dir[0], dir[1] - 0.12, dir[2]]); }
     const sway = (t: number) => 0.16 * t * t, bendAt = flex;
@@ -2054,7 +2216,10 @@ const coneSurface = (radius: number, height: number, foot: number): Surface => (
 };
 /** A hedge section `long` along x: square shoulders, flat top. */
 const hedgeSurface = (long: number, tall: number, deep: number): Surface => (u, v, inset) => {
-  const angle = v * Math.PI, c = Math.cos(angle), s = Math.sin(angle), power = 0.3, sign = c < 0 ? -1 : 1;
+  // Round the section by distance, not by angle, so the faces are as leafy as the shoulders.
+  const power = 0.3, around = tall * 2 + deep, reached = clamp(v) * around;
+  const angle = reached < tall ? Math.asin(Math.pow(reached / tall, 1 / power)) : reached > tall + deep ? Math.PI - Math.asin(Math.pow((around - reached) / tall, 1 / power)) : Math.acos(Math.sign(1 - (reached - tall) / deep * 2) * Math.pow(Math.abs(1 - (reached - tall) / deep * 2), 1 / power));
+  const c = Math.cos(angle), s = Math.sin(angle), sign = c < 0 ? -1 : 1;
   const z = deep / 2 * sign * Math.pow(Math.abs(c), power) * (1 - inset), y = 0.06 + (tall - 0.06) * Math.pow(s, power) * (1 - inset * 0.5);
   return { p: [(u - 0.5) * long, y, z], n: norm([0, Math.pow(s, 2 - power) / tall, sign * Math.pow(Math.abs(c), 2 - power) / (deep / 2)]) };
 };
@@ -2063,11 +2228,11 @@ function buildClipped(kind: "boxBall" | "hedge", variant: number, seed: number, 
   const out = grown(), cells = [CELLS.box];
   if (kind === "hedge") {
     const long = 1.25, tall = [0.95, 1.5, 0.55][variant % 3], deep = [0.55, 0.7, 0.45][variant % 3];
-    clipped(out, seed + variant, lod, hedgeSurface(long, tall, deep), Math.round((tall * 2 + deep) * long * 46), { cells, size: [0.26, 0.36], core: [3, 5] });
+    clipped(out, seed + variant, lod, hedgeSurface(long, tall, deep), Math.round((tall * 2 + deep) * long * 115), { cells, size: [0.2, 0.3], core: [3, 5] });
     // The two ends.
     const random = rng(seed + 41), cards: Card[] = [];
-    for (const way of [-1, 1]) for (let k = 0; k < Math.round(tall * deep * 30 * Math.sqrt(lod.keep)); k += 1) {
-      const y = 0.1 + random() * (tall - 0.2), z = (random() - 0.5) * deep * 0.86, long2 = 0.26 + random() * 0.1, axis = turn([0, 1, 0], [1, 0, 0], random() * TAU);
+    for (const way of [-1, 1]) for (let k = 0; k < Math.round(tall * deep * 75 * Math.sqrt(lod.keep)); k += 1) {
+      const y = 0.1 + random() * (tall - 0.2), z = (random() - 0.5) * deep * 0.86, long2 = 0.2 + random() * 0.1, axis = turn([0, 1, 0], [1, 0, 0], random() * TAU);
       card(out.foliage, cards, 0, add([way * long / 2 * 0.98, y, z], axis, -long2 / 2), axis, [way, (random() - 0.5) * 0.5, (random() - 0.5) * 0.5], long2, long2, CELLS.box, ATLAS, { grid: 0, bend: 0, sway: 0.01, phase: random(), random: random(), flutter: 0.006 });
     }
     finishCanopy(out.foliage, cards, 1, { bend: 0.6, dark: 0.7, tints: GREENS, seed: seed + 5 });
@@ -2116,7 +2281,7 @@ function buildPotLaurel(variant: number, seed: number, lod: Lod): Grown {
     clipped(out, seed + 1, lod, coneSurface(0.3, 1.15, 0), 300, { cells, size: [0.28, 0.38], core: [6, 4], sway: 0.03 });
   } else {
     const spec = shrubSpec();
-    spec.limbs[0].length = [1.3, 1.8]; spec.limbs[0].angle = [0.2, 0.6]; spec.limbs[0].gnarl = 0.1;
+    spec.limbs[0].length = [0.72, 1.0]; spec.limbs[0].angle = [0.2, 0.6]; spec.limbs[0].gnarl = 0.1;
     buildTree(spec, seed + 2, lod, out);
   }
   raise(out.bark, bark, top); raise(out.foliage, leaves, top);
@@ -2323,14 +2488,14 @@ type KindSpec = {
 };
 
 const KINDS: Record<TreeKind, KindSpec> = {
-  plane: { variants: 3, trunk: true, note: "Large street tree, mottled flaking bark, lobed leaves. About 11 m tall, crown 8 m, clear stem 3 m.", build: (v, s, lod) => branching(planeSpec(), v, s, lod) },
+  plane: { variants: 3, trunk: true, note: "Large street tree, mottled flaking bark, lobed leaves; the stem forks at 4 m into ascending scaffolds. About 11 m tall, crown 9 m, clear stem 3 m.", build: (v, s, lod) => branching(planeSpec(), v, s, lod) },
   orange: { variants: 3, trunk: true, note: "Small round-headed orange tree with fruit (bloom sets how much). About 3.3 m tall, crown 2.4 m.", build: (v, s, lod) => branching(orangeSpec(), v, s + 101, lod, true) },
-  olive: { variants: 3, trunk: true, note: "Old olive: short twisted fluted trunk, wide airy silver-green crown. About 4.5 m tall, 5 m wide.", build: (v, s, lod) => branching(oliveSpec(), v, s + 202, lod) },
+  olive: { variants: 3, trunk: true, note: "Old olive: short twisted fluted trunk, wide silver-green crown. About 4.6 m tall, 5.5 m wide.", build: (v, s, lod) => branching(oliveSpec(), v, s + 202, lod) },
   bare: { variants: 3, trunk: true, note: "Leafless winter tree: four orders of branching and fine twigs. About 8 m tall, 6 m wide.", build: (v, s, lod) => branching(bareSpec(), v, s + 303, lod) },
   cypress: { variants: 3, trunk: true, note: "Italian cypress, dark columnar flame. Variants 8.2 m, 6.6 m and 4.8 m tall, about 1.3 m wide.", build: (v, s, lod) => buildCypress(v, s + 404, lod) },
   spruce: { variants: 3, trunk: true, note: "Spruce with drooping whorled boughs; `snow` whitens it and loads the boughs. Variants 10.5 m, 7.6 m and 5.2 m.", build: (v, s, lod) => buildSpruce(v, s + 505, lod) },
-  datePalm: { variants: 3, trunk: true, note: "Date palm: ringed leaning stem, leaf-base stubs under a head of arching fronds, oldest ones dry. Stem 8.2 m, 6.2 m (more lean) or 10.2 m; crown 7 m across.", build: (v, s, lod) => buildDatePalm(v, s + 606, lod) },
-  fanPalm: { variants: 3, trunk: true, note: "Fan palm: stout cross-hatched stem, pleated fans on long stalks. Stem 3.3 m, 2.2 m or 4.6 m; crown 3.4 m across.", build: (v, s, lod) => buildFanPalm(v, s + 707, lod) },
+  datePalm: { variants: 3, trunk: true, note: "Date palm: leaning stem latticed with leaf bases, boots under a full head of arching fronds, oldest ones dry, strands of dates (bloom). Stem 8.2 m, 6.2 m (more lean) or 10.2 m; crown 7.5 m across.", build: (v, s, lod) => buildDatePalm(v, s + 606, lod) },
+  fanPalm: { variants: 3, trunk: true, note: "Fan palm: stout latticed stem, pleated fans on long stalks, a petticoat of old fans under the head. Stem 3.3 m, 2.2 m or 4.6 m; crown 3.5 m across.", build: (v, s, lod) => buildFanPalm(v, s + 707, lod) },
   shrub: { variants: 3, trunk: false, note: "Loose many-stemmed evergreen shrub, glossy leaves. About 1.4 m tall, 1.7 m wide.", build: (v, s, lod) => branching(shrubSpec(), v, s + 808, lod) },
   boxBall: { variants: 3, trunk: false, note: "Clipped box. 0: ball 0.75 m. 1: cone 1.1 m tall. 2: low cushion 1.05 m across.", build: (v, s, lod) => buildClipped("boxBall", v, s + 909, lod) },
   hedge: { variants: 3, trunk: false, note: "Clipped hedge section 1.25 m long (place end to end along x). 0: 0.95 m tall, 0.55 deep. 1: 1.5 m tall. 2: 0.55 m low border.", build: (v, s, lod) => buildClipped("hedge", v, s + 1010, lod) },
@@ -2386,7 +2551,7 @@ export function createTrees(kit: Kit, options: TreesOptions): Trees {
       distance = own(patchTreeDepth(new THREE.MeshDistanceMaterial()));
     } else {
       const sheet = part === "bark" ? paintBark(high ? 1 : 0.5, seed + 1) : paintPots(high ? 1 : 0.5, seed + 2);
-      const textures = sheetTextures(sheet, 0.02, kit.anisotropy, part === "bark", part === "bark" ? 0.1 : 0.05);
+      const textures = sheetTextures(sheet, part === "bark" ? 0.034 : 0.02, kit.anisotropy, part === "bark", part === "bark" ? 0.1 : 0.05);
       made = new THREE.MeshStandardMaterial({ map: own(textures.map), normalMap: own(textures.normal), vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.6 });
     }
     patchTreeMaterial(made, part, wind, sun, reach);
